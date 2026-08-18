@@ -5,6 +5,7 @@ import { ChatDock } from "@/components/ChatDock";
 import { DistrictSearch } from "@/components/DistrictSearch";
 import { EarlyWarnings } from "@/components/EarlyWarnings";
 import { ForecastCharts } from "@/components/ForecastCharts";
+import { NowcastLive } from "@/components/NowcastLive";
 import { OverviewLive, OverviewPlots } from "@/components/OverviewLive";
 import { MandiPanel } from "@/components/MandiPanel";
 import { OutlookTable } from "@/components/OutlookTable";
@@ -24,6 +25,7 @@ import type { TabId } from "@/types/dashboard";
 
 const TAB_ORDER: TabId[] = [
   "overview",
+  "nowcast",
   "alerts",
   "map",
   "forecast",
@@ -48,6 +50,9 @@ export default function Page() {
     favorites,
     toggleFavorite,
     settings,
+    highlight,
+    mapFocus,
+    windowPack,
   } = useApp();
   const t = COPY[locale];
   const [cmpQ, setCmpQ] = useState("Pune");
@@ -163,6 +168,13 @@ export default function Page() {
               </div>
             ) : null}
 
+            {tab === "nowcast" && dashboard ? (
+              <div className="space-y-3">
+                <NowcastLive dash={dashboard} locale={locale} />
+                <SourcesBox tab="nowcast" locale={locale} />
+              </div>
+            ) : null}
+
             {tab === "alerts" && dashboard ? (
               <div className="space-y-3">
                 <section className="neo p-4">
@@ -189,13 +201,41 @@ export default function Page() {
 
             {tab === "map" && dashboard ? (
               <div className="space-y-3">
-                <SquareMap dash={dashboard} locale={locale} onPick={(l) => setLocation(l)} />
+                <SquareMap
+                  dash={dashboard}
+                  locale={locale}
+                  onPick={(l) => setLocation(l)}
+                  focus={mapFocus}
+                />
                 <SourcesBox tab="map" locale={locale} />
               </div>
             ) : null}
 
             {tab === "forecast" && dashboard ? (
               <div className="space-y-4">
+                {windowPack && Array.isArray((windowPack as { days?: unknown[] }).days) ? (
+                  <section className="neo p-4">
+                    <h3 className="text-sm font-bold">{t.predictive}</h3>
+                    <table className="mt-2 w-full text-left text-sm">
+                      <thead>
+                        <tr className="text-neo-muted">
+                          <th className="py-1">date</th>
+                          <th className="py-1">mm</th>
+                          <th className="py-1">%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {((windowPack as { days: { date?: string; precip_mm?: number; precip_prob_pct?: number }[] }).days).map((d) => (
+                          <tr key={d.date} className="border-t border-neo-line">
+                            <td className="py-1 font-mono">{d.date}</td>
+                            <td className="py-1 font-mono">{d.precip_mm}</td>
+                            <td className="py-1 font-mono">{d.precip_prob_pct ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </section>
+                ) : null}
                 <OutlookTable dash={dashboard} locale={locale} />
                 <ForecastCharts dash={dashboard} locale={locale} />
                 <Collapse title={t.compare} defaultOpen={false}>
@@ -233,7 +273,12 @@ export default function Page() {
               <div className="space-y-3">
                 <div className="grid gap-3 sm:grid-cols-2">
                   {dashboard.risks.map((r) => (
-                    <RiskCard key={r.id} risk={r} locale={locale} />
+                    <RiskCard
+                      key={r.id}
+                      risk={r}
+                      locale={locale}
+                      highlight={Boolean(highlight && (highlight === r.id || highlight.includes(r.id)))}
+                    />
                   ))}
                 </div>
                 <SourcesBox tab="risks" locale={locale} />

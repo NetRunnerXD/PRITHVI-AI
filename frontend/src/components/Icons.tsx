@@ -87,6 +87,15 @@ export function IconMarket(p: Props) {
   );
 }
 
+export function IconNowcast(p: Props) {
+  return (
+    <Svg {...p}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+    </Svg>
+  );
+}
+
 export function IconAlerts(p: Props) {
   return (
     <Svg {...p}>

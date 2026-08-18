@@ -97,8 +97,43 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
   };
   const days = (dash.predictive.outlook_days || []).slice(0, 7);
 
+  const decide = [
+    {
+      k: t.pumpSet,
+      v: (nc?.pump?.action || "—").toUpperCase(),
+      sub: `${t.pInterrupt} ${nc?.pump?.p_interrupt_90m ?? "—"}`,
+      hot: nc?.pump?.action === "hold",
+    },
+    {
+      k: t.fieldAccess,
+      v: nc?.access?.enterable === false ? t.closedField : t.enterable,
+      sub: (nc?.access?.reasons || []).slice(0, 1).join(", ") || "",
+      hot: nc?.access?.enterable === false,
+    },
+    {
+      k: t.kalWatch,
+      v: nc?.kal?.level === "watch" || nc?.tide?.drain_blocked ? (nc?.tide?.drain_blocked ? t.drainBlocked : t.kalWatch) : t.allClear,
+      sub: nc?.regime?.name || "",
+      hot: nc?.kal?.level === "watch" || Boolean(nc?.tide?.drain_blocked),
+    },
+  ];
+
   return (
     <div className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-3">
+        {decide.map((c) => (
+          <div key={c.k} className={`neo px-3 py-2 ${c.hot ? "ring-1 ring-neo-danger" : ""}`}>
+            <p className="text-[10px] uppercase tracking-widest text-neo-muted">{c.k}</p>
+            <p className="mt-1 text-sm font-bold">{c.v}</p>
+            {c.sub ? <p className="text-[11px] text-neo-muted">{c.sub}</p> : null}
+          </div>
+        ))}
+      </div>
+      {dash.science?.provenance ? (
+        <p className="text-[11px] text-neo-muted">
+          {t.provenance}: {dash.science.provenance.nowcast_mm || dash.science.provenance.rain}
+        </p>
+      ) : null}
       <div className="grid gap-3 lg:grid-cols-12">
         <section className="neo sky-card relative overflow-hidden p-5 lg:col-span-7">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.sky}</p>

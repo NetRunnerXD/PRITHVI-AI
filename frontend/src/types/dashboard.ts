@@ -286,6 +286,12 @@ export type DashboardSnapshot = {
     };
     verify?: { method?: string; note?: string; abs_vs_clim_mm?: number; nowcast?: { last_error_mm?: number | null; frac?: number } };
     nowcast?: NowcastPack;
+    provenance?: Record<string, string>;
+    monsoon?: { label?: string; regime?: string };
+    cwc?: { name?: string; km?: number; river?: string };
+    port?: { active?: boolean; signal?: string | null };
+    market_lock?: { advice?: string; lock?: boolean };
+    ledger?: { days?: { date?: string; precip_mm?: number }[] };
   };
 };
 
@@ -304,6 +310,8 @@ export type NowcastPack = {
   method?: string;
   hours?: NowcastHour[];
   observed?: NowcastHour[];
+  gap?: { dt_s?: number; series?: { t: string; mm: number; mm_h?: number; p_wet?: number }[]; note?: string };
+  playhead?: Record<string, unknown>;
   regime?: { name?: string; daily?: string; last_mm?: number; method?: string };
   clock?: { t_start?: string | null; t_stop?: string | null };
   ponding?: { mm_60?: number; mm_120?: number; factor?: number };
@@ -320,6 +328,58 @@ export type NowcastPack = {
   neighbor_storm?: { flag?: boolean; wet_neighbors?: number; home_mm?: number };
   locked?: Record<string, unknown>;
   actions?: { id?: string; action?: string; verb?: string; when?: string }[];
+  sat?: SatKalmanPack;
+};
+
+export type SatKalmanPack = {
+  engine?: string;
+  source?: string;
+  source_kind?: string;
+  obs_knots?: { t: string; mm?: number; mm_h?: number }[];
+  pred_series?: { t: string; mm_h: number; mm?: number; lead_s?: number; engine?: string }[];
+  playhead_rate?: number;
+  last_error_mm_h?: number | null;
+  mae?: number | null;
+  n_updates?: number;
+  kalman_gain?: number[];
+  next_obs_eta_s?: number | null;
+  stride_s?: number;
+  note?: string;
+  method?: string;
+  formula?: {
+    kind?: string;
+    eps?: number;
+    adv_mm_h?: number;
+    x?: number[];
+    last_obs_t?: string | null;
+    last_obs_mm_h?: number | null;
+    pulses?: { c?: string; s?: number; a?: number; kind?: string }[];
+    drivers?: Record<string, unknown>;
+  };
+  innovations?: { t: string; y: number; obs: number; pred: number }[];
+  history?: SatHistoryPack;
+  rewrites_locked?: boolean;
+  error?: string;
+};
+
+export type SatHistoryPoint = {
+  t: string;
+  pred?: number | null;
+  held?: number | null;
+  obs?: number | null;
+  y?: number | null;
+  after?: number | null;
+  scene?: boolean;
+};
+
+export type SatHistoryPack = {
+  series?: SatHistoryPoint[];
+  scenes?: { t: string; obs: number; pred: number; y: number; after?: number | null }[];
+  mae?: number | null;
+  n?: number;
+  stride_s?: number;
+  note?: string;
+  engine?: string;
 };
 
 export type ChatTranslation = {
@@ -330,18 +390,57 @@ export type ChatTranslation = {
   outbound?: { src?: string; tgt?: string; engine?: string; ok?: boolean };
 };
 
+export type ChatBlock = {
+  type: string;
+  text?: string;
+  title?: string;
+  items?: { label?: string; cite?: string; unit?: string; value?: unknown }[];
+  columns?: string[];
+  rows?: Record<string, unknown>[];
+  from?: string;
+  action?: string;
+  why?: unknown;
+};
+
+export type UiAction = {
+  op: string;
+  tab?: string;
+  path?: string;
+  value?: unknown;
+  target?: string;
+  center?: number[];
+  zoom?: number;
+  location?: Location;
+  highlight?: string;
+};
+
+export type ChatSuggestion = {
+  id: string;
+  label: string;
+  tab?: string;
+  window?: Record<string, unknown>;
+  location?: Location;
+  center?: number[];
+  zoom?: number;
+};
+
 export type ChatMsg = {
   id: string;
   role: "user" | "assistant";
   content: string;
   content_en?: string | null;
   locale?: string;
+  blocks?: ChatBlock[];
+  suggestions?: ChatSuggestion[];
   tool_trace?: { name: string; status: string; ms: number }[];
+  citations?: { tool?: string; field?: string; value?: unknown }[];
+  ui?: UiAction[];
   translation?: ChatTranslation;
 };
 
 export type TabId =
   | "overview"
+  | "nowcast"
   | "alerts"
   | "map"
   | "forecast"

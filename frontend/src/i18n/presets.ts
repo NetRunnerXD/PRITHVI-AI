@@ -27,6 +27,15 @@ export const PRESETS: Preset[] = [
     },
   },
   {
+    id: "window-haldia",
+    label: { en: "Haldia 23–28 Aug", hi: "हल्दिया 23–28 अगस्त", bn: "হলদিয়া ২৩–২৮ আগস্ট" },
+    text: {
+      en: "Can you show me rainfall prediction in Haldia for 23 to 28th August?",
+      hi: "हल्दिया में 23 से 28 अगस्त की बारिश का अनुमान दिखाएँ।",
+      bn: "হলদিয়ায় ২৩ থেকে ২৮ আগস্ট বৃষ্টির পূর্বাভাস দেখাবেন?",
+    },
+  },
+  {
     id: "irrigate",
     label: { en: "Should I irrigate?", hi: "सिंचाई?", bn: "সেচ দেব?" },
     text: {

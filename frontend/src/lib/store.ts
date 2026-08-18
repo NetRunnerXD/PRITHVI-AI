@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChatMsg, DashboardSnapshot, Density, Location, TabId, ThemeId, UnitSys } from "@/types/dashboard";
+import type { ChatMsg, DashboardSnapshot, Density, Location, TabId, ThemeId, UiAction, UnitSys } from "@/types/dashboard";
 import type { Locale } from "@/i18n/copy";
 import { fetchDashboard } from "./api";
 
@@ -71,6 +71,10 @@ type State = {
   error?: string;
   chat: ChatMsg[];
   streaming: boolean;
+  conversationId: string;
+  highlight: string | null;
+  mapFocus: { center: [number, number]; zoom?: number } | null;
+  windowPack: Record<string, unknown> | null;
   outputLocale: Locale;
   sidebarOpen: boolean;
   pendingAsk: string | null;
@@ -91,9 +95,37 @@ type State = {
   applySnapshot: (d: DashboardSnapshot) => void;
   addChat: (m: ChatMsg) => void;
   replaceLastAssistant: (m: ChatMsg) => void;
+  patchLastUser: (p: Partial<ChatMsg>) => void;
   clearChat: () => void;
   setStreaming: (v: boolean) => void;
+  applyUi: (actions: UiAction[]) => void;
+  applySuggestion: (s: {
+    tab?: string;
+    window?: Record<string, unknown>;
+    location?: Location;
+    center?: number[];
+    zoom?: number;
+  }) => void;
+  applyWidgetPatch: (path: string, value: unknown) => void;
 };
+
+function newConversationId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `c-${Date.now()}`;
+}
+
+const TABS = new Set<TabId>([
+  "overview",
+  "nowcast",
+  "alerts",
+  "map",
+  "forecast",
+  "predicted",
+  "risks",
+  "market",
+  "advisor",
+  "settings",
+]);
 
 export const useApp = create<State>((set, get) => ({
   locale: "en",
@@ -104,6 +136,10 @@ export const useApp = create<State>((set, get) => ({
   status: "idle",
   chat: [],
   streaming: false,
+  conversationId: newConversationId(),
+  highlight: null,
+  mapFocus: null,
+  windowPack: null,
   outputLocale: "en",
   sidebarOpen: true,
   pendingAsk: null,
@@ -184,6 +220,58 @@ export const useApp = create<State>((set, get) => ({
     }
     set({ chat });
   },
-  clearChat: () => set({ chat: [] }),
+  patchLastUser: (p) => {
+    const chat = [...get().chat];
+    for (let i = chat.length - 1; i >= 0; i--) {
+      if (chat[i].role === "user") {
+        chat[i] = { ...chat[i], ...p };
+        break;
+      }
+    }
+    set({ chat });
+  },
+  clearChat: () => set({ chat: [], conversationId: newConversationId(), highlight: null, windowPack: null }),
   setStreaming: (streaming) => set({ streaming }),
+  applyUi: (actions) => {
+    for (const a of actions || []) {
+      if (a.op === "highlight" && a.target) set({ highlight: a.target });
+      if (a.op === "patch" && a.path === "window" && a.value && typeof a.value === "object") {
+        set({ windowPack: a.value as Record<string, unknown> });
+      }
+    }
+  },
+  applySuggestion: (s: {
+    tab?: string;
+    window?: Record<string, unknown>;
+    location?: Location;
+    center?: number[];
+    zoom?: number;
+  }) => {
+    const loc = s.location;
+    const center = Array.isArray(s.center) && s.center.length >= 2
+      ? ([Number(s.center[0]), Number(s.center[1])] as [number, number])
+      : loc && typeof loc.lat === "number" && typeof loc.lon === "number"
+        ? ([loc.lat, loc.lon] as [number, number])
+        : null;
+    if (s.window) set({ windowPack: s.window });
+    if (center) set({ mapFocus: { center, zoom: s.zoom ?? 10 } });
+    if (s.tab && TABS.has(s.tab as TabId)) set({ tab: s.tab as TabId });
+    if (loc && typeof loc.lat === "number" && typeof loc.lon === "number") {
+      const cur = get().location;
+      const same =
+        cur &&
+        Math.abs(cur.lat - loc.lat) < 1e-4 &&
+        Math.abs(cur.lon - loc.lon) < 1e-4;
+      if (!same) void get().setLocation(loc);
+    }
+  },
+  applyWidgetPatch: (path, value) => {
+    if (path === "dashboard" && value && typeof value === "object") {
+      get().applySnapshot(value as DashboardSnapshot);
+      return;
+    }
+    if (path === "window" && value && typeof value === "object") {
+      set({ windowPack: value as Record<string, unknown> });
+    }
+  },
 }));

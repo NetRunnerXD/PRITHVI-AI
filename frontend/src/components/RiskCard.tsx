@@ -5,13 +5,21 @@ import { COPY, type Locale } from "@/i18n/copy";
 import { levelOf, riskTitle } from "@/lib/plain";
 import { Pill } from "./ui";
 
-export function RiskCard({ risk, locale }: { risk: Risk; locale: Locale }) {
+export function RiskCard({
+  risk,
+  locale,
+  highlight = false,
+}: {
+  risk: Risk;
+  locale: Locale;
+  highlight?: boolean;
+}) {
   const t = COPY[locale];
   const level = levelOf(risk.score_pct);
   const title = riskTitle(risk.id, locale, risk.label);
   const share = Math.max(risk.score_pct, 1);
   return (
-    <article className="neo p-4">
+    <article className={`neo p-4 ${highlight ? "ring-2 ring-neo-accent" : ""}`}>
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-bold">{title}</h3>
         <div className="flex items-center gap-2">

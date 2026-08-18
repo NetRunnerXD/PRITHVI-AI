@@ -55,6 +55,24 @@ export function Pill({ level, locale }: { level: Level; locale: Locale }) {
 }
 
 const TAB_SOURCES: Partial<Record<TabId, Record<Locale, string[]>>> = {
+  nowcast: {
+    en: [
+      "Nowcasting tab: 1 Hz playhead (clock, Hugli tide, countdown). Rain shape is 1-minute and sums to the locked hour.",
+      "Between-scene Kalman: predicts rain-rate every second until the next Open-Meteo (or INSAT/IMERG) hour, then updates on obs − pred. Minute / Second is graph stride, not two models.",
+      "History panel: causal predicted path, scene dots, last-scene hold, and offset bars. No rain is invented between scenes.",
+      "Not MinuteCast / MetNet / IMD radar. Open-Meteo hours are not a rain-gauge and not a satellite.",
+    ],
+    hi: [
+      "नाउकास्टिंग: सेकंड घड़ी (समय, हुगली ज्वार)। बारिश 1-मिनट और लॉक घंटे के बराबर।",
+      "दृश्यों के बीच Kalman: हर सेकंड दर का अनुमान, अगले घंटे पर obs − pred से सीखता है। मिनट/सेकंड केवल ग्राफ़ कदम।",
+      "MinuteCast / रडार नहीं। Open-Meteo गेज नहीं, उपग्रह नहीं।",
+    ],
+    bn: [
+      "নাউকাস্টিং: সেকেন্ড ঘড়ি (সময়, হুগলি জোয়ার)। বৃষ্টি ১-মিনিট, লক ঘণ্টার সমান।",
+      "দৃশ্যের মাঝে Kalman: প্রতি সেকেন্ডে হার, পরের ঘণ্টায় obs − pred দিয়ে শেখে। মিনিট/সেকেন্ড শুধু গ্রাফের ধাপ।",
+      "MinuteCast / রাডার নয়। Open-Meteo গেজ নয়, উপগ্রহ নয়।",
+    ],
+  },
   overview: {
     en: [
       "Sky, rain, wind, soil: Open-Meteo (weather model, not a village rain-gauge).",

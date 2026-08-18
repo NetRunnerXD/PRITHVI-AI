@@ -8,6 +8,7 @@ import type { TabId } from "@/types/dashboard";
 import {
   IconAdvisor,
   IconAlerts,
+  IconNowcast,
   IconForecast,
   IconLanguages,
   IconMap,
@@ -24,6 +25,7 @@ import {
 
 const TABS: { id: TabId; Icon: ComponentType<{ className?: string }> }[] = [
   { id: "overview", Icon: IconOverview },
+  { id: "nowcast", Icon: IconNowcast },
   { id: "alerts", Icon: IconAlerts },
   { id: "map", Icon: IconMap },
   { id: "forecast", Icon: IconForecast },
@@ -40,6 +42,7 @@ export function Sidebar() {
   const t = COPY[locale];
   const tabLabel: Record<TabId, string> = {
     overview: t.tabOverview,
+    nowcast: t.tabNowcast,
     alerts: t.tabAlerts,
     map: t.tabMap,
     forecast: t.tabForecast,

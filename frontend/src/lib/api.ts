@@ -3,6 +3,52 @@ import { apiUrl } from "./config";
 
 export { apiUrl, API_BASE } from "./config";
 
+export async function fetchNowcastLive(loc?: Location): Promise<Record<string, unknown> | null> {
+  const q = new URLSearchParams();
+  if (loc?.district) q.set("district", loc.district);
+  if (loc?.place_name) q.set("place", loc.place_name);
+  if (loc?.lat != null) q.set("lat", String(loc.lat));
+  if (loc?.lon != null) q.set("lon", String(loc.lon));
+  const qs = q.toString();
+  const paths = ["/nowcast/live", "/nowcast-live", "/live-nowcast", "/nowcast"];
+  for (const path of paths) {
+    try {
+      const r = await fetch(`${apiUrl(path)}?${qs}`);
+      if (!r.ok) continue;
+      const data = (await r.json()) as Record<string, unknown>;
+      if (data.gap || data.hours || data.knots || data.nowcast) return data;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+export async function fetchNowcastSat(
+  loc?: Location,
+  stride: 1 | 60 = 60
+): Promise<Record<string, unknown> | null> {
+  const q = new URLSearchParams();
+  if (loc?.district) q.set("district", loc.district);
+  if (loc?.place_name) q.set("place", loc.place_name);
+  if (loc?.lat != null) q.set("lat", String(loc.lat));
+  if (loc?.lon != null) q.set("lon", String(loc.lon));
+  q.set("stride", String(stride));
+  const qs = q.toString();
+  const paths = ["/nowcast/sat", "/nowcast-sat"];
+  for (const path of paths) {
+    try {
+      const r = await fetch(`${apiUrl(path)}?${qs}`);
+      if (!r.ok) continue;
+      const data = (await r.json()) as Record<string, unknown>;
+      if (data.sat || data.formula || data.engine === "sat_kalman") return data;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 export async function fetchDashboard(loc?: Location): Promise<DashboardSnapshot> {
   const q = new URLSearchParams();
   if (loc?.district) q.set("district", loc.district);
@@ -47,7 +93,8 @@ export async function streamChat(
   history: ChatMsg[],
   onEvent: SseHandler,
   outputLocale?: string,
-  regenerate?: boolean
+  regenerate?: boolean,
+  conversationId?: string
 ): Promise<ChatMsg | null> {
   const r = await fetch(apiUrl("/chat"), {
     method: "POST",
@@ -59,6 +106,7 @@ export async function streamChat(
       location,
       history: history.slice(-6),
       regenerate: Boolean(regenerate),
+      conversation_id: conversationId || undefined,
     }),
   });
   if (!r.body) throw new Error("no stream");

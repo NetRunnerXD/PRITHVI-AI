@@ -5,8 +5,8 @@ import { COPY, type Locale } from "@/i18n/copy";
 import { presetsFor } from "@/i18n/presets";
 import { streamChat } from "@/lib/api";
 import { useApp } from "@/lib/store";
-import type { ChatMsg, DashboardSnapshot } from "@/types/dashboard";
-import { Markdown } from "./Markdown";
+import type { ChatMsg, ChatSuggestion, DashboardSnapshot } from "@/types/dashboard";
+import { ChatBlocks } from "./ChatBlocks";
 
 export function ChatDock() {
   const {
@@ -17,11 +17,13 @@ export function ChatDock() {
     chat,
     addChat,
     replaceLastAssistant,
+    patchLastUser,
     clearChat,
     streaming,
     setStreaming,
     applySnapshot,
-    setTab,
+    applySuggestion,
+    conversationId,
     pendingAsk,
     setPendingAsk,
   } = useApp();
@@ -65,15 +67,16 @@ export function ChatDock() {
         locale,
         history,
         (ev) => {
+          if (ev.type === "meta" && typeof ev.question_en === "string") {
+            patchLastUser({ content_en: ev.question_en });
+          }
           if (ev.type === "widget_patch" && ev.path === "dashboard" && ev.value) {
             applySnapshot(ev.value as DashboardSnapshot);
           }
-          if (ev.type === "widget_patch" && ev.path === "compare") {
-            setTab("forecast");
-          }
         },
         outputLocale,
-        opts?.regenerate
+        opts?.regenerate,
+        conversationId
       );
       if (final) {
         if (opts?.regenerate) replaceLastAssistant(final);
@@ -137,19 +140,32 @@ export function ChatDock() {
               m.role === "user" ? "ml-auto bg-neo-rain/15" : "bg-neo-bg"
             }`}
           >
-            {m.role === "assistant" ? <Markdown text={m.content} /> : <p className="whitespace-pre-wrap">{m.content}</p>}
-            {m.role === "assistant" && m.content_en && showEn ? (
-              <div className="mt-2 border-t border-neo-line pt-2 text-xs text-neo-muted">
-                <Markdown text={m.content_en} />
+            {m.role === "assistant" ? (
+              m.blocks && m.blocks.length ? (
+                <ChatBlocks blocks={m.blocks} prose={m.content} />
+              ) : (
+                <ChatBlocks prose={m.content} />
+              )
+            ) : (
+              <p className="whitespace-pre-wrap">{m.content}</p>
+            )}
+            {m.role === "assistant" && m.suggestions && m.suggestions.length ? (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {m.suggestions.map((s: ChatSuggestion) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className="chip text-neo-accent"
+                    onClick={() => applySuggestion(s)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
               </div>
             ) : null}
-            {m.tool_trace && m.tool_trace.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {m.tool_trace.map((tr, i) => (
-                  <span key={`${tr.name}-${i}`} className="chip">
-                    {tr.name.replaceAll("_", " ")}
-                  </span>
-                ))}
+            {m.role === "assistant" && m.content_en && showEn ? (
+              <div className="mt-2 border-t border-neo-line pt-2 text-xs text-neo-muted">
+                <ChatBlocks prose={m.content_en} />
               </div>
             ) : null}
           </div>

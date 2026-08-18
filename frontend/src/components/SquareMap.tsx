@@ -11,14 +11,16 @@ export function SquareMap({
   dash,
   locale,
   onPick,
+  focus,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   onPick: (l: Location) => void;
+  focus?: { center: [number, number]; zoom?: number } | null;
 }) {
   const t = COPY[locale];
   const [basemap, setBasemap] = useState<string>("positron");
-  const [zoom, setZoom] = useState(dash.map.zoom || 8);
+  const [zoom, setZoom] = useState(focus?.zoom || dash.map.zoom || 8);
   const [overlays, setOverlays] = useState<string[]>([]);
   const [wide, setWide] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -27,18 +29,18 @@ export function SquareMap({
   const box = useMemo(
     () => (
       <MapWrap
-        lat={dash.location.lat}
-        lon={dash.location.lon}
+        lat={focus?.center[0] ?? dash.location.lat}
+        lon={focus?.center[1] ?? dash.location.lon}
         label={dash.location.label}
         rainMm={rain}
-        zoom={zoom}
+        zoom={focus?.zoom ?? zoom}
         basemap={basemap}
         nearby={nearby}
         overlays={overlays}
         onPick={onPick}
       />
     ),
-    [dash.location, rain, zoom, basemap, nearby, overlays, onPick]
+    [dash.location, rain, zoom, basemap, nearby, overlays, onPick, focus]
   );
 
   function toggleOverlay(id: string) {

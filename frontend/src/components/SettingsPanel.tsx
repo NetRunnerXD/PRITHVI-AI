@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS, useApp } from "@/lib/store";
 import type { Density, TabId, ThemeId, UnitSys } from "@/types/dashboard";
 
 const THEMES: ThemeId[] = ["sand", "monsoon", "midnight", "ocean", "contrast"];
-const TABS: TabId[] = ["overview", "alerts", "map", "forecast", "predicted", "risks", "market", "advisor"];
+const TABS: TabId[] = ["overview", "nowcast", "alerts", "map", "forecast", "predicted", "risks", "market", "advisor"];
 
 export function SettingsPanel() {
   const { locale, setLocale, outputLocale, setOutputLocale, settings, setSettings, resetSettings } = useApp();
@@ -131,6 +131,7 @@ export function SettingsPanel() {
 function tabLabel(t: Record<string, string>, id: TabId) {
   const map: Record<string, string> = {
     overview: t.tabOverview,
+    nowcast: t.tabNowcast,
     alerts: t.tabAlerts,
     map: t.tabMap,
     forecast: t.tabForecast,
