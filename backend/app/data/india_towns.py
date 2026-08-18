@@ -8,6 +8,10 @@ from __future__ import annotations
 # name, state, district, lat, lon, kind, aliases
 TOWNS: list[dict] = [
     {"name": "Haldia", "state": "West Bengal", "district": "Purba Medinipur", "lat": 22.0667, "lon": 88.0698, "kind": "city", "aliases": ["haldia port"]},
+    {"name": "Cherrapunji", "state": "Meghalaya", "district": "East Khasi Hills", "lat": 25.2702, "lon": 91.7322, "kind": "town", "aliases": ["cherrapunjee", "sohra", "cherra"]},
+    {"name": "Shillong", "state": "Meghalaya", "district": "East Khasi Hills", "lat": 25.5788, "lon": 91.8933, "kind": "city", "aliases": []},
+    {"name": "Sagar Island", "state": "West Bengal", "district": "South 24 Parganas", "lat": 21.6500, "lon": 88.0500, "kind": "town", "aliases": ["sagar", "gangasagar"]},
+    {"name": "Kakdwip", "state": "West Bengal", "district": "South 24 Parganas", "lat": 21.8800, "lon": 88.1800, "kind": "town", "aliases": ["kakadwip"]},
     {"name": "Digha", "state": "West Bengal", "district": "Purba Medinipur", "lat": 21.6264, "lon": 87.5070, "kind": "town", "aliases": []},
     {"name": "Tamluk", "state": "West Bengal", "district": "Purba Medinipur", "lat": 22.3000, "lon": 87.9167, "kind": "town", "aliases": ["tamralipta"]},
     {"name": "Contai", "state": "West Bengal", "district": "Purba Medinipur", "lat": 21.7786, "lon": 87.7517, "kind": "town", "aliases": ["kantai"]},
@@ -74,18 +78,63 @@ TOWNS: list[dict] = [
 ]
 
 
+def extract_towns(text: str) -> list[str]:
+    """All curated towns mentioned, longest match first. Fuzzy on tokens."""
+    import re
+
+    from app.data.fuzzy import close_enough, tokens
+
+    blob = (text or "").lower()
+    found: dict[str, int] = {}
+    for t in TOWNS:
+        names = [t["name"], *t.get("aliases", [])]
+        for n in names:
+            key = (n or "").strip().lower()
+            if len(key) < 4:
+                continue
+            if re.search(rf"(?<![a-z]){re.escape(key)}(?![a-z])", blob):
+                found[t["name"]] = max(found.get(t["name"], 0), len(key))
+    if not found:
+        for tok in tokens(text or ""):
+            for t in TOWNS:
+                names = [t["name"], *t.get("aliases", [])]
+                if any(close_enough(tok, n) for n in names if n):
+                    found[t["name"]] = max(found.get(t["name"], 0), len(tok))
+    return [name for name, _ in sorted(found.items(), key=lambda x: -x[1])]
+
+
+def extract_town(text: str) -> str | None:
+    """Longest town / alias mentioned in free text (Haldia, not the district)."""
+    hits = extract_towns(text)
+    return hits[0] if hits else None
+
+
 def search_towns(q: str, limit: int = 8) -> list[dict]:
+    from app.data.fuzzy import close_enough, match_rank
+
     needle = (q or "").strip().lower()
     if not needle:
         return []
     scored: list[tuple[int, dict]] = []
     for t in TOWNS:
         names = [t["name"].lower(), *(a.lower() for a in t["aliases"])]
+        ranks = [match_rank(needle, n) for n in names]
+        ranks = [r for r in ranks if r is not None]
         if needle in names:
             scored.append((0, t))
-        elif any(n.startswith(needle) or needle.startswith(n) for n in names if len(needle) >= 3):
+        elif ranks and min(ranks) == 0:
             scored.append((1, t))
-        elif any(needle in n for n in names):
+        elif any(
+            n.startswith(needle) and len(needle) >= 4 and 0 < len(n) - len(needle) <= 2
+            for n in names
+        ):
+            # "chenna" → Chennai. NOT "puruliya" → Puri (longer query, shorter name).
             scored.append((2, t))
+        elif ranks:
+            scored.append((3, t))
+        elif any(close_enough(needle, n) for n in names):
+            scored.append((3, t))
+        elif any(len(needle) >= 6 and needle in n for n in names):
+            scored.append((4, t))
     scored.sort(key=lambda x: (x[0], x[1]["name"]))
     return [t for _, t in scored[:limit]]

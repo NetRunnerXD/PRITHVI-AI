@@ -8,9 +8,11 @@ def test_search_pune():
     assert hits[0].state == "Maharashtra"
 
 
-def test_resolve_default_nadia():
+def test_resolve_default_haldia():
     loc = resolve_location()
-    assert loc.district == "Nadia"
+    assert loc.place_name == "Haldia"
+    assert loc.district == "Purba Medinipur"
+    assert loc.state == "West Bengal"
 
 
 def test_nearby_excludes_self():
@@ -25,6 +27,24 @@ def test_resolve_haldia_is_west_bengal_town():
     assert loc.place_name == "Haldia"
     assert loc.state == "West Bengal"
     assert loc.place_kind == "city"
+
+
+def test_resolve_cherrapunji_is_meghalaya():
+    loc = resolve_location(q="Cherrapunji")
+    assert loc.place_name == "Cherrapunji"
+    assert loc.state == "Meghalaya"
+    assert loc.district == "East Khasi Hills"
+
+
+def test_resolve_puruliya_is_purulia_not_puri():
+    loc = resolve_location(q="Puruliya")
+    assert loc.district == "Purulia"
+    assert loc.state == "West Bengal"
+    assert loc.district != "Puri"
+    from app.services.location_svc import resolve_named_place
+
+    assert resolve_named_place("Puruliya").district == "Purulia"
+    assert resolve_named_place("Puri").state == "Odisha"
 
 
 def test_search_towns_shantiniketan():

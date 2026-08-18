@@ -12,7 +12,7 @@ from functools import lru_cache
 _RAW: list[tuple] = [
     # West Bengal / Gangetic
     ("in_wb_nadia", "Nadia, West Bengal", "West Bengal", "Nadia", "Gangetic West Bengal", 23.4710, 88.5565, "krishnanagar,kalyani", "aman_rice"),
-    ("in_wb_kolkata", "Kolkata, West Bengal", "West Bengal", "Kolkata", "Gangetic West Bengal", 22.5726, 88.3639, "calcutta", "vegetables"),
+    ("in_wb_kolkata", "Kolkata, West Bengal", "West Bengal", "Kolkata", "Gangetic West Bengal", 22.5726, 88.3639, "calcutta,calcuta,kolkatta", "vegetables"),
     ("in_wb_n24p", "North 24 Parganas, West Bengal", "West Bengal", "North 24 Parganas", "Gangetic West Bengal", 22.7245, 88.4805, "barasat,bongaon", "aman_rice"),
     ("in_wb_s24p", "South 24 Parganas, West Bengal", "West Bengal", "South 24 Parganas", "Gangetic West Bengal", 22.1352, 88.4016, "baruipur,sundarban", "aman_rice"),
     ("in_wb_howrah", "Howrah, West Bengal", "West Bengal", "Howrah", "Gangetic West Bengal", 22.5958, 88.2636, "haora", "vegetables"),
@@ -22,7 +22,7 @@ _RAW: list[tuple] = [
     ("in_wb_eburdwan", "Purba Bardhaman, West Bengal", "West Bengal", "Purba Bardhaman", "Gangetic West Bengal", 23.2324, 87.8615, "bardhaman,burdwan", "aman_rice"),
     ("in_wb_birbhum", "Birbhum, West Bengal", "West Bengal", "Birbhum", "Gangetic West Bengal", 23.8400, 87.6186, "suri", "aman_rice"),
     ("in_wb_bankura", "Bankura, West Bengal", "West Bengal", "Bankura", "Gangetic West Bengal", 23.2324, 87.0786, "", "aman_rice"),
-    ("in_wb_purulia", "Purulia, West Bengal", "West Bengal", "Purulia", "Gangetic West Bengal", 23.3321, 86.3652, "", "maize"),
+    ("in_wb_purulia", "Purulia, West Bengal", "West Bengal", "Purulia", "Gangetic West Bengal", 23.3321, 86.3652, "puruliya,purulia district", "maize"),
     ("in_wb_eastmed", "Paschim Medinipur, West Bengal", "West Bengal", "Paschim Medinipur", "Gangetic West Bengal", 22.4250, 87.3190, "midnapore,west midnapore", "aman_rice"),
     ("in_wb_jalpaiguri", "Jalpaiguri, West Bengal", "West Bengal", "Jalpaiguri", "Sub Himalayan West Bengal", 26.5435, 88.7201, "", "tea"),
     ("in_wb_darjeeling", "Darjeeling, West Bengal", "West Bengal", "Darjeeling", "Sub Himalayan West Bengal", 27.0360, 88.2627, "siliguri", "tea"),
@@ -161,28 +161,74 @@ def default_district() -> dict:
 
 
 def search_districts(q: str, limit: int = 8) -> list[dict]:
+    from app.data.fuzzy import close_enough, fold, match_rank, ratio
+
     needle = (q or "").strip().lower()
     if not needle:
         return all_districts()[:limit]
+    # A bare state name must not blob-match every district (Odisha ≠ Balasore).
+    # Alias hits still count: "delhi" → New Delhi.
     scored: list[tuple[int, dict]] = []
     for d in all_districts():
-        blob = " ".join(
-            [d["district"], d["state"], d["label"], d["id"], *d["aliases"]]
-        ).lower()
+        names = [d["district"], *d["aliases"], d["label"]]
+        blob = " ".join([d["district"], d["state"], d["label"], d["id"], *d["aliases"]]).lower()
+        ranks = [match_rank(needle, n) for n in names if n]
+        ranks = [r for r in ranks if r is not None]
         if needle == d["district"].lower() or needle == d["id"]:
             scored.append((0, d))
-        elif needle in d["district"].lower():
+        elif ranks and min(ranks) == 0:
             scored.append((1, d))
-        elif any(needle in a or a in needle for a in d["aliases"]):
-            scored.append((2, d))
-        elif needle in blob:
+        elif needle in d["district"].lower() and len(needle) >= 5:
+            first = d["district"].lower().split()[0]
+            # "puri" must not stem-hit Purulia; "purba" may hit Purba Medinipur.
+            if not (first.startswith(needle) and len(first) - len(needle) >= 2):
+                scored.append((2, d))
+        elif any(needle == a.lower() or fold(needle) == fold(a) for a in d["aliases"] if a):
+            scored.append((1, d))
+        elif any(len(a) >= 5 and (needle in a or a in needle) and abs(len(a) - len(needle)) <= 2 for a in d["aliases"] if a):
             scored.append((3, d))
+        elif any(close_enough(needle, n) for n in names if n):
+            scored.append((4 + int((1 - ratio(needle, d["district"])) * 10), d))
+        elif len(needle) >= 6 and needle in blob and not is_state_name(needle):
+            scored.append((8, d))
     scored.sort(key=lambda x: (x[0], x[1]["label"]))
     return [d for _, d in scored[:limit]]
 
 
 def all_states() -> list[str]:
     return sorted({d["state"] for d in all_districts()})
+
+
+_STATE_ALIASES = {
+    "wb": "West Bengal",
+    "bengal": "West Bengal",
+    "orissa": "Odisha",
+    "tn": "Tamil Nadu",
+    "up": "Uttar Pradesh",
+    "mp": "Madhya Pradesh",
+    "hp": "Himachal Pradesh",
+    "uk": "Uttarakhand",
+    "ap": "Andhra Pradesh",
+    "j&k": "Jammu and Kashmir",
+    "a&n": "Andaman and Nicobar",
+    "andaman": "Andaman and Nicobar",
+}
+
+
+def is_state_name(q: str) -> bool:
+    """True when the whole string is a state / UT, not a district."""
+    n = (q or "").strip().lower()
+    if not n:
+        return False
+    if n in {s.lower() for s in all_states()}:
+        return True
+    if n in _STATE_ALIASES:
+        return True
+    if n in {"west bengal", "tamil nadu", "uttar pradesh", "madhya pradesh",
+             "andhra pradesh", "himachal pradesh", "jammu and kashmir",
+             "andaman and nicobar", "dadra and nagar haveli"}:
+        return True
+    return False
 
 
 def districts_in_state(state: str) -> list[dict]:
@@ -205,10 +251,12 @@ def districts_in_state(state: str) -> list[dict]:
     return out or list(all_districts())
 
 
-def extract_place(text: str) -> str | None:
-    """Longest district / alias mentioned in free text (e.g. Haldia, Darjeeling)."""
+def extract_places(text: str) -> list[str]:
+    """All district names mentioned, longest match first. Fuzzy on tokens (Puruliya)."""
+    from app.data.fuzzy import close_enough, tokens
+
     blob = (text or "").lower()
-    hits: list[tuple[int, str]] = []
+    found: dict[str, int] = {}
     for d in all_districts():
         names = [d["district"], *[a for a in d["aliases"] if a]]
         for n in names:
@@ -216,11 +264,65 @@ def extract_place(text: str) -> str | None:
             if len(key) < 4:
                 continue
             if re.search(rf"(?<![a-z]){re.escape(key)}(?![a-z])", blob):
-                hits.append((len(key), d["district"]))
-    if not hits:
-        return None
-    hits.sort(key=lambda x: -x[0])
-    return hits[0][1]
+                found[d["district"]] = max(found.get(d["district"], 0), len(key))
+    if not found:
+        for tok in tokens(text or ""):
+            for d in all_districts():
+                names = [d["district"], *d["aliases"]]
+                if any(close_enough(tok, n) for n in names if n):
+                    found[d["district"]] = max(found.get(d["district"], 0), len(tok))
+    return [name for name, _ in sorted(found.items(), key=lambda x: -x[1])]
+
+
+def extract_place(text: str) -> str | None:
+    """Longest district / alias mentioned in free text (e.g. Haldia, Darjeeling)."""
+    hits = extract_places(text)
+    return hits[0] if hits else None
+
+
+def match_states(text: str) -> list[str]:
+    """Every gazetteer state whose name or alias appears in the text."""
+    blob = (text or "").lower()
+    found: list[str] = []
+    seen: set[str] = set()
+    for s in all_states():
+        if s.lower() in blob and s not in seen:
+            seen.add(s)
+            found.append(s)
+    for alias, full in {
+        "west bengal": "West Bengal",
+        "wb ": "West Bengal",
+        "odisha": "Odisha",
+        "orissa": "Odisha",
+        "tamil nadu": "Tamil Nadu",
+        "uttar pradesh": "Uttar Pradesh",
+        "madhya pradesh": "Madhya Pradesh",
+        "andhra": "Andhra Pradesh",
+        "maharashtra": "Maharashtra",
+        "karnataka": "Karnataka",
+        "kerala": "Kerala",
+        "gujarat": "Gujarat",
+        "rajasthan": "Rajasthan",
+        "bihar": "Bihar",
+        "jharkhand": "Jharkhand",
+        "assam": "Assam",
+        "punjab": "Punjab",
+        "haryana": "Haryana",
+        "delhi": "Delhi",
+        "telangana": "Telangana",
+        "chhattisgarh": "Chhattisgarh",
+        "পশ্চিমবঙ্গ": "West Bengal",
+        "पश्चिम बंगाल": "West Bengal",
+        "ओडिशा": "Odisha",
+        "राजस्थान": "Rajasthan",
+        "महाराष्ट्र": "Maharashtra",
+        "केरल": "Kerala",
+        "पंजाब": "Punjab",
+    }.items():
+        if alias in blob and full not in seen:
+            seen.add(full)
+            found.append(full)
+    return found
 
 
 def match_state(text: str) -> str | None:
