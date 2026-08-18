@@ -94,9 +94,9 @@ def required_tools(intent: str) -> list[str]:
     packs = {
         "rank": ["list_districts", "rank_districts"],
         "list": ["list_states", "list_districts"],
-        "irrigation": ["get_weather_forecast", "get_soil_moisture", "get_prescriptions", "get_water_balance", "get_science_pack"],
-        "rain": ["get_weather_forecast", "get_7day_outlook", "get_science_pack"],
-        "flood": ["get_imd_warnings", "get_flood_outlook", "get_hazard_watch", "rank_districts", "get_science_pack"],
+        "irrigation": ["get_nowcast", "get_weather_forecast", "get_soil_moisture", "get_prescriptions", "get_water_balance", "get_science_pack"],
+        "rain": ["get_nowcast", "get_weather_forecast", "get_7day_outlook", "get_science_pack"],
+        "flood": ["get_imd_warnings", "get_nowcast", "get_flood_outlook", "get_hazard_watch", "rank_districts", "get_science_pack"],
         "seismic": ["get_hazard_watch"],
         "tsunami": ["get_hazard_watch"],
         "marine": ["get_hazard_watch", "get_weather_forecast"],
@@ -105,9 +105,9 @@ def required_tools(intent: str) -> list[str]:
         "aqi": ["get_air_quality"],
         "price": ["get_mandi_prices", "get_state_mandi"],
         "compare": ["compare_districts"],
-        "outlook": ["get_7day_outlook", "get_water_balance", "get_science_pack"],
+        "outlook": ["get_nowcast", "get_7day_outlook", "get_water_balance", "get_science_pack"],
         "crop": ["retrieve_playbook", "get_mandi_prices", "get_science_pack"],
-        "general": ["get_weather_forecast", "get_imd_warnings", "get_hazard_watch", "get_science_pack"],
+        "general": ["get_nowcast", "get_weather_forecast", "get_imd_warnings", "get_hazard_watch", "get_science_pack"],
     }
     return list(packs.get(intent, packs["general"]))
 

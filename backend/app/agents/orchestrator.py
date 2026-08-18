@@ -110,6 +110,8 @@ def _tool_args(name: str, loc: Location, state: str | None, metric: str, message
         return {"name": loc.district}
     if name == "get_air_quality":
         return {"place": loc.district}
+    if name == "get_nowcast":
+        return {"speech": message}
     if name in {"get_weather_forecast", "get_soil_moisture", "get_prescriptions"}:
         return {}
     return {}
@@ -201,6 +203,8 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
 
     for name in required_tools(intent):
         args = _tool_args(name, loc, state, metric, message_en)
+        if name == "get_nowcast":
+            args["speech"] = original
         pack = await exec_tool(name, args)
         yield pack["start"]
         yield {"type": "tool_result", "name": name, "data": pack["result"], "ms": pack["ms"]}

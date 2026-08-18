@@ -65,6 +65,28 @@ async def science_api(loc: Location = Depends(loc_from_query)):
     return {"location": snap.location.model_dump(), "science": snap.science or {}}
 
 
+@router.get("/nowcast")
+async def nowcast_api(loc: Location = Depends(loc_from_query)):
+    snap = await build_snapshot(loc)
+    nc = (snap.science or {}).get("nowcast") or {}
+    return {
+        "location": snap.location.model_dump(),
+        "nowcast": nc.get("locked") or {},
+        "hours": nc.get("hours") or [],
+        "observed": nc.get("observed") or [],
+        "regime": nc.get("regime"),
+        "clock": nc.get("clock"),
+        "pump": nc.get("pump"),
+        "access": nc.get("access"),
+        "ponding": nc.get("ponding"),
+        "kal": nc.get("kal"),
+        "tide": nc.get("tide"),
+        "air": nc.get("air"),
+        "actions": nc.get("actions") or [],
+        "method": nc.get("method"),
+    }
+
+
 @router.get("/insights")
 async def insights(loc: Location = Depends(loc_from_query)):
     snap = await build_snapshot(loc)

@@ -164,6 +164,29 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
     async def get_science_pack(**_: Any) -> dict:
         return {"science": snap.science or {}, "widget": "science"}
 
+    async def get_nowcast(speech: str | None = None, **_: Any) -> dict:
+        from app.science.nowcast import apply_speech_only
+
+        nc = (snap.science or {}).get("nowcast") or {}
+        if speech and nc:
+            nc = apply_speech_only(nc, str(speech))
+        return {
+            "nowcast": nc.get("locked") or {},
+            "clock": nc.get("clock"),
+            "pump": nc.get("pump"),
+            "access": nc.get("access"),
+            "ponding": nc.get("ponding"),
+            "kal": nc.get("kal"),
+            "tide": nc.get("tide"),
+            "cost": nc.get("cost"),
+            "air": nc.get("air"),
+            "labour": nc.get("labour"),
+            "actions": nc.get("actions") or [],
+            "speech": (nc.get("speech") or {}).get("heard"),
+            "note": (nc.get("locked") or {}).get("engine_note"),
+            "widget": "nowcast",
+        }
+
     async def get_hourly_series(variable: str = "precip", **_: Any) -> dict:
         key = {
             "precip": "precip_hourly",
@@ -264,6 +287,13 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
         Tool("get_science_pack", "Hysteresis, irrigation regret, livelihood interruption, residual atlas, trust policy, phenology, vernacular, blind spot.",
              {"type": "object", "properties": {}},
              get_science_pack, "science"),
+        Tool(
+            "get_nowcast",
+            "Locked 0–6 h nowcast: hours with engine labels, onset, pump-set interrupt, field access, ponding. Quote only these numbers. Optional speech=user text (category only, never millimetres).",
+            {"type": "object", "properties": {"speech": {"type": "string"}}, "additionalProperties": True},
+            get_nowcast,
+            "nowcast",
+        ),
         Tool("get_hourly_series", "Hourly series: precip|temp|soil|rh|wind.",
              {"type": "object", "properties": {"variable": {"type": "string"}}, "additionalProperties": True},
              get_hourly_series, "descriptive"),
