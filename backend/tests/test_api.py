@@ -39,5 +39,40 @@ def test_map_layers():
     ids = {b["id"] for b in r.json()["basemaps"]}
     assert {"positron", "streets", "satellite", "terrain"} <= ids
     overlays = {o["id"]: o for o in r.json()["overlays"]}
-    assert overlays["bhuvan_geomorph"]["url"] == "/api/map/wms"
+    assert overlays["bhuvan_geomorph"]["path"] == "/api/map/wms"
+    assert overlays["bhuvan_geomorph"]["url"].endswith("/api/map/wms")
     assert "WB_LGEOM" in overlays["bhuvan_geomorph"]["layers"]
+
+
+def test_standalone_service_card_and_openapi():
+    root = client.get("/")
+    assert root.status_code == 200
+    body = root.json()
+    assert body["service"] == "rituchakra-api"
+    assert body["docs"] == "/docs"
+    assert body["openapi"] == "/openapi.json"
+    catalog = client.get("/api")
+    assert catalog.status_code == 200
+    paths = {row["path"] for row in catalog.json()["routes"]}
+    assert "/api/health" in paths
+    assert "/api/dashboard" in paths
+    assert "/api/chat" in paths
+    spec = client.get("/openapi.json")
+    assert spec.status_code == 200
+    assert spec.json()["info"]["title"] == "Rituchakra API"
+
+
+def test_cors_allows_web_origin():
+    r = client.get("/api/health", headers={"Origin": "http://localhost:3000"})
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    assert r.headers.get("x-api-version")
+    pre = client.options(
+        "/api/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert pre.status_code in {200, 204}
+    assert pre.headers.get("access-control-allow-origin")

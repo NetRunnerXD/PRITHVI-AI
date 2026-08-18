@@ -3,6 +3,7 @@ from fastapi.responses import Response
 
 import httpx
 
+from app.http_urls import api_url
 from app.services.location_svc import nearby, resolve_location, search_places
 
 BHUVAN_WMS = "https://bhuvan-vec3.nrsc.gov.in/bhuvan/ows"
@@ -50,7 +51,8 @@ async def geo_nearby(lat: float, lon: float, limit: int = 8):
 
 
 @router.get("/map/layers")
-async def map_layers():
+async def map_layers(request: Request):
+    wms = api_url("/map/wms", request)
     return {
         "basemaps": [
             {
@@ -90,7 +92,8 @@ async def map_layers():
                 "id": "bhuvan_geomorph",
                 "label": "Bhuvan / NRSC geomorphology (West Bengal)",
                 "type": "wms",
-                "url": "/api/map/wms",
+                "url": wms,
+                "path": "/api/map/wms",
                 "layers": BHUVAN_WB,
                 "href": "https://bhuvan.nrsc.gov.in/ngmaps/thematic?theme1=geomorphology.wb_gm50k_0506_new&tlp=vector&state=WEST+BENGAL&district=ALL",
             },
@@ -98,7 +101,8 @@ async def map_layers():
                 "id": "bhuvan_geomorph_in",
                 "label": "Bhuvan / NRSC litho-geomorphology (India states)",
                 "type": "wms",
-                "url": "/api/map/wms",
+                "url": wms,
+                "path": "/api/map/wms",
                 "layers": BHUVAN_IN,
                 "href": "https://www.nrsc.gov.in/nrscnew/Dataproducts_Thematic_overview.php",
             },

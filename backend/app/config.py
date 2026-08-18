@@ -40,13 +40,23 @@ class Settings(BaseSettings):
     default_district: str = "Nadia"
 
     cache_dir: str = str(ROOT / ".cache")
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # Empty = derive from the incoming request. Set when publishing behind a public host.
+    public_base_url: str = ""
+    api_version: str = "0.3.0"
+    # Comma list, or * for any browser / React Native origin.
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8081,http://localhost:19006"
+    # LAN / Expo / Metro. Used when a phone hits this machine's API.
+    cors_origin_regex: str = r"https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?"
 
-    user_agent: str = "RainFall/1.0 (India environmental intelligence; local-dev)"
+    user_agent: str = "Rituchakra/0.3 (India environmental intelligence; local-dev)"
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def cors_allow_all(self) -> bool:
+        return "*" in self.cors_origin_list
 
 
 @lru_cache

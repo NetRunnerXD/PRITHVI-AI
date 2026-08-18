@@ -19,4 +19,12 @@ async def chat(payload: ChatRequest):
         async for event in run_agent(payload):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
