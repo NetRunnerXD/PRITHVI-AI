@@ -1,6 +1,7 @@
 "use client";
 
 import { COPY, type Locale } from "@/i18n/copy";
+import { API_BASE } from "@/lib/config";
 import { DEFAULT_SETTINGS, useApp } from "@/lib/store";
 import type { Density, TabId, ThemeId, UnitSys } from "@/types/dashboard";
 
@@ -120,6 +121,8 @@ export function SettingsPanel() {
         <p className="font-mono text-[11px] text-neo-muted">
           {DEFAULT_SETTINGS.theme} · {DEFAULT_SETTINGS.units} · {DEFAULT_SETTINGS.refreshSec}s
         </p>
+        <p className="text-xs text-neo-muted">{t.apiEndpoint}</p>
+        <p className="break-all font-mono text-[11px] text-neo-muted">{API_BASE || "(same origin /api)"}</p>
       </section>
     </div>
   );

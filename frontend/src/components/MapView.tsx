@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { CircleMarker, MapContainer, Marker, Popup, TileLayer, WMSTileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import type { Location } from "@/types/dashboard";
-import { reverseGeocode } from "@/lib/api";
+import { apiUrl, reverseGeocode } from "@/lib/api";
 
 const pin = L.divIcon({
   className: "",
@@ -78,7 +78,7 @@ export function MapView({
       <TileLayer attribution={tile.attr} url={tile.url} />
       {overlays.includes("bhuvan_geomorph") ? (
         <WMSTileLayer
-          url="/api/map/wms"
+          url={apiUrl("/map/wms")}
           layers="gw_wfs:WB_LGEOM"
           format="image/png"
           transparent
@@ -88,7 +88,7 @@ export function MapView({
       ) : null}
       {overlays.includes("bhuvan_geomorph_in") ? (
         <WMSTileLayer
-          url="/api/map/wms"
+          url={apiUrl("/map/wms")}
           layers="gw_wfs:AN_LGEOM,gw_wfs:AP_LGEOM,gw_wfs:AS_LGEOM,gw_wfs:BR_LGEOM,gw_wfs:GA_LGEOM,gw_wfs:JH_LGEOM,gw_wfs:KA_LGEOM,gw_wfs:KL_LGEOM,gw_wfs:MH_LGEOM,gw_wfs:MP_LGEOM,gw_wfs:OR_LGEOM,gw_wfs:PB_LGEOM,gw_wfs:RJ_LGEOM,gw_wfs:TN_LGEOM,gw_wfs:TS_LGEOM,gw_wfs:UK_LGEOM,gw_wfs:UP_LGEOM,gw_wfs:WB_LGEOM"
           format="image/png"
           transparent
