@@ -5,9 +5,9 @@ from typing import Any
 
 NUM = re.compile(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?(?![A-Za-z])")
 
-# Structural / narrative numbers the model may use without a tool field.
-_HARMLESS = {str(i) for i in range(0, 32)} | {
-    "100", "2024", "2025", "2026", "2027", "400", "500",
+# Years and tiny structural counts only. Percents and scores must come from tools.
+_HARMLESS = {str(i) for i in range(0, 16)} | {
+    "2024", "2025", "2026", "2027", "2028",
 }
 
 
@@ -50,9 +50,6 @@ def ungrounded(text: str, allowed: set[str]) -> list[str]:
             fv = float(m)
             if f"{fv:g}" in allowed or f"{fv:.1f}" in allowed:
                 continue
-            # ranks / small percents used in prose
-            if 0 <= fv <= 100 and fv == int(fv):
-                continue
         except ValueError:
             pass
         found.append(m)
@@ -60,6 +57,6 @@ def ungrounded(text: str, allowed: set[str]) -> list[str]:
 
 
 def lock_and_note(text: str, payloads: list[Any]) -> tuple[str, list[str]]:
-    """Advisory only — never rewrite the model text."""
+    """Return text plus any numerals not present in tool payloads."""
     allowed = allowed_from_tools(payloads)
     return text, ungrounded(text, allowed)

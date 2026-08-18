@@ -8,8 +8,8 @@ def test_ungrounded_detected():
     bad = ungrounded("Rain is 47.2 mm and also 9999 liters", allowed)
     assert "9999" in bad
     assert "47.2" not in bad
-    # years / ranks are allowed so we do not discard the LLM answer
-    assert ungrounded("In 2026 the top 5 districts score 82", allowed) == []
+    # years and tiny counts are harmless; invented percents/scores are not
+    assert "82" in ungrounded("In 2026 the top 5 districts score 82", allowed)
 
 
 def test_bn_template_keeps_numbers():

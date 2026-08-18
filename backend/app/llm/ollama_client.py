@@ -37,22 +37,25 @@ async def chat(messages: list[dict[str, Any]], tools: list[dict] | None = None) 
     kwargs: dict[str, Any] = {
         "model": s.ollama_model,
         "messages": messages,
-        "temperature": 0.4,
+        "temperature": 0.2,
     }
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = "auto"
+    tools_stripped = False
     try:
         resp = await client().chat.completions.create(**kwargs)
     except Exception:
-        # Some Ollama builds reject tool schemas; retry as plain chat.
         kwargs.pop("tools", None)
         kwargs.pop("tool_choice", None)
+        tools_stripped = bool(tools)
         resp = await client().chat.completions.create(**kwargs)
     choices = getattr(resp, "choices", None) or []
     if not choices:
-        return {"content": "", "tool_calls": []}
-    return _parse_message(choices[0].message)
+        return {"content": "", "tool_calls": [], "tools_stripped": tools_stripped}
+    parsed = _parse_message(choices[0].message)
+    parsed["tools_stripped"] = tools_stripped
+    return parsed
 
 
 async def ping() -> tuple[bool, str]:

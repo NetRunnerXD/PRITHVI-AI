@@ -14,7 +14,8 @@ from app.schemas.risk import Prescription, Quant
 
 
 def test_haldia_is_purba_medinipur():
-    assert mentioned_place("Air quality in Haldia") == "Purba Medinipur"
+    assert mentioned_place("Air quality in Haldia") == "Haldia"
+    assert mentioned_place("Air quality in Tamluk") == "Tamluk"
 
 
 def test_no_mid_sentence_splice():

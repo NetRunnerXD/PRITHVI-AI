@@ -1,4 +1,4 @@
-from app.agents.intent_router import classify, required_tools
+from app.agents.intent_router import classify, hint_dimensions, required_tools, safety_tools
 
 
 def test_classify_family():
@@ -23,5 +23,17 @@ def test_required_tools_include_core_and_specialized():
     assert required_tools("rank") == ["list_districts", "rank_districts"]
     assert "get_7day_outlook" in required_tools("outlook")
     assert "get_nowcast" in required_tools("rain")
+    assert "get_rain_window" in required_tools("rain")
+    assert "get_rain_window" in required_tools("window")
     assert "get_nowcast" in required_tools("irrigation")
     assert "get_mandi_prices" in required_tools("price")
+
+
+def test_dimensions_keep_irrigation_and_window():
+    q = "Should I irrigate in Haldia on 25 August?"
+    dims = hint_dimensions(q)
+    assert "irrigation" in dims.tags
+    assert dims.window is not None
+    need = safety_tools(dims, q)
+    assert "get_nowcast" in need
+    assert "get_rain_window" in need

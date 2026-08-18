@@ -20,6 +20,12 @@ def compose_indic(locale: str, intent: str, snap: Any, collected: dict[str, Any]
         return _price(locale, collected)
     if intent == "outlook":
         return _outlook(locale, snap)
+    if intent == "window":
+        pack = collected.get("get_rain_window") or collected.get("get_weather_forecast")
+        if pack and pack.get("days"):
+            from app.services.rain_window import format_indic
+
+            return format_indic(pack, locale)
     if intent == "compare":
         return _compare(locale, collected) or _general(locale, snap)
     return _general(locale, snap)
@@ -130,6 +136,11 @@ def _weather(locale: str, snap: Any, collected: dict) -> str | None:
             f"{loc.label}-এ আগামী ৩ দিনে আনুমানিক {rain} মিমি বৃষ্টি।",
             f"মাটির আর্দ্রতা {soil:.3f} ঘনমিটার/ঘনমিটার।" if soil is not None else "",
         ]
+        nc = (getattr(snap, "science", None) or {}).get("nowcast") or {}
+        if (nc.get("pump") or {}).get("action") == "hold":
+            lines.append(
+                f"আগামী ৯০ মিনিট পাম্প চালাবেন না। বাধার সম্ভাবনা {nc['pump'].get('p_interrupt_90m')}।"
+            )
         if hold and hold.quant.water_saved_liters_min:
             lines.append(
                 f"এখন অতিরিক্ত সেচ না দেওয়াই ভালো। এতে প্রায় "
@@ -144,6 +155,9 @@ def _weather(locale: str, snap: Any, collected: dict) -> str | None:
         f"{loc.label} में अगले 3 दिन लगभग {rain} मिमी बारिश।",
         f"मिट्टी की नमी {soil:.3f} घन मीटर/घन मीटर।" if soil is not None else "",
     ]
+    nc = (getattr(snap, "science", None) or {}).get("nowcast") or {}
+    if (nc.get("pump") or {}).get("action") == "hold":
+        lines.append(f"अगले 90 मिनट पंप न चलाएँ। रुकने की संभावना {nc['pump'].get('p_interrupt_90m')}।")
     if hold and hold.quant.water_saved_liters_min:
         lines.append(
             f"आज सिंचाई न करें। इससे लगभग "
