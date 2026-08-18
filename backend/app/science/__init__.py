@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.science import bandit, blindspot, hysteresis, livelihood, phenology, regret, residual, vernacular, verify, wb_xai
+from app.science import bandit, blindspot, hysteresis, livelihood, nowcast, phenology, regret, residual, vernacular, verify, wb_xai
 
 
 def enrich_features(f: dict[str, Any], loc: Any, mandi: list[dict] | None = None) -> dict[str, Any]:
@@ -32,6 +32,7 @@ def build_science(
     cap_hit: bool,
     plot_m2: float,
     speech: str | None = None,
+    caps: list[dict] | None = None,
 ) -> dict[str, Any]:
     hy = pre["hysteresis"]
     ph = pre["phenology"]
@@ -44,6 +45,20 @@ def build_science(
     heard = vernacular.observe_speech(speech or "")
     budget = wb_xai.attribute(f, hy)
     skill = verify.skill_proxy(f, atlas)
+    nc = nowcast.build(
+        f,
+        loc,
+        hy=hy,
+        ph=ph,
+        neighbors=pre.get("neighbors") or [],
+        speech=speech,
+        plot_m2=plot_m2,
+        cap_hit=cap_hit,
+        caps=caps,
+        flood_score=flood_score,
+    )
+    if nc.get("error"):
+        skill["nowcast"] = nc["error"]
     return {
         "hysteresis": hy,
         "regret": rg,
@@ -55,4 +70,5 @@ def build_science(
         "blindspot": blind,
         "water_balance": budget,
         "verify": skill,
+        "nowcast": nc,
     }

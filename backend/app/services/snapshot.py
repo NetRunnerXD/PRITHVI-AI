@@ -12,6 +12,7 @@ from app.ml.prescribe import recommend
 from app.ml.risk import all_risks
 from app.ml.hazards_outlook import build_hazard_forecast
 from app.science import build_science, enrich_features
+from app.science.nowcast import fetch_neighbors
 from app.science.regret import evaluate as evaluate_regret
 from app.ml.sky import compass, flow_compass, flow_deg, rose_bins, sky_label
 from app.services.location_svc import nearby as nearby_districts
@@ -30,7 +31,7 @@ from app.schemas.dashboard import (
     Prescriptive,
 )
 from app.schemas.location import Location
-from app.schemas.risk import TimePoint
+from app.schemas.risk import Prescription, TimePoint
 from app.i18n.templates import render
 
 
@@ -438,6 +439,10 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
     local_caps = imd.alerts_for_location(obs["caps"], loc)
     cap_hit = bool(local_caps)
     pre = enrich_features(f, loc, obs.get("mandi") or [])
+    try:
+        pre["neighbors"] = await fetch_neighbors(loc, limit=6)
+    except Exception:
+        pre["neighbors"] = []
     rg0 = evaluate_regret(
         f,
         plot_m2=loc.plot_m2,
@@ -461,6 +466,7 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
         flood_score=flood.score_pct,
         cap_hit=cap_hit,
         plot_m2=loc.plot_m2,
+        caps=local_caps,
     )
     anomalies, drivers, stories = compute_anomalies(f, obs["nasa_precip"])
     if science["hysteresis"]["flip"] == "runoff":
@@ -496,7 +502,70 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
                 implication="A quiet flood card is not proof the village is dry.",
             )
         )
+    nc = science.get("nowcast") or {}
+    if (nc.get("kal") or {}).get("level") == "watch":
+        drivers.append("Kal Baisakhi / squall watch")
+        stories.append(
+            DiagnosticStory(
+                id="nowcast_kal",
+                title="Pre-monsoon / squall watch (next 2 h)",
+                why="Cloud, wind-shift and afternoon heating line up. This is a watch, not lightning.",
+                evidence=f"kal {nc['kal'].get('score_pct')}%; regime { (nc.get('regime') or {}).get('name') }.",
+                implication="Do not stay on the bund. Millimetres stay on the nowcast hours.",
+            )
+        )
+    if (nc.get("pump") or {}).get("action") == "hold":
+        drivers.append("pump-set interrupt watch")
+        stories.append(
+            DiagnosticStory(
+                id="nowcast_pump",
+                title="A 90-minute pump set may be interrupted",
+                why="The 0–2 h nowcast puts rain on the plot before a set would finish.",
+                evidence=f"P(interrupt) {nc['pump'].get('p_interrupt_90m')}; {nc['pump'].get('liters_at_risk')} L at risk.",
+                implication="Hold the set. This is not the 3-day irrigation card.",
+            )
+        )
+    if (nc.get("tide") or {}).get("drain_blocked"):
+        drivers.append("tide-rain drain block")
+        stories.append(
+            DiagnosticStory(
+                id="nowcast_tide",
+                title="Coastal drain may be blocked",
+                why="Harmonic high-tide proxy plus 3-hour rain. Not a tide gauge.",
+                evidence=f"rain 3h {nc['tide'].get('rain_3h_mm')} mm; coast {f.get('coast_km')} km.",
+                implication="Stay off the ghat. Plot ponding is separate from the river card.",
+            )
+        )
+    if (nc.get("neighbor_storm") or {}).get("flag"):
+        drivers.append("upstream rain, dry at home")
+        stories.append(
+            DiagnosticStory(
+                id="nowcast_mesh",
+                title="Neighbours are wet while this point is dry",
+                why="Gazetteer optical flow sees rain upstream. Home millimetres are not invented.",
+                evidence=f"wet neighbours {nc['neighbor_storm'].get('wet_neighbors')}; home {nc['neighbor_storm'].get('home_mm')} mm.",
+                implication="Watch onset, do not treat 0.0 mm as proof the cell will miss you.",
+            )
+        )
     actions = recommend(f, risks, plot_m2=loc.plot_m2, crop=loc.crop_hint)
+    for a in nc.get("actions") or []:
+        if a.get("verb") not in {"do_not_start", "take_cover", "stay_off"}:
+            continue
+        actions.insert(
+            0,
+            Prescription(
+                id=str(a.get("id") or "nowcast"),
+                priority=int(a.get("priority") or 0),
+                action=str(a.get("action") or ""),
+                rationale_codes=["nowcast_0_6h"],
+                confidence_pct=72,
+                template_id=a.get("template_id"),
+                slots=a.get("slots") or {},
+                why="0–6 h decision nowcast (locked numbers).",
+                when=str(a.get("when") or "next 2 h"),
+                who=str(a.get("who") or "household / farm"),
+            ),
+        )
     warnings = _warnings(loc, obs["caps"], flood.score_pct, f, obs.get("quakes") or [], obs.get("tsunami") or [], obs.get("naqi"))
 
     hourly_t = f.get("hourly_times") or []
@@ -506,6 +575,7 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
     sources = [k for k, v in obs["status"].items() if v == "ok"]
     sources.append("local-ml-v2")
     sources.append("rituchakra-science-v1")
+    sources.append("rituchakra-nowcast-v1")
 
     veg = _vegetation(f)
     neighbors = [n.model_dump() for n in nearby_districts(loc.lat, loc.lon, limit=6)]
@@ -666,14 +736,19 @@ def snapshot_tool_views(snap: DashboardSnapshot) -> dict[str, Any]:
         "sources": snap.sources,
         "provider_status": snap.provider_status,
         "science": snap.science or {},
+        "nowcast": ((snap.science or {}).get("nowcast") or {}).get("locked") or {},
     }
 
 
 def primary_reply(snap: DashboardSnapshot, locale: str, intent: str) -> tuple[str, str, dict]:
     actions = snap.prescriptive.actions
+    pump = next((a for a in actions if a.template_id == "nowcast_pump_hold"), None)
     hold = next((a for a in actions if a.template_id == "irrigation_hold_rain"), None)
     apply = next((a for a in actions if a.template_id == "irrigation_apply"), None)
     flood = next((a for a in actions if a.template_id == "flood_prep"), None)
+    if intent in {"irrigation", "rain"} and pump:
+        text = render(pump.template_id or "", locale, pump.slots)
+        return text, pump.template_id or "", pump.slots
     if intent in {"irrigation", "rain", "general"} and hold:
         text = render(hold.template_id or "", locale, hold.slots)
         return text, hold.template_id or "", hold.slots
