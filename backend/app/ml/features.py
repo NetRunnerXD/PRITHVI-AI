@@ -1,7 +1,27 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
 from typing import Any
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _today_ist() -> str:
+    return datetime.now(IST).date().isoformat()
+
+
+def _start_today(times: list) -> int:
+    """Index of calendar today (IST) in an Open-Meteo daily time list.
+
+    past_days=1 puts yesterday first. Non-ISO fixtures stay at 0.
+    """
+    today = _today_ist()
+    for i, t in enumerate(times):
+        s = str(t)[:10]
+        if len(s) >= 10 and s[4:5] == "-" and s >= today:
+            return i
+    return 0
 
 
 def _daily(om: dict, key: str) -> list[float]:
@@ -35,11 +55,18 @@ def extract(
     aqi: dict | None = None,
     marine: dict | None = None,
 ) -> dict[str, Any]:
-    precip = _daily(om, "precipitation_sum")
-    probs = _daily(om, "precipitation_probability_max")
-    tmax = _daily(om, "temperature_2m_max")
-    tmin = _daily(om, "temperature_2m_min")
-    et0 = _daily(om, "et0_fao_evapotranspiration")
+    daily_times_all = list((om.get("daily") or {}).get("time") or [])
+    start = _start_today(daily_times_all)
+    precip_all = _daily(om, "precipitation_sum")
+    precip = precip_all[start:]
+    probs = _daily(om, "precipitation_probability_max")[start:]
+    tmax = _daily(om, "temperature_2m_max")[start:]
+    tmin = _daily(om, "temperature_2m_min")[start:]
+    et0 = _daily(om, "et0_fao_evapotranspiration")[start:]
+    daily_wind_max = _daily(om, "wind_speed_10m_max")[start:]
+    daily_wind_dir = _daily(om, "wind_direction_10m_dominant")[start:]
+    daily_times = daily_times_all[start:]
+    precip_yesterday = float(precip_all[start - 1]) if start > 0 and start - 1 < len(precip_all) else None
     soil = _hourly(om, "soil_moisture_0_to_7cm")
     current = om.get("current") or {}
     marine = marine or {}
@@ -78,8 +105,9 @@ def extract(
 
     return {
         "precip_today_mm": precip_today,
+        "precip_yesterday_mm": precip_yesterday,
         "precip_3d_mm": precip_3d,
-        "precip_7d_mm": sum(precip),
+        "precip_7d_mm": sum(precip[:7]),
         "precip_days": precip,
         "precip_prob": [int(p) for p in probs],
         "temp_max": tmax,
@@ -112,17 +140,26 @@ def extract(
         "hourly_soil": soil[:72],
         "hourly_temp": _hourly(om, "temperature_2m")[:72],
         "hourly_rh": _hourly(om, "relative_humidity_2m")[:72],
+        "hourly_dew": _hourly(om, "dew_point_2m")[:72],
+        "hourly_pressure": _hourly(om, "pressure_msl")[:72],
         "hourly_wind": _hourly(om, "wind_speed_10m")[:72],
         "hourly_wind_dir": _hourly(om, "wind_direction_10m")[:72],
+        "hourly_gust": _hourly(om, "wind_gusts_10m")[:72],
         "hourly_cloud": _hourly(om, "cloud_cover")[:72],
+        "hourly_cloud_low": _hourly(om, "cloud_cover_low")[:72],
+        "hourly_cloud_mid": _hourly(om, "cloud_cover_mid")[:72],
+        "hourly_cloud_high": _hourly(om, "cloud_cover_high")[:72],
+        "hourly_weather_code": _hourly(om, "weather_code")[:72],
+        "hourly_cape": _hourly(om, "cape")[:72],
+        "hourly_vpd": _hourly(om, "vapour_pressure_deficit")[:72],
         "hourly_prob": _hourly(om, "precipitation_probability")[:72],
         "hourly_us_aqi": _hourly(aq, "us_aqi")[:72],
         "hourly_eu_aqi": _hourly(aq, "european_aqi")[:72],
         "hourly_aqi_times": (aq.get("hourly") or {}).get("time") or [],
         "hourly_times": (om.get("hourly") or {}).get("time") or [],
-        "daily_times": (om.get("daily") or {}).get("time") or [],
-        "daily_wind_max": _daily(om, "wind_speed_10m_max"),
-        "daily_wind_dir": _daily(om, "wind_direction_10m_dominant"),
+        "daily_times": daily_times,
+        "daily_wind_max": daily_wind_max,
+        "daily_wind_dir": daily_wind_dir,
         "wave_height_m": mcur.get("wave_height"),
         "wave_dir_deg": mcur.get("wave_direction"),
         "wave_period_s": mcur.get("wave_period"),

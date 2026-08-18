@@ -43,3 +43,26 @@ def test_extract_3day_and_trend():
     assert f["wind_dir_now"] == 210
     assert f["wave_height_m"] == 1.4
     assert f["marine_inland"] is False
+
+
+def test_extract_skips_yesterday_when_past_days(monkeypatch):
+    from app.ml import features as feat
+
+    monkeypatch.setattr(feat, "_today_ist", lambda: "2026-08-18")
+    om = {
+        "current": {},
+        "hourly": {},
+        "daily": {
+            "time": ["2026-08-17", "2026-08-18", "2026-08-19"],
+            "precipitation_sum": [82.6, 5.6, 4.4],
+            "precipitation_probability_max": [90, 70, 40],
+            "temperature_2m_max": [30, 31, 32],
+            "temperature_2m_min": [25, 26, 26],
+            "et0_fao_evapotranspiration": [3, 3, 3],
+        },
+    }
+    f = extract(om, {}, [])
+    assert f["precip_today_mm"] == 5.6
+    assert f["precip_yesterday_mm"] == 82.6
+    assert f["daily_times"][0] == "2026-08-18"
+    assert f["precip_3d_mm"] == 5.6 + 4.4
