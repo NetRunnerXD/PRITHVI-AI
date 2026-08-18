@@ -66,8 +66,8 @@ ollama serve
 # model already expected: qwen2.5
 ```
 
-- Frontend rewrites `/api/*` → `http://127.0.0.1:8000/api/*` (`frontend/next.config.mjs`).
-- Health: `GET http://127.0.0.1:8000/api/health`
+- Frontend calls the API origin in `NEXT_PUBLIC_API_BASE` (CORS). Optional empty base uses a Next rewrite.
+- Health: `GET http://127.0.0.1:8000/api/health` — Swagger: `/docs`
 - Tests: `cd backend; python -m pytest -q` (`pythonpath = .` in `pytest.ini`). Running pytest from repo root fails with `No module named 'app'`.
 - Restart uvicorn after backend edits (Python does not hot-reload unless `--reload`). Killing `:8000` then starting again is the usual pattern; old processes exit with code 1 — that is expected.
 
@@ -76,14 +76,16 @@ ollama serve
 ## 4. Architecture
 
 ```
-Browser (Next :3000)
-    └─ /api/* rewrite
-FastAPI (:8000)
-    ├─ /api/dashboard  → services.snapshot.build_snapshot
-    ├─ /api/geo/*      → location_svc + Open-Meteo geocode + Bhuvan WMS proxy
-    ├─ /api/chat       → SSE ← agents.orchestrator.run_agent
-    └─ providers (httpx) + ml + cache (in-memory TTL)
+Any client (frontend/ or a new web / React Native folder)
+    └─ HTTP + CORS → FastAPI (:8000)   no web assets, /docs + /openapi.json
+                          ├─ /api/dashboard  → services.snapshot.build_snapshot
+                          ├─ /api/nowcast
+                          ├─ /api/geo/*      → location_svc + Bhuvan WMS proxy
+                          ├─ /api/chat       → SSE ← agents.orchestrator.run_agent
+                          └─ providers (httpx) + ml + cache (in-memory TTL)
 ```
+
+The Next app uses `NEXT_PUBLIC_API_BASE` (default `http://127.0.0.1:8000`). Portable client: `clients/js`. Do not serve `frontend/` from uvicorn.
 
 **Snapshot is the core object.** Almost every dashboard widget and most tools read a `DashboardSnapshot`. `gather_observations` fans out with `asyncio.gather`, then `extract` → risks / outlook / blend / warnings / live board.
 
@@ -107,7 +109,7 @@ Location
 
 | Path | Role |
 |---|---|
-| `main.py` | FastAPI app, CORS, routers, `/api/health` |
+| `main.py` | FastAPI app, CORS, `/`, `/docs`, `/api/health` — no static UI |
 | `config.py` | pydantic-settings; `backend/.env` |
 | `cache.py` | In-memory TTL cache (do not slam Open-Meteo/CAP) |
 | `api/dashboard.py` | `/dashboard`, `/forecast`, `/predictions`, `/outlook`, `/risks`, `/scan`, `/compare`, `/states`, `/districts`, `/brief` |

@@ -12,14 +12,15 @@ Default focus: **Nadia, West Bengal**. Search covers Indian cities, towns, and d
 
 ## Overview
 
-Rituchakra is a monorepo:
+Rituchakra is a monorepo. **The backend is a standalone HTTP API** (no web assets). Any client can sit in its own folder.
 
 | Path | Role |
 | --- | --- |
-| `backend/` | FastAPI services, providers, ML, Advisor agent, translation layer |
-| `frontend/` | Next.js 14 App Router dashboard (Tailwind, Zustand, Recharts, Leaflet) |
+| `backend/` | FastAPI API — publish this independently (`/docs`, `/openapi.json`) |
+| `frontend/` | Optional Next.js dashboard. Talks to the API over HTTP + CORS. |
+| `clients/` | Portable TypeScript client for a new web app or React Native |
 
-The browser talks to Next.js. `/api/*` is rewritten to the FastAPI process. A snapshot object is built for the selected place and drives almost every widget and most Advisor tools.
+The browser (or a phone) calls FastAPI directly. A snapshot object is built for the selected place and drives widgets and Advisor tools.
 
 ### Four lenses
 
@@ -96,13 +97,16 @@ Do not commit secrets. `backend/.env` is gitignored.
 ## Architecture
 
 ```
-Browser (Next.js)
-    └─ /api/* rewrite
-FastAPI
-    ├─ /api/dashboard   snapshot (observations → features → risks → outlook → blend → prescriptions)
-    ├─ /api/geo/*       India search, reverse, nearby, Bhuvan WMS proxy
-    ├─ /api/chat        SSE Advisor (translate → tools → English draft → translate)
-    └─ providers + ML + in-memory TTL cache
+Any client (Next / other web / React Native)
+    └─ HTTP + CORS  →  FastAPI :8000
+                          ├─ /                 service card
+                          ├─ /docs             Swagger
+                          ├─ /openapi.json     contract
+                          ├─ /api/dashboard    snapshot
+                          ├─ /api/nowcast      0–6 h locked nowcast
+                          ├─ /api/geo/*        India search + Bhuvan WMS proxy
+                          ├─ /api/chat         SSE Advisor
+                          └─ providers + ML + in-memory TTL cache
 ```
 
 **Hard rules**
@@ -130,13 +134,16 @@ python -m pip install -r requirements.txt
 copy .env.example .env
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-# Frontend (second terminal)
+# Frontend is optional (second terminal)
 cd frontend
+copy .env.example .env.local
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+API (no UI required): [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+
+Dashboard: [http://localhost:3000](http://localhost:3000) — calls `NEXT_PUBLIC_API_BASE` (default `http://127.0.0.1:8000`).
 
 Health: `GET http://127.0.0.1:8000/api/health`
 
@@ -147,7 +154,7 @@ ollama serve
 ollama pull qwen2.5
 ```
 
-Frontend rewrites `/api/*` → `http://127.0.0.1:8000/api/*` (`frontend/next.config.mjs`). Restart uvicorn after backend edits unless you pass `--reload`.
+The web app does not embed the API. Restart uvicorn after backend edits unless you pass `--reload`. Bind `--host 0.0.0.0` for a phone on the LAN. See `backend/README.md` and `clients/README.md`.
 
 ---
 
@@ -164,7 +171,9 @@ Copy `backend/.env.example` to `backend/.env`.
 | `IMD_API_KEY` | Official IMD REST after whitelist |
 | `AIKOSH_API_KEY` | AIKosh dataset search |
 | `DEFAULT_LAT` / `DEFAULT_LON` / `DEFAULT_STATE` / `DEFAULT_DISTRICT` | Startup location |
-| `CORS_ORIGINS` | Allowed browser origins |
+| `CORS_ORIGINS` | Allowed browser / app origins (`*` = any) |
+| `CORS_ORIGIN_REGEX` | Extra origins (LAN / Expo) |
+| `PUBLIC_BASE_URL` | Absolute API origin in responses (WMS links) |
 
 ---
 
@@ -172,12 +181,16 @@ Copy `backend/.env.example` to `backend/.env`.
 
 | Method | Path | Notes |
 | --- | --- | --- |
+| `GET` | `/` | Service card (JSON, not HTML) |
+| `GET` | `/docs`, `/openapi.json` | Swagger + OpenAPI contract |
+| `GET` | `/api` | Published route catalog |
 | `GET` | `/api/health` | Process + Ollama ping |
 | `GET` | `/api/dashboard` | Full snapshot (`district`, `place`, `lat`, `lon`) |
+| `GET` | `/api/nowcast` | Locked 0–6 h nowcast |
 | `GET` | `/api/forecast`, `/predictions`, `/outlook`, `/risks` | Slice endpoints |
 | `GET` | `/api/scan`, `/compare`, `/states`, `/districts`, `/brief` | Rank, compare, gazetteer, text brief |
 | `GET` | `/api/geo/search`, `/geo/reverse`, `/geo/nearby` | India places |
-| `GET` | `/api/map/layers`, `/api/map/wms` | Basemap list + Bhuvan proxy |
+| `GET` | `/api/map/layers`, `/api/map/wms` | Basemap list + Bhuvan proxy (absolute WMS URL) |
 | `POST` | `/api/chat` | SSE Advisor (`message`, `locale_hint`, `output_locale`, `location`, `history`) |
 
 ---
