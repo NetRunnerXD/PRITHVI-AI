@@ -17,6 +17,7 @@ export function SciencePanel({ dash, locale }: { dash: DashboardSnapshot; locale
   const blind = s.blindspot;
   const wb = s.water_balance;
   const speech = named ? named[locale] || named.en : "";
+  const nc = s.nowcast;
 
   return (
     <section className="neo space-y-3 p-4">
@@ -66,6 +67,32 @@ export function SciencePanel({ dash, locale }: { dash: DashboardSnapshot; locale
         </p>
       ) : null}
       {trust?.reason ? <p className="text-xs text-neo-muted">{trust.reason}</p> : null}
+      {nc ? (
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <Tile
+            k={t.nowcast}
+            v={(nc.regime?.name || "—").toUpperCase()}
+            sub={`${t.onset} ${nc.clock?.t_start ? nc.clock.t_start.slice(11, 16) : "—"} · ${t.cessation} ${
+              nc.clock?.t_stop ? nc.clock.t_stop.slice(11, 16) : "—"
+            }`}
+          />
+          <Tile
+            k={t.pumpSet}
+            v={(nc.pump?.action || "—").toUpperCase()}
+            sub={`${t.pInterrupt} ${nc.pump?.p_interrupt_90m ?? "—"} · ${t.litresAtRisk} ${nc.pump?.liters_at_risk ?? "—"}`}
+          />
+          <Tile
+            k={t.fieldAccess}
+            v={nc.access?.enterable ? t.enterable : t.closedField}
+            sub={`${nc.access?.reasons?.[0] || ""} · ${t.ponding} ${nc.ponding?.mm_60 ?? "—"} mm`}
+          />
+          <Tile
+            k={t.kalWatch}
+            v={(nc.kal?.level || "—").toUpperCase()}
+            sub={nc.tide?.drain_blocked ? t.drainBlocked : t.air6h + " " + (nc.air?.peak_us_aqi ?? "—")}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

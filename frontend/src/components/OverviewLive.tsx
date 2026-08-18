@@ -76,6 +76,25 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
     rain: series.precip_hourly?.[i]?.value ?? 0,
     wind: series.wind_hourly?.[i]?.value ?? 0,
   }));
+  const nc = dash.science?.nowcast;
+  const ncStrip = [
+    ...(nc?.observed || []).slice(-3).map((h) => ({
+      t: hhmm(h.t),
+      rain: h.mm,
+      engine: "observed" as const,
+    })),
+    ...(nc?.hours || []).map((h) => ({
+      t: hhmm(h.t),
+      rain: h.mm,
+      engine: (h.engine || "nwp") as "nowcast" | "blend" | "nwp",
+    })),
+  ];
+  const engineLabel: Record<string, string> = {
+    observed: t.engineObserved,
+    nowcast: t.engineNowcast,
+    blend: t.engineBlend,
+    nwp: t.engineNwp,
+  };
   const days = (dash.predictive.outlook_days || []).slice(0, 7);
 
   return (
@@ -122,7 +141,70 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
         </section>
       </div>
 
-      {hourly.length > 0 ? (
+      {ncStrip.length > 0 ? (
+        <section className="neo overflow-x-auto p-3">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.nowcast}</p>
+            <p className="text-[10px] text-neo-muted">{t.modelAnalysis}</p>
+          </div>
+          <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
+            {nc?.clock?.t_start ? (
+              <span className="chip">
+                {t.onset} {hhmm(nc.clock.t_start)}
+              </span>
+            ) : null}
+            {nc?.clock?.t_stop ? (
+              <span className="chip">
+                {t.cessation} {hhmm(nc.clock.t_stop)}
+              </span>
+            ) : null}
+            {nc?.pump ? (
+              <span className="chip">
+                {t.pumpSet} {nc.pump.action === "hold" ? t.holdHint : t.applyHint} · {t.pInterrupt}{" "}
+                {nc.pump.p_interrupt_90m ?? "—"}
+              </span>
+            ) : null}
+            {nc?.access ? (
+              <span className="chip">
+                {t.fieldAccess} {nc.access.enterable ? t.enterable : t.closedField}
+              </span>
+            ) : null}
+            {nc?.kal?.level === "watch" ? <span className="chip">{t.kalWatch}</span> : null}
+            {nc?.tide?.drain_blocked ? <span className="chip">{t.drainBlocked}</span> : null}
+            {nc?.ponding?.mm_60 != null ? (
+              <span className="chip">
+                {t.ponding} {rain(nc.ponding.mm_60, units)}
+              </span>
+            ) : null}
+          </div>
+          <div className="flex min-w-max gap-2">
+            {ncStrip.map((h, i) => (
+              <div key={`${h.engine}-${h.t}-${i}`} className="w-12 shrink-0 text-center">
+                <p className="text-[10px] text-neo-muted">{h.t}</p>
+                <div className="mx-auto mt-1 h-10 w-1.5 overflow-hidden rounded-full bg-neo-bg">
+                  <div
+                    className="mt-auto w-full rounded-full"
+                    style={{
+                      height: `${Math.min(100, h.rain * 18)}%`,
+                      background:
+                        h.engine === "nowcast"
+                          ? "var(--accent)"
+                          : h.engine === "blend"
+                            ? "var(--rain)"
+                            : h.engine === "observed"
+                              ? "var(--text)"
+                              : "var(--muted)",
+                      minHeight: h.rain > 0 ? 4 : 0,
+                    }}
+                  />
+                </div>
+                <p className="mt-1 font-mono text-[11px] font-bold">{h.rain ? h.rain.toFixed(1) : "—"}</p>
+                <p className="text-[9px] uppercase tracking-wide text-neo-muted">{engineLabel[h.engine] || h.engine}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : hourly.length > 0 ? (
         <section className="neo overflow-x-auto p-3">
           <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.nextHours}</p>
           <div className="flex min-w-max gap-2">

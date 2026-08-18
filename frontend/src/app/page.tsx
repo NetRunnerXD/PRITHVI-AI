@@ -10,6 +10,7 @@ import { MandiPanel } from "@/components/MandiPanel";
 import { OutlookTable } from "@/components/OutlookTable";
 import { PredictionsPanel } from "@/components/PredictionsPanel";
 import { RiskCard } from "@/components/RiskCard";
+import { SciencePanel } from "@/components/SciencePanel";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { Sidebar } from "@/components/Sidebar";
 import { SquareMap } from "@/components/SquareMap";
@@ -152,6 +153,9 @@ export default function Page() {
             {tab === "overview" && dashboard ? (
               <div className="space-y-3">
                 <OverviewLive dash={dashboard} locale={locale} />
+                <Collapse title={t.science} defaultOpen={false}>
+                  <SciencePanel dash={dashboard} locale={locale} />
+                </Collapse>
                 <Collapse title={t.plots} defaultOpen={false}>
                   <OverviewPlots dash={dashboard} locale={locale} />
                 </Collapse>

@@ -29,10 +29,16 @@ export function ForecastCharts({ dash, locale }: { dash: DashboardSnapshot; loca
     prob: d.precip_prob_pct,
     wb: d.water_balance_mm,
   }));
-  const hourly = (dash.descriptive.series.precip_hourly || []).slice(0, 36).map((p) => ({
-    t: p.t.slice(11, 16),
-    mm: p.value,
-  }));
+  const ncHours = dash.science?.nowcast?.hours || [];
+  const hourly = (
+    ncHours.length
+      ? ncHours.map((h) => ({ t: h.t.slice(11, 16), mm: h.mm, engine: h.engine }))
+      : (dash.descriptive.series.precip_hourly || []).slice(0, 36).map((p) => ({
+          t: p.t.slice(11, 16),
+          mm: p.value,
+          engine: "",
+        }))
+  );
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <section className="neo p-4">

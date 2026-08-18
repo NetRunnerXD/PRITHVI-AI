@@ -18,6 +18,15 @@ export const PRESETS: Preset[] = [
     },
   },
   {
+    id: "nowcast",
+    label: { en: "Next 2 hours?", hi: "अगले 2 घंटे?", bn: "আগামী ২ ঘণ্টা?" },
+    text: {
+      en: "Will it rain in the next 2 hours? Should I start the pump set now?",
+      hi: "अगले 2 घंटे बारिश होगी? क्या अभी पंप सेट चलाऊँ?",
+      bn: "আগামী ২ ঘণ্টায় বৃষ্টি হবে? এখন পাম্প সেট চালাব কি?",
+    },
+  },
+  {
     id: "irrigate",
     label: { en: "Should I irrigate?", hi: "सिंचाई?", bn: "সেচ দেব?" },
     text: {
@@ -100,7 +109,7 @@ export const PRESETS: Preset[] = [
   },
 ];
 
-const ASK_IDS = ["flood-wb", "list-od", "mandi", "outlook", "irrigate", "aqi"] as const;
+const ASK_IDS = ["nowcast", "flood-wb", "list-od", "mandi", "outlook", "irrigate", "aqi"] as const;
 
 export function presetsFor(locale: Locale): { id: string; label: string; text: string }[] {
   return PRESETS.map((p) => ({ id: p.id, label: p.label[locale], text: p.text[locale] }));

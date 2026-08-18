@@ -58,16 +58,19 @@ const TAB_SOURCES: Partial<Record<TabId, Record<Locale, string[]>>> = {
   overview: {
     en: [
       "Sky, rain, wind, soil: Open-Meteo (weather model, not a village rain-gauge).",
+      "Next 6 hours: 0–2 h nowcast, 3–4 h blend, 5–6 h NWP. Past hours are model analysis, not a gauge.",
       "Air number: CPCB National AQI via data.gov.in when a station is near; otherwise the map says so.",
       "“Skip irrigation” litres: plot size × a small depth, not from the chat model.",
     ],
     hi: [
       "आकाश, बारिश, हवा, मिट्टी: Open-Meteo (मॉडल; गाँव का रेन-गेज नहीं)।",
+      "अगले 6 घंटे: 0–2 नाउकास्ट, 3–4 मिश्रण, 5–6 NWP। बीते घंटे मॉडल हैं, गेज नहीं।",
       "हवा का अंक: पास हो तो CPCB / data.gov.in।",
       "सिंचाई रोकने के लीटर: खेत का क्षेत्र × गहराई — चैट मॉडल नहीं गिनता।",
     ],
     bn: [
       "আকাশ, বৃষ্টি, হাওয়া, মাটি: Open-Meteo (মডেল, গ্রামের বৃষ্টিমাপক নয়)।",
+      "আগামী ৬ ঘণ্টা: ০–২ নাউকাস্ট, ৩–৪ মিশ্রণ, ৫–৬ NWP। গত ঘণ্টা মডেল, গেজ নয়।",
       "বাতাসের সংখ্যা: কাছে স্টেশন থাকলে CPCB / data.gov.in।",
       "সেচ না দেওয়ার লিটার: জমির আয়তন × গভীরতা — চ্যাট মডেল গণনা করে না।",
     ],

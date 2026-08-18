@@ -284,8 +284,42 @@ export type DashboardSnapshot = {
       checksum_mm?: number;
       method?: string;
     };
-    verify?: { method?: string; note?: string; abs_vs_clim_mm?: number };
+    verify?: { method?: string; note?: string; abs_vs_clim_mm?: number; nowcast?: { last_error_mm?: number | null; frac?: number } };
+    nowcast?: NowcastPack;
   };
+};
+
+export type NowcastHour = {
+  t: string;
+  lead_h?: number;
+  mm: number;
+  p_wet?: number;
+  engine: string;
+  nwp_mm?: number;
+  persist_mm?: number;
+  source?: string;
+};
+
+export type NowcastPack = {
+  method?: string;
+  hours?: NowcastHour[];
+  observed?: NowcastHour[];
+  regime?: { name?: string; daily?: string; last_mm?: number; method?: string };
+  clock?: { t_start?: string | null; t_stop?: string | null };
+  ponding?: { mm_60?: number; mm_120?: number; factor?: number };
+  pump?: { p_interrupt_90m?: number; liters_at_risk?: number; rain_90m_mm?: number; action?: string };
+  access?: { enterable?: boolean; p_closed_2h?: number; reasons?: string[]; stage?: string };
+  kal?: { score_pct?: number; level?: string };
+  tide?: { drain_blocked?: boolean; coastal?: boolean; rain_3h_mm?: number; stay_off_ghat?: boolean };
+  cost?: { wasted_liters_if_apply?: number; stress_mm_if_wait_2h?: number; prefer?: string };
+  air?: { peak_us_aqi?: number | null; hours?: { t?: string; us_aqi?: number }[] };
+  labour?: { closed_2h?: boolean; peak_us_aqi?: number };
+  squall?: { watch?: boolean; visibility_km?: number | null };
+  split?: { pluvial?: boolean; fluvial?: boolean };
+  stream?: { upstream?: { district?: string; mm?: number | null; km?: number } | null; eta_h?: number | null };
+  neighbor_storm?: { flag?: boolean; wet_neighbors?: number; home_mm?: number };
+  locked?: Record<string, unknown>;
+  actions?: { id?: string; action?: string; verb?: string; when?: string }[];
 };
 
 export type ChatTranslation = {
