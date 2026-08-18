@@ -66,6 +66,7 @@ async def test_registry_core_tools():
         "rank_districts",
         "list_districts",
         "get_state_mandi",
+        "get_nowcast",
     ):
         assert n in names
     fc = await reg.call("get_weather_forecast", {"days": 3})

@@ -22,4 +22,6 @@ def test_required_tools_include_core_and_specialized():
     assert "get_water_balance" in irrig
     assert required_tools("rank") == ["list_districts", "rank_districts"]
     assert "get_7day_outlook" in required_tools("outlook")
+    assert "get_nowcast" in required_tools("rain")
+    assert "get_nowcast" in required_tools("irrigation")
     assert "get_mandi_prices" in required_tools("price")
