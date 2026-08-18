@@ -1,0 +1,13 @@
+{
+  "name": "@rituchakra/client",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Framework-free Rituchakra API client for web and React Native",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "license": "UNLICENSED"
+}
