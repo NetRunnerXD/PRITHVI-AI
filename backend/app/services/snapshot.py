@@ -17,7 +17,7 @@ from app.science.regret import evaluate as evaluate_regret
 from app.ml.sky import compass, flow_compass, flow_deg, rose_bins, sky_label
 from app.services.location_svc import nearby as nearby_districts
 from app.data.india_coast import nearest_coast
-from app.providers import aikosh, datagov, hazards, imd, nasa_power, open_meteo, openaq
+from app.providers import aikosh, datagov, hazards, imd, nasa_power, open_meteo, openaq, port_signal, sachet
 from app.schemas.dashboard import (
     CurrentConditions,
     DashboardSnapshot,
@@ -124,6 +124,8 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         run_pair("aikosh", aikosh.search_datasets("agriculture"), None),
         run_pair("openaq-hist", openaq.history(loc.lat, loc.lon), []),
     )
+    sachet_rows = await run_pair("sachet", sachet.alerts(loc.state), [])
+    port = await run_pair("imd-port", port_signal.hooghly(), {})
     dg_ok = {status.get("data.gov.in-aqi"), status.get("data.gov.in-mandi")}
     status["data.gov.in"] = "ok" if "ok" in dg_ok else (status.get("data.gov.in-aqi") or "error")
     return {
@@ -139,6 +141,8 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         "quakes": quakes or [],
         "tsunami": tsunami or [],
         "aq_hist": aq_hist or [],
+        "sachet": sachet_rows or [],
+        "port": port or {},
         "status": status,
     }
 
@@ -567,6 +571,41 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
             ),
         )
     warnings = _warnings(loc, obs["caps"], flood.score_pct, f, obs.get("quakes") or [], obs.get("tsunami") or [], obs.get("naqi"))
+    for a in warnings:
+        if a.source in {"imd-cap", "IMD CAP"} or "imd" in (a.source or "").lower():
+            act = next((x for x in actions if x.template_id and str(x.template_id).startswith("nowcast_")), None)
+            extra = ""
+            if act:
+                extra = f" Do: {act.action}"
+            a.body = (a.body or "") + extra
+    port = obs.get("port") or {}
+    if port.get("active"):
+        warnings.insert(
+            0,
+            EarlyWarning(
+                id="imd_port_hooghly",
+                severity="alert",
+                title=f"Hooghly port signal {port.get('signal') or ''}".strip(),
+                body="IMD coastal bulletin for Kolkata & Haldia. Category watch only — does not change millimetres.",
+                lenses=["prescriptive"],
+                source="imd-port",
+                hazard="marine",
+            ),
+        )
+    for i, item in enumerate((obs.get("sachet") or [])[:2]):
+        warnings.append(
+            EarlyWarning(
+                id=f"sachet_{i}",
+                severity="watch",
+                title=imd.humanize_cap_title(item.get("title") or "SACHET alert", item.get("body") or "", loc.district),
+                body=(item.get("body") or "")[:240] or "NDMA SACHET. Timing prior only.",
+                lenses=["prescriptive"],
+                source="sachet-ndma",
+                hazard="weather",
+            )
+        )
+    science["port"] = port
+    science["sachet_n"] = len(obs.get("sachet") or [])
 
     hourly_t = f.get("hourly_times") or []
     daily_t = f.get("daily_times") or []
@@ -583,6 +622,15 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
     vis_km = _vis_km(f.get("visibility_m"))
     is_day = f.get("is_day")
     generated_at = datetime.now(timezone.utc).isoformat()
+    science["provenance"] = {
+        "rain": "open-meteo daily/hourly (model, not a gauge). Today is IST calendar day, not yesterday.",
+        "nowcast_mm": "locked hours; speech/CAP do not write mm",
+        "live_graph": "1-min gap integrates to locked hour; 1 Hz is playhead/tide",
+        "sat_rate": "Kalman between OM hours (not INSAT unless MOSDAC wired); does not rewrite locked mm",
+        "aqi": "CPCB station if local, else nearest city",
+        "tide": "Hugli harmonic prior until SOI gauge",
+        "as_of": generated_at,
+    }
     current = CurrentConditions(
         temp_c=f.get("temp_now"),
         precip_1h_mm=f.get("precip_now"),
@@ -721,23 +769,10 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
 
 
 def snapshot_tool_views(snap: DashboardSnapshot) -> dict[str, Any]:
-    """Compact JSON tools return to the LLM — already computed, no new math."""
-    return {
-        "location": snap.location.model_dump(),
-        "current": snap.descriptive.current.model_dump(),
-        "predictive": snap.predictive.model_dump(),
-        "diagnostic": snap.diagnostic.model_dump(),
-        "risks": [r.model_dump() for r in snap.risks],
-        "warnings": [w.model_dump() for w in snap.prescriptive.warnings],
-        "prescriptions": [p.model_dump() for p in snap.prescriptive.actions],
-        "vegetation": snap.vegetation,
-        "ogd": snap.ogd,
-        "live": snap.live.model_dump() if snap.live else {},
-        "sources": snap.sources,
-        "provider_status": snap.provider_status,
-        "science": snap.science or {},
-        "nowcast": ((snap.science or {}).get("nowcast") or {}).get("locked") or {},
-    }
+    """Start-of-turn index for the Advisor. Locked nowcast only; no Kalman/gap."""
+    from app.agents.views import snapshot_index
+
+    return snapshot_index(snap)
 
 
 def primary_reply(snap: DashboardSnapshot, locale: str, intent: str) -> tuple[str, str, dict]:

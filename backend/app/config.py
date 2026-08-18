@@ -34,10 +34,11 @@ class Settings(BaseSettings):
     # Google gtx + MyMemory, no key. Off = skip inbound/outbound MT.
     translate_enabled: bool = True
 
-    default_lat: float = 23.4710
-    default_lon: float = 88.5565
+    default_lat: float = 22.0667
+    default_lon: float = 88.0698
     default_state: str = "West Bengal"
-    default_district: str = "Nadia"
+    default_district: str = "Purba Medinipur"
+    default_place: str = "Haldia"
 
     cache_dir: str = str(ROOT / ".cache")
     # Empty = derive from the incoming request. Set when publishing behind a public host.

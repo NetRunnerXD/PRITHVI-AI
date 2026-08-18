@@ -11,7 +11,8 @@ def test_health():
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
-    assert body["default_location"]["district"] == "Nadia"
+    assert body["default_location"]["place_name"] == "Haldia"
+    assert body["default_location"]["district"] == "Purba Medinipur"
 
 
 def test_geo_search_and_nearby():
@@ -57,9 +58,13 @@ def test_standalone_service_card_and_openapi():
     assert "/api/health" in paths
     assert "/api/dashboard" in paths
     assert "/api/chat" in paths
+    assert "/api/nowcast/live" in paths
+    assert "/api/nowcast/sat" in paths
     spec = client.get("/openapi.json")
     assert spec.status_code == 200
     assert spec.json()["info"]["title"] == "Rituchakra API"
+    assert "/api/nowcast/live" in spec.json()["paths"]
+    assert "/api/nowcast/sat" in spec.json()["paths"]
 
 
 def test_cors_allows_web_origin():

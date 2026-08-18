@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.agents.views import compact_nowcast, compact_science
 from app.data.india_districts import search_districts as gaz_search
 from app.rag import store as rag
 from app.schemas.dashboard import DashboardSnapshot
 from app.services.location_svc import list_districts as loc_list, list_states as loc_states, nearby, resolve_location, search
+from app.services.location_svc import search_places
 from app.tools.registry import Registry, Tool
 
 
@@ -21,8 +23,48 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
     veg = snap.vegetation
     series = snap.descriptive.series
 
-    async def get_weather_forecast(days: int = 3, **_: Any) -> dict:
-        n = max(1, min(int(days or 3), 7))
+    async def get_rain_window(
+        place: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        **_: Any,
+    ) -> dict:
+        from datetime import date
+
+        from app.agents.dates import parse_window, today_ist
+        from app.services.rain_window import fetch_window
+
+        target = snap.location
+        if place:
+            target = resolve_location(q=str(place))
+        today = today_ist()
+        a = b = None
+        try:
+            if start:
+                a = date.fromisoformat(str(start)[:10])
+            if end:
+                b = date.fromisoformat(str(end)[:10])
+        except ValueError:
+            a = b = None
+        if a is None or b is None:
+            from datetime import timedelta
+
+            win = parse_window(f"{start or ''} {end or ''}", today)
+            a = a or (win or {}).get("start") or today
+            b = b or (win or {}).get("end") or (a + timedelta(days=6))
+        return await fetch_window(target, a, b)
+
+    async def get_weather_forecast(
+        days: int = 7,
+        start: str | None = None,
+        end: str | None = None,
+        place: str | None = None,
+        **_: Any,
+    ) -> dict:
+        if start or end or place:
+            return await get_rain_window(place=place, start=start, end=end)
+        n = max(1, min(int(days or 7), 16))
+        outlook = preds.get("outlook_days") or []
         return {
             "location": loc,
             "precip_next_3d_mm": preds.get("precip_next_3d_mm"),
@@ -30,8 +72,10 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
             "precip_probability_pct": (preds.get("precip_probability_pct") or [])[:n],
             "temp_max_c": (preds.get("temp_max_c") or [])[:n],
             "temp_min_c": (preds.get("temp_min_c") or [])[:n],
+            "days": outlook[:n],
             "current": current,
             "model": preds.get("model"),
+            "note": "Snapshot outlook (Open-Meteo daily). For a named date range call get_rain_window.",
             "widget": "predictive",
         }
 
@@ -137,14 +181,20 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
     async def get_dual_predictions(**_: Any) -> dict:
         return {"predictions": snap.predictions, "widget": "predicted"}
 
-    async def get_7day_outlook(**_: Any) -> dict:
+    async def get_7day_outlook(place: str | None = None, **_: Any) -> dict:
+        src_preds = preds
+        if place:
+            from app.services.snapshot import build_snapshot
+
+            other = await build_snapshot(resolve_location(q=str(place)))
+            src_preds = other.predictive.model_dump()
         return {
-            "outlook_days": preds.get("outlook_days") or [],
-            "precip_7d_mm": preds.get("precip_7d_mm"),
-            "et0_7d_mm": preds.get("et0_7d_mm"),
-            "water_balance_7d_mm": preds.get("water_balance_7d_mm"),
-            "irrigate_dates": preds.get("irrigate_dates") or [],
-            "flood_watch_dates": preds.get("flood_watch_dates") or [],
+            "outlook_days": src_preds.get("outlook_days") or [],
+            "precip_7d_mm": src_preds.get("precip_7d_mm"),
+            "et0_7d_mm": src_preds.get("et0_7d_mm"),
+            "water_balance_7d_mm": src_preds.get("water_balance_7d_mm"),
+            "irrigate_dates": src_preds.get("irrigate_dates") or [],
+            "flood_watch_dates": src_preds.get("flood_watch_dates") or [],
             "widget": "predictive",
         }
 
@@ -161,31 +211,28 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
             "widget": "predictive",
         }
 
-    async def get_science_pack(**_: Any) -> dict:
-        return {"science": snap.science or {}, "widget": "science"}
+    async def get_science_pack(place: str | None = None, **_: Any) -> dict:
+        src = snap
+        if place:
+            from app.services.snapshot import build_snapshot
 
-    async def get_nowcast(speech: str | None = None, **_: Any) -> dict:
+            src = await build_snapshot(resolve_location(q=str(place)))
+        return {"science": compact_science(src.science or {}), "widget": "science"}
+
+    async def get_nowcast(speech: str | None = None, place: str | None = None, **_: Any) -> dict:
         from app.science.nowcast import apply_speech_only
 
-        nc = (snap.science or {}).get("nowcast") or {}
-        if speech and nc:
+        src = snap
+        if place:
+            from app.services.snapshot import build_snapshot
+
+            src = await build_snapshot(resolve_location(q=str(place)))
+        nc = (src.science or {}).get("nowcast") or {}
+        if speech and nc.get("hours"):
             nc = apply_speech_only(nc, str(speech))
-        return {
-            "nowcast": nc.get("locked") or {},
-            "clock": nc.get("clock"),
-            "pump": nc.get("pump"),
-            "access": nc.get("access"),
-            "ponding": nc.get("ponding"),
-            "kal": nc.get("kal"),
-            "tide": nc.get("tide"),
-            "cost": nc.get("cost"),
-            "air": nc.get("air"),
-            "labour": nc.get("labour"),
-            "actions": nc.get("actions") or [],
-            "speech": (nc.get("speech") or {}).get("heard"),
-            "note": (nc.get("locked") or {}).get("engine_note"),
-            "widget": "nowcast",
-        }
+        out = compact_nowcast(nc)
+        out["queried"] = place or (src.location.place_name or src.location.district)
+        return out
 
     async def get_hourly_series(variable: str = "precip", **_: Any) -> dict:
         key = {
@@ -214,11 +261,56 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
     async def search_districts(query: str, **_: Any) -> dict:
         return {"results": [x.model_dump() for x in search(str(query or ""), limit=6)]}
 
-    async def compare_districts(other: str, **_: Any) -> dict:
+    async def compare_districts(other: str | None = None, **_: Any) -> dict:
+        name = str(other or "").strip()
+        if not name:
+            return {
+                "error": "need_other_place",
+                "ask": "Which second Indian town or district should I compare?",
+            }
         from app.services.compare import compare
 
-        payload = await compare(snap.location.district, str(other or ""), loc_a=snap.location)
+        payload = await compare(snap.location.district, name, loc_a=snap.location)
         return {**payload, "widget": "compare"}
+
+    async def geo_search(query: str, **_: Any) -> dict:
+        found = await search_places(str(query or ""), limit=6)
+        return {"results": [x.model_dump() for x in found], "widget": "map"}
+
+    async def capability(metric: str = "", **_: Any) -> dict:
+        holes = {
+            "radar": "No radar ingest. Nowcast is a 0–6 h decision object on Open-Meteo hours.",
+            "insat": "MOSDAC / INSAT is not wired. Kalman scenes are Open-Meteo model-analysis, not satellite.",
+            "ncs": "NCS has no public JSON. Seismic is USGS FDSN.",
+            "imd_rest": "api.imd.gov.in returns 401 without IP whitelist. Official warnings are IMD CAP RSS.",
+            "gauge": "Open-Meteo daily/hourly is a model, not a rain-gauge.",
+        }
+        key = (metric or "").strip().lower()
+        if key in holes:
+            return {"available": False, "metric": key, "reason": holes[key]}
+        return {
+            "available": True,
+            "metric": key or "catalog",
+            "unavailable": holes,
+            "note": "Ask capability with metric=radar|insat|ncs|imd_rest|gauge for a hole.",
+        }
+
+    async def present_answer(
+        format: str = "free",
+        title: str | None = None,
+        blocks: list | None = None,
+        sources: list | None = None,
+        **_: Any,
+    ) -> dict:
+        return {
+            "ok": True,
+            "spec": {
+                "format": format,
+                "title": title,
+                "blocks": blocks or [],
+                "sources": sources or [],
+            },
+        }
 
     async def list_states(**_: Any) -> dict:
         return {"states": loc_states(), "count": len(loc_states())}
@@ -272,25 +364,55 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
         }
 
     specs = [
-        Tool("get_weather_forecast", "Quantitative 3–7 day forecast (rain mm, probabilities, temps).",
-             {"type": "object", "properties": {"days": {"type": "integer"}}, "additionalProperties": True},
+        Tool(
+            "get_rain_window",
+            "Daily rainfall (mm) for a place and calendar date range. "
+            "Pass start and end as YYYY-MM-DD (e.g. 2026-08-23 to 2026-08-28) and optional place (Haldia). "
+            "Quote only the returned days. Open-Meteo model, not a gauge. Horizon about 16 days.",
+            {
+                "type": "object",
+                "properties": {
+                    "place": {"type": "string"},
+                    "start": {"type": "string", "description": "YYYY-MM-DD"},
+                    "end": {"type": "string", "description": "YYYY-MM-DD"},
+                },
+                "additionalProperties": True,
+            },
+            get_rain_window,
+            "window",
+        ),
+        Tool("get_weather_forecast", "Quantitative forecast. Prefer get_rain_window for named dates. Optional days, start, end, place.",
+             {
+                 "type": "object",
+                 "properties": {
+                     "days": {"type": "integer"},
+                     "start": {"type": "string"},
+                     "end": {"type": "string"},
+                     "place": {"type": "string"},
+                 },
+                 "additionalProperties": True,
+             },
              get_weather_forecast, "predictive"),
         Tool("get_dual_predictions", "Both RainFall residual-blend and trusted Open-Meteo 7-day forecasts.",
              {"type": "object", "properties": {}},
              get_dual_predictions, "predicted"),
-        Tool("get_7day_outlook", "Day-by-day 7-day outlook with irrigate/flood flags and soil bucket.",
-             {"type": "object", "properties": {}, "additionalProperties": True},
+        Tool("get_7day_outlook", "Day-by-day 7-day outlook with irrigate/flood flags and soil bucket. Optional place.",
+             {"type": "object", "properties": {"place": {"type": "string"}}, "additionalProperties": True},
              get_7day_outlook, "predictive"),
         Tool("get_water_balance", "7-day plot water balance (precip minus ET0) plus identified P−ET−runoff−ΔS identity.",
              {"type": "object", "properties": {}, "additionalProperties": True},
              get_water_balance, "predictive"),
-        Tool("get_science_pack", "Hysteresis, irrigation regret, livelihood interruption, residual atlas, trust policy, phenology, vernacular, blind spot.",
-             {"type": "object", "properties": {}},
+        Tool("get_science_pack", "Hysteresis, regret, phenology, monsoon, CWC, vernacular. Compact — no Kalman/gap. Optional place.",
+             {"type": "object", "properties": {"place": {"type": "string"}}},
              get_science_pack, "science"),
         Tool(
             "get_nowcast",
-            "Locked 0–6 h nowcast: hours with engine labels, onset, pump-set interrupt, field access, ponding. Quote only these numbers. Optional speech=user text (category only, never millimetres).",
-            {"type": "object", "properties": {"speech": {"type": "string"}}, "additionalProperties": True},
+            "Locked 0–6 h nowcast for this pin or optional place. Quote only locked fields. Optional speech=user text (category only, never millimetres). Never sat/gap/playhead.",
+            {
+                "type": "object",
+                "properties": {"speech": {"type": "string"}, "place": {"type": "string"}},
+                "additionalProperties": True,
+            },
             get_nowcast,
             "nowcast",
         ),
@@ -339,9 +461,33 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
         Tool("search_districts", "Search Indian districts by name.",
              {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
              search_districts),
-        Tool("compare_districts", "Compare this focus district with another Indian district (other=name).",
-             {"type": "object", "properties": {"other": {"type": "string"}}, "required": ["other"]},
+        Tool("compare_districts", "Compare this focus place with another Indian town or district (other=name). Ask if other is missing.",
+             {"type": "object", "properties": {"other": {"type": "string"}}},
              compare_districts, "compare"),
+        Tool("geo_search", "Search Indian towns and districts (gazetteer + Open-Meteo India).",
+             {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+             geo_search, "map"),
+        Tool(
+            "capability",
+            "What Rituchakra cannot provide (radar, INSAT, NCS, IMD REST, rain-gauge). Call before inventing a missing metric.",
+            {"type": "object", "properties": {"metric": {"type": "string"}}},
+            capability,
+        ),
+        Tool(
+            "present_answer",
+            "Submit the final answer layout. Numbers only as cite: paths or table from= tool arrays. Then stop.",
+            {
+                "type": "object",
+                "properties": {
+                    "format": {"type": "string"},
+                    "title": {"type": "string"},
+                    "blocks": {"type": "array"},
+                    "sources": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["blocks"],
+            },
+            present_answer,
+        ),
         Tool("list_states", "List Indian states/UTs in the gazetteer.",
              {"type": "object", "properties": {}},
              list_states),

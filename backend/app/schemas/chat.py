@@ -9,8 +9,11 @@ class ChatMessage(BaseModel):
     content: str
     content_en: str | None = None
     locale: str = "en"
+    blocks: list[dict] = []
+    suggestions: list[dict] = []
     tool_trace: list[dict] = []
     citations: list[dict] = []
+    ui: list[dict] = []
     translation: dict | None = None
 
 

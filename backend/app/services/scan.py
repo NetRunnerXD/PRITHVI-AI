@@ -123,5 +123,30 @@ async def rank_districts(state: str | None, metric: str = "flood", limit: int = 
     }
 
 
+async def rank_states(metric: str = "flood", limit: int = 20) -> dict[str, Any]:
+    """One HQ district per state — India-wide weather/flood ranking, not tourism."""
+    seen: set[str] = set()
+    reps: list[dict] = []
+    for row in all_districts():
+        st = row["state"]
+        if st in seen:
+            continue
+        seen.add(st)
+        reps.append(row)
+    scored = await asyncio.gather(*[_one(r) for r in reps])
+    ok = [r for r in scored if r.get("ok")]
+    ok.sort(key=_sort_key(metric))
+    top = ok[: max(1, min(int(limit or 20), 36))]
+    return {
+        "need": "states_weather",
+        "scope": "india-states",
+        "metric": metric,
+        "count": len(ok),
+        "ranked": top,
+        "method": "open-meteo 3-day precip + soil + elevation proxy at one gazetteer HQ per state",
+        "note": "This is a weather/flood ranking, not a tourist or pet-visit ranking.",
+    }
+
+
 async def predict_one(row: dict) -> dict[str, Any]:
     return await _one(row)

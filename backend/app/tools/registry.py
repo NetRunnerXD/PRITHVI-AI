@@ -22,7 +22,10 @@ class Registry:
     def register(self, tool: Tool) -> None:
         self.tools[tool.name] = tool
 
-    def openai_schemas(self) -> list[dict[str, Any]]:
+    def openai_schemas(self, names: set[str] | None = None) -> list[dict[str, Any]]:
+        tools = self.tools.values()
+        if names:
+            tools = [t for t in tools if t.name in names]
         return [
             {
                 "type": "function",
@@ -32,7 +35,7 @@ class Registry:
                     "parameters": t.args_schema,
                 },
             }
-            for t in self.tools.values()
+            for t in tools
         ]
 
     async def call(self, name: str, args: dict[str, Any]) -> dict[str, Any]:

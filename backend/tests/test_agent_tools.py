@@ -67,6 +67,10 @@ async def test_registry_core_tools():
         "list_districts",
         "get_state_mandi",
         "get_nowcast",
+        "get_rain_window",
+        "geo_search",
+        "capability",
+        "present_answer",
     ):
         assert n in names
     fc = await reg.call("get_weather_forecast", {"days": 3})
@@ -80,6 +84,10 @@ async def test_registry_core_tools():
     hz = await reg.call("get_hazard_watch", {})
     assert "live" in hz
     assert "warnings" in hz
+    sci = await reg.call("get_science_pack", {})
+    assert "sat" not in (sci.get("science") or {})
+    cap = await reg.call("capability", {"metric": "insat"})
+    assert cap["available"] is False
 
 
 def test_openai_schemas_are_functions():
