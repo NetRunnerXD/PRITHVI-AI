@@ -4,9 +4,9 @@ India-first environmental intelligence for districts, towns, and farms.
 
 Rituchakra is a live dashboard and advisor for weather, flood, drought, heat, air quality, marine state, seismic activity, tsunami watches, and mandi prices. It answers four questions from published data and local models — what is happening, why it is happening, what is likely next, and what to do now — then explains those numbers in English, Hindi, or Bengali.
 
-The Advisor LLM never invents rainfall, risk scores, liters, AQI, or rupees. Forecasts and quantities come from providers and models. The model only orchestrates tools and writes prose.
+The Advisor LLM never invents rainfall, risk scores, liters, AQI, or rupees. Forecasts and quantities come from providers and models. Chat calls one `data()` library and quotes those packs. Bare names (`Puruliya`, `Delhi`) resolve through the India gazetteer (fuzzy + state capitals) or Open-Meteo India geocode. Follow-ups (`yes`, `all of them`) stay on the last town. Map chips move the pin only when clicked.
 
-Default focus: **Nadia, West Bengal**. Search covers Indian cities, towns, and districts (for example Haldia, Santiniketan, Pune).
+Default focus: **Haldia, Purba Medinipur, West Bengal**. Search covers Indian cities, towns, and districts (for example Haldia, Purulia, Cherrapunji, Wardha). Nadia remains available.
 
 ---
 
@@ -58,7 +58,7 @@ Ask in any language. The translation layer:
 
 If online translation is unavailable, Hindi and Bengali fall back to structured Indic composition. English is shown if that is not possible. Turn on **English source** in the dock to read the model draft.
 
-The Advisor can rank districts (for example West Bengal flood risk), list gazetteer districts, compare two places, pull mandi prices, and narrate irrigation / rain / AQI / hazard watches. Place names in the question (Haldia, Pune, …) retarget the dashboard.
+The Advisor can rank districts (for example West Bengal flood risk), compare two places, pull mandi prices, list every Rituchakra metric at a named town, and narrate irrigation / rain / AQI / hazard watches. Place names in the question (Haldia, Puruliya, Delhi, …) retarget **chat**. The dashboard pin moves when the user clicks a suggestion (map / forecast / nowcast).
 
 A local OpenAI-compatible LLM (default **Ollama** `qwen2.5`) is optional. If it is down, templates and structured Indic still answer from the snapshot.
 
@@ -104,6 +104,8 @@ Any client (Next / other web / React Native)
                           ├─ /openapi.json     contract
                           ├─ /api/dashboard    snapshot
                           ├─ /api/nowcast      0–6 h locked nowcast
+                          ├─ /api/nowcast/live 1-min gap + playhead
+                          ├─ /api/nowcast/sat  Kalman rate between scenes
                           ├─ /api/geo/*        India search + Bhuvan WMS proxy
                           ├─ /api/chat         SSE Advisor
                           └─ providers + ML + in-memory TTL cache
@@ -187,6 +189,8 @@ Copy `backend/.env.example` to `backend/.env`.
 | `GET` | `/api/health` | Process + Ollama ping |
 | `GET` | `/api/dashboard` | Full snapshot (`district`, `place`, `lat`, `lon`) |
 | `GET` | `/api/nowcast` | Locked 0–6 h nowcast |
+| `GET` | `/api/nowcast/live` | 1-min gap series + playhead (Haldia clock) |
+| `GET` | `/api/nowcast/sat` | Kalman rain-rate between scenes (`stride=1` or `60`) |
 | `GET` | `/api/forecast`, `/predictions`, `/outlook`, `/risks` | Slice endpoints |
 | `GET` | `/api/scan`, `/compare`, `/states`, `/districts`, `/brief` | Rank, compare, gazetteer, text brief |
 | `GET` | `/api/geo/search`, `/geo/reverse`, `/geo/nearby` | India places |

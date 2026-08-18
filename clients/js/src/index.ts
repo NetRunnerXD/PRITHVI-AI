@@ -45,6 +45,9 @@ export function createClient(opts: ApiConfig) {
 
     dashboard: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/dashboard", locQuery(loc)),
     nowcast: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/nowcast", locQuery(loc)),
+    nowcastLive: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/nowcast/live", locQuery(loc)),
+    nowcastSat: (loc?: LocQuery | Location | null, stride: 1 | 60 = 60) =>
+      get<Record<string, unknown>>("/nowcast/sat", { ...locQuery(loc), stride }),
     forecast: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/forecast", locQuery(loc)),
     predictions: (loc?: LocQuery | Location | null, source = "both") =>
       get<Record<string, unknown>>("/predictions", { ...locQuery(loc), source }),
@@ -78,6 +81,7 @@ export function createClient(opts: ApiConfig) {
           message: body.message,
           locale_hint: body.locale_hint,
           output_locale: body.output_locale,
+          conversation_id: body.conversation_id,
           location: body.location,
           history: (body.history || []).slice(-6),
           regenerate: Boolean(body.regenerate),
