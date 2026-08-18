@@ -34,6 +34,14 @@ _LEXICON: list[tuple[str, str]] = [
     ("कीचड़", "wet_soil"),
     ("downpour", "heavy_rain"),
     ("the river is coming", "river_rise"),
+    ("বৰদৈচিলা", "squall"),
+    ("bordoisila", "squall"),
+    ("କାଳ ବୈଶାଖୀ", "squall"),
+    ("kala baisakhi", "squall"),
+    ("norwester", "squall"),
+    ("nor'wester", "squall"),
+    ("ঘাট", "tide"),
+    ("ghat", "tide"),
 ]
 
 

@@ -32,13 +32,15 @@ def step_day(state: dict[str, Any], precip_mm: float, et0_mm: float) -> dict[str
     p = max(0.0, float(precip_mm))
     e = max(0.0, float(et0_mm))
     limb = "wetting" if p >= e * 0.8 and p >= 2.0 else "drying"
+    wet0 = float(state.get("_infil_wet") or 0.48)
+    dry0 = float(state.get("_infil_dry") or 0.72)
     if limb == "wetting":
         # Wet limb: pores already occupied → more runoff, less storage.
-        infil_eff = _clip(0.48 + 0.40 * (1 - soil / 0.45) * (1 - 0.55 * memory), 0.22, 0.92)
+        infil_eff = _clip(wet0 + 0.40 * (1 - soil / 0.45) * (1 - 0.55 * memory), 0.18, 0.92)
         et_eff = _clip(0.55 + 0.25 * (soil - 0.16) / 0.29, 0.40, 0.90)
     else:
         # Dry limb: clay/silt holds water; ET pulls slower from residual.
-        infil_eff = _clip(0.72 + 0.22 * (1 - soil / 0.45), 0.55, 0.96)
+        infil_eff = _clip(dry0 + 0.22 * (1 - soil / 0.45), 0.45, 0.96)
         et_eff = _clip(0.70 + 0.20 * memory, 0.55, 0.95)
     infil = p * infil_eff
     runoff = p - infil
@@ -53,12 +55,20 @@ def step_day(state: dict[str, Any], precip_mm: float, et0_mm: float) -> dict[str
         "runoff_mm": round(runoff, 2),
         "infil_mm": round(infil, 2),
         "et_mm": round(et, 2),
+        "_infil_wet": state.get("_infil_wet"),
+        "_infil_dry": state.get("_infil_dry"),
     }
 
 
 def fingerprint(f: dict[str, Any]) -> dict[str, Any]:
     """Walk the 7-day horizon and summarise the loop."""
+    from app.science.soil import classify
+
+    soil = classify(f.get("lat"), f.get("lon"))
     st = initial_state(f)
+    if soil.get("infil_wet"):
+        st["_infil_wet"] = soil["infil_wet"]
+        st["_infil_dry"] = soil["infil_dry"]
     precip = list(f.get("precip_days") or [])
     et0 = list(f.get("et0_days") or [])
     times = list(f.get("daily_times") or [])
@@ -89,5 +99,6 @@ def fingerprint(f: dict[str, Any]) -> dict[str, Any]:
         "runoff_7d_mm": round(runoff_7, 2),
         "flip": flip,
         "days": days,
-        "method": "dual-limb soil hysteresis v1 (Gangetic alluvium prior)",
+        "soil_class": soil,
+        "method": f"dual-limb soil hysteresis v1 ({soil.get('id')})",
     }

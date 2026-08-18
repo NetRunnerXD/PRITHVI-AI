@@ -32,9 +32,22 @@ def pick(
         trust_ours = 38
     if regret.get("action") == "hold" and source == "ours":
         reason += " Decision-regret also prefers hold."
+    from app.science.live import load_issues, skill_from_log
+
+    skill = skill_from_log(load_issues())
+    mae = None
+    if skill.get("by_regime"):
+        vals = [v["mae_mm"] for v in skill["by_regime"].values() if v.get("n", 0) >= 3]
+        if vals:
+            mae = sum(vals) / len(vals)
+            if mae > 2.5 and source == "ours":
+                source = "trusted"
+                trust_ours = min(trust_ours, 42)
+                reason += f" Issue log MAE {mae:.1f} mm — prefer trusted."
     return {
         "source": source,
         "trust_ours_pct": trust_ours,
         "reason": reason,
-        "method": "forecast-source policy v1 (not a learned bandit until verify logs exist)",
+        "skill": skill,
+        "method": "forecast-source policy v2 (log-aware, CAP still wins)",
     }

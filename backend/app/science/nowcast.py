@@ -503,19 +503,25 @@ def air_hours(f: dict[str, Any]) -> dict[str, Any]:
 
 
 def labour_window(f: dict[str, Any], air: dict[str, Any]) -> dict[str, Any]:
+    from app.science.wbgt import estimate
+
     tmax = (f.get("temp_max") or [30])[0]
     rh = float(f.get("rh_now") or 60)
     peak = air.get("peak_us_aqi")
     if peak is None:
         peak = f.get("naqi") or f.get("us_aqi") or 0
     peak = int(peak or 0)
-    closed = float(tmax) >= 36 and rh >= 55 and peak >= 151
+    wind = f.get("wind_speed_ms") or f.get("wind_now_ms")
+    wb = estimate(float(tmax), rh, wind)
+    closed = (wb["wbgt_c"] >= 28 and peak >= 151) or (float(tmax) >= 36 and rh >= 55 and peak >= 151)
     return {
         "closed_2h": closed,
         "tmax_c": round(float(tmax), 1),
         "rh": rh,
         "peak_us_aqi": peak,
-        "method": "heat×AQI labour window v1",
+        "wbgt_c": wb["wbgt_c"],
+        "wbgt_level": wb["level"],
+        "method": "WBGT×AQI labour window v2",
     }
 
 
@@ -857,7 +863,7 @@ def build(
     }
     obs_tail = [
         {"t": p["t"], "mm": p["mm"], "engine": "observed", "source": "open-meteo-analysis"}
-        for p in past[-6:]
+        for p in past[-16:]
     ]
     pack = {
         "regime": reg,
@@ -888,6 +894,12 @@ def build(
     }
     pack["actions"] = decide_actions(pack)
     pack["locked"] = locked(pack)
+    from app.science.live import attach_live, persist_issue
+    from app.science.sat_kalman import attach_to_nowcast
+
+    attach_live(pack, loc)
+    attach_to_nowcast(pack, loc, f)
+    persist_issue(f"{getattr(loc, 'district', '')}:{getattr(loc, 'place_name', '')}", pack)
     return pack
 
 
@@ -905,7 +917,7 @@ async def fetch_neighbors(loc: Any, limit: int = 6) -> list[dict[str, Any]]:
     hit = cache.get(key)
     if isinstance(hit, list):
         return hit
-    rows = nearby(lat, lon, limit=limit)
+    rows = nearby(lat, lon, limit=max(limit, 8))
 
     async def one(n: Any) -> dict[str, Any] | None:
         try:

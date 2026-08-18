@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.science import bandit, blindspot, hysteresis, livelihood, nowcast, phenology, regret, residual, vernacular, verify, wb_xai
+from app.science import bandit, blindspot, hysteresis, ledger, livelihood, monsoon, nowcast, phenology, regret, residual, sat_kalman, vernacular, verify, wb_xai
+from app.science.live import load_issues, skill_from_log
 
 
 def enrich_features(f: dict[str, Any], loc: Any, mandi: list[dict] | None = None) -> dict[str, Any]:
     """Write hysteresis / phenology fields onto the feature dict before risk cards."""
+    f["lat"] = getattr(loc, "lat", None)
+    f["lon"] = getattr(loc, "lon", None)
     hy = hysteresis.fingerprint(f)
     ph = phenology.invert(f, crop=getattr(loc, "crop_hint", None) or "aman_rice", mandi=mandi)
     f["hy_memory"] = hy["memory"]
@@ -59,6 +62,20 @@ def build_science(
     )
     if nc.get("error"):
         skill["nowcast"] = nc["error"]
+    place_key = f"{getattr(loc, 'district', '')}:{getattr(loc, 'place_name', '')}"
+    log_rows = load_issues(place_key)
+    skill["decision"] = skill_from_log(log_rows)
+    from app.providers import cwc as cwc_prov
+
+    river = cwc_prov.lookup(float(getattr(loc, "lat", 0) or 0), float(getattr(loc, "lon", 0) or 0))
+    rain3 = float(f.get("precip_3d_mm") or 0)
+    mandi_n = int(ph.get("arrivals") or 0)
+    market = {
+        "lock": rain3 >= 45,
+        "arrivals": mandi_n,
+        "advice": "sell_today" if rain3 >= 45 else "wait" if rain3 >= 20 else "open",
+        "method": "mandi-weather coupling v1",
+    }
     return {
         "hysteresis": hy,
         "regret": rg,
@@ -71,4 +88,8 @@ def build_science(
         "water_balance": budget,
         "verify": skill,
         "nowcast": nc,
+        "monsoon": monsoon.clock(f),
+        "ledger": ledger.week(f, hy, plot_m2),
+        "cwc": river,
+        "market_lock": market,
     }
