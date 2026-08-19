@@ -538,7 +538,18 @@ def attach_to_nowcast(pack_nc: dict[str, Any], loc: Any, f: dict[str, Any]) -> d
                 vals.append(max(0.0, float(x)))
             except (TypeError, ValueError):
                 vals.append(0.0)
-        obs = sat_obs.from_open_meteo_hours(times, vals, past_only=True)
+        live = pack_nc.get("sat_live") or {}
+        imerg = live.get("imerg") or {}
+        imerg_mm = imerg.get("mm_h")
+        if imerg.get("ok") and imerg_mm is not None:
+            obs = sat_obs.from_imerg_rate(float(imerg_mm))
+            om = sat_obs.from_open_meteo_hours(times, vals, past_only=True)
+            knots = list(om.get("knots") or [])
+            if obs["knots"]:
+                knots.append(obs["knots"][0])
+            obs = {**obs, "knots": knots[-16:]}
+        else:
+            obs = sat_obs.from_open_meteo_hours(times, vals, past_only=True)
         locked_mm = [h.get("mm") for h in (pack_nc.get("hours") or [])]
         from app.science.sat_phys import drivers_from_features
 

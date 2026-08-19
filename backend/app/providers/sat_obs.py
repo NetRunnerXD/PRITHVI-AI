@@ -73,6 +73,19 @@ def knots_from_nowcast(nc: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def from_imerg_rate(mm_h: float, t_iso: str | None = None) -> dict[str, Any]:
+    now = _parse(str(t_iso)) if t_iso else _now()
+    t = now.isoformat(timespec="seconds") if now else ""
+    val = max(0.0, float(mm_h))
+    return {
+        "knots": [{"t": t, "mm": round(val, 3), "mm_h": round(val, 3), "engine": "observed"}],
+        "source": "gibs-imerg",
+        "source_kind": "satellite-qpe",
+        "native_step_s": 1800,
+        "note": "IMERG precipitation rate sampled from NASA GIBS.",
+    }
+
+
 def available_source() -> dict[str, Any]:
     s = get_settings()
     if s.mosdac_user and s.mosdac_pass:
@@ -81,20 +94,12 @@ def available_source() -> dict[str, Any]:
             "source_kind": "satellite-qpe",
             "ready": False,
             "native_step_s": 1800,
-            "note": "MOSDAC credentials present but HEM download is not wired in this prototype.",
-        }
-    if s.nasa_earthdata_user and s.nasa_earthdata_pass:
-        return {
-            "source": "imerg-early",
-            "source_kind": "satellite-qpe",
-            "ready": False,
-            "native_step_s": 1800,
-            "note": "Earthdata credentials present but IMERG Early is not wired in this prototype.",
+            "note": "MOSDAC login present; HEM HDF not approved yet. Live path uses IMD INSAT IR JPEG + GIBS IMERG.",
         }
     return {
-        "source": "om-analysis",
-        "source_kind": "model-analysis",
+        "source": "imd-insat-ir + gibs-imerg",
+        "source_kind": "satellite-ir",
         "ready": True,
-        "native_step_s": 3600,
-        "note": "No MOSDAC/IMERG keys. Using Open-Meteo hourly analysis as the scene.",
+        "native_step_s": 1800,
+        "note": "Public IMD INSAT-3D/3DS IR1 JPEG + NASA GIBS IMERG. HEM HDF needs MOSDAC approval.",
     }
