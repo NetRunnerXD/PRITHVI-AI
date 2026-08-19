@@ -72,6 +72,144 @@ export async function reverseGeocode(lat: number, lon: number): Promise<Location
   return r.json();
 }
 
+export type StormMapPack = {
+  as_of?: string;
+  as_of_ms?: number;
+  state?: string;
+  ok?: boolean;
+  frame?: { south: number; west: number; north: number; east: number; lat: number; lon: number; n?: number; all_india?: boolean };
+  strokes?: StormStroke[];
+  past_strokes?: StormStroke[];
+  past_cells?: {
+    id?: string;
+    lat: number;
+    lon: number;
+    kind?: string;
+    place?: string;
+    phase?: string;
+    min_tb_k?: number;
+    rain_ir_mm_h?: number;
+    area_km2?: number;
+    started_at?: string;
+    closes_at?: string;
+  }[];
+  cells?: {
+    id?: string;
+    lat: number;
+    lon: number;
+    kind?: string;
+    place?: string;
+    min_tb_k?: number;
+    rain_ir_mm_h?: number;
+    trend?: string;
+    area_km2?: number;
+    p_lightning?: number;
+    p_cloudburst?: number;
+    ring?: number[][];
+  }[];
+  polygons?: StormPolygon[];
+  predicted?: StormIncident[];
+  predicted_storms?: StormIncident[];
+  counts?: {
+    lightning?: number;
+    cloudburst?: number;
+    downburst?: number;
+    storm?: number;
+    predicted?: number;
+    predicted_storm?: number;
+    past_lightning?: number;
+    past_storm?: number;
+    all?: number;
+  };
+  sensors?: Record<string, boolean | string>;
+  imerg_mm_h?: number | null;
+  incidents?: StormIncident[];
+};
+
+export type StormStroke = {
+  lat: number;
+  lon: number;
+  distance_km?: number;
+  t?: string | null;
+  timestamp_utc?: string | null;
+  past_mins?: number | null;
+  place?: string;
+  kind?: string;
+  phase?: string;
+  started_ms?: number;
+  engine?: string;
+  lead_h?: number;
+};
+
+export type StormPolygon = {
+  id: string;
+  kind?: string;
+  lead_min?: number;
+  ring: number[][];
+  p_lightning?: number;
+  place?: string;
+  lat?: number;
+  lon?: number;
+  confidence?: number;
+  confidence_band?: string;
+};
+
+export type StormIncident = {
+  id: string;
+  kind: string;
+  lat: number;
+  lon: number;
+  place: string;
+  started_at: string;
+  closes_at: string;
+  started_ms?: number;
+  closes_ms?: number;
+  lead_min?: number;
+  phase?: string;
+  trend?: string | null;
+  rain_ir_mm_h?: number;
+  min_tb_k?: number;
+  p_lightning?: number;
+  p_cloudburst?: number;
+  engine?: string;
+  remain_min?: number;
+  lifetime_min?: number;
+  ring?: number[][];
+  confidence?: number;
+  confidence_band?: string;
+  t?: string | null;
+  verify?: { weather_code?: number; precip_mm?: number; cape?: number; agrees?: boolean | null; note?: string };
+};
+
+export type StormMapTools = {
+  overlayOpacity: number;
+  showPin: boolean;
+  pastHours: number;
+  minConfidence: number;
+  fitNonce: number;
+};
+
+export async function fetchStates(): Promise<string[]> {
+  try {
+    const r = await fetch(apiUrl("/states"));
+    if (!r.ok) return [];
+    const data = await r.json();
+    return data.states || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchStormMap(state: string): Promise<StormMapPack | null> {
+  try {
+    const r = await fetch(`${apiUrl("/nowcast/storm-map")}?state=${encodeURIComponent(state)}`);
+    if (!r.ok) return null;
+    return (await r.json()) as StormMapPack;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchNearby(lat: number, lon: number): Promise<Location[]> {
   const r = await fetch(`${apiUrl("/geo/nearby")}?lat=${lat}&lon=${lon}&limit=6`);
   if (!r.ok) return [];

@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import type { Location } from "@/types/dashboard";
+import type { StormMapPack, StormMapTools } from "@/lib/api";
 
 const MapView = dynamic(() => import("./MapView").then((m) => m.MapView), { ssr: false });
 
@@ -14,6 +15,11 @@ export function MapWrap(props: {
   basemap: string;
   nearby: Location[];
   overlays?: string[];
+  storm?: StormMapPack | null;
+  highlights?: string[];
+  focusPin?: { lat: number; lon: number; zoom?: number } | null;
+  selectedId?: string | null;
+  tools?: StormMapTools;
   onPick: (l: Location) => void;
 }) {
   return <MapView {...props} />;
