@@ -150,6 +150,16 @@ export default function Page() {
         </header>
 
         {status === "error" ? <p className="neo px-3 py-2 text-sm text-neo-danger">{error}</p> : null}
+        {dashboard?.provider_status?.["open-meteo"] === "stale" ? (
+          <p className="neo px-3 py-2 text-sm text-neo-warn" role="status">
+            Live forecast quota is used up. Showing the last saved Open-Meteo / archive scene until the daily limit resets.
+          </p>
+        ) : null}
+        {dashboard?.provider_status?.["open-meteo"] === "error" ? (
+          <p className="neo px-3 py-2 text-sm text-neo-danger" role="status">
+            Weather model is unavailable (Open-Meteo). Other tabs that need temperature and rain will stay empty until it answers.
+          </p>
+        ) : null}
 
         {!dashboard && tab !== "settings" ? (
           <p className="text-neo-muted">{status === "loading" ? t.loading : "…"}</p>

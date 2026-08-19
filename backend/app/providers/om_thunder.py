@@ -87,7 +87,7 @@ async def fetch(lat: float, lon: float) -> dict[str, Any]:
             "hours": hours,
             "status": "ok",
         }
-        cache.set(ck, out, 180)
+        cache.set(ck, out, 600)
         return out
     except Exception:
         out = {"ok": False, "source": "open-meteo-thunder", "status": "error", "thunder": False, "hours": []}

@@ -447,34 +447,41 @@ async def build(state: str) -> dict[str, Any]:
         if i.get("phase") in {"past", "predicted"} or int(i.get("closes_ms") or 0) >= now_ms - 30_000
     ]
 
-    uniq: dict[tuple[float, float], list[dict[str, Any]]] = {}
+    hub_wx = list(zip(hubs, thunder_packs))
+
+    def _nearest_wx(lat: float, lon: float) -> dict[str, Any]:
+        best = {}
+        best_d = 1e18
+        for h, th in hub_wx:
+            d = (float(h["lat"]) - lat) ** 2 + (float(h["lon"]) - lon) ** 2
+            if d < best_d:
+                best_d = d
+                best = th if isinstance(th, dict) else {}
+        return best
+
     for inc in incidents:
-        k = (round(float(inc["lat"]) * 2) / 2, round(float(inc["lon"]) * 2) / 2)
-        uniq.setdefault(k, []).append(inc)
-    sample = list(uniq.items())[:12]
-    if sample:
-        vpacks = await asyncio.gather(*[om_thunder.fetch(la, lo) for (la, lo), _ in sample])
-        for ((_, incs), vp) in zip(sample, vpacks):
-            for inc in incs:
-                agrees = om_thunder.agrees(inc["kind"], vp) if vp.get("ok") else None
-                inc["verify"] = {
-                    "weather_code": vp.get("weather_code"),
-                    "precip_mm": vp.get("precip_mm"),
-                    "cape": vp.get("cape"),
-                    "agrees": agrees,
-                    "note": f"OM code {vp.get('weather_code')} precip {vp.get('precip_mm')}",
-                }
-                if inc.get("phase") == "predicted":
-                    inc.update(
-                        thunder_predict.confidence_of(
-                            float(inc.get("p_lightning") or 0),
-                            lead_min=int(inc.get("lead_min") or 0),
-                            cape=float(vp.get("cape") or 0),
-                            weather_code=int(vp.get("weather_code") or 0),
-                            agrees=agrees,
-                            p_cloudburst=float(inc.get("p_cloudburst") or 0),
-                        )
-                    )
+        vp = _nearest_wx(float(inc["lat"]), float(inc["lon"]))
+        if not vp:
+            continue
+        agrees = om_thunder.agrees(inc["kind"], vp) if vp.get("ok") else None
+        inc["verify"] = {
+            "weather_code": vp.get("weather_code"),
+            "precip_mm": vp.get("precip_mm"),
+            "cape": vp.get("cape"),
+            "agrees": agrees,
+            "note": f"OM code {vp.get('weather_code')} precip {vp.get('precip_mm')}",
+        }
+        if inc.get("phase") == "predicted":
+            inc.update(
+                thunder_predict.confidence_of(
+                    float(inc.get("p_lightning") or 0),
+                    lead_min=int(inc.get("lead_min") or 0),
+                    cape=float(vp.get("cape") or 0),
+                    weather_code=int(vp.get("weather_code") or 0),
+                    agrees=agrees,
+                    p_cloudburst=float(inc.get("p_cloudburst") or 0),
+                )
+            )
 
     order = {"lightning": 0, "cloudburst": 1, "downburst": 2, "storm": 3, "cloud": 4}
     phase_order = {"live": 0, "predicted": 1, "past": 2, "ended": 3}

@@ -964,7 +964,7 @@ def build(
     return pack
 
 
-async def fetch_neighbors(loc: Any, limit: int = 6) -> list[dict[str, Any]]:
+async def fetch_neighbors(loc: Any, limit: int = 3) -> list[dict[str, Any]]:
     """Cached Open-Meteo hours on nearby gazetteer points."""
     import asyncio
 

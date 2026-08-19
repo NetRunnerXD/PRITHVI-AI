@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app import cache
+from app.config import ROOT
 from app.providers.http import client
 
 FORECAST = "https://api.open-meteo.com/v1/forecast"
+_GOOD = ROOT / ".cache" / "om_last"
 FLOOD = "https://flood-api.open-meteo.com/v1/flood"
 AIR = "https://air-quality-api.open-meteo.com/v1/air-quality"
 MARINE = "https://marine-api.open-meteo.com/v1/marine"
@@ -13,10 +16,34 @@ ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 GEO = "https://geocoding-api.open-meteo.com/v1/search"
 
 
+def _good_path(kind: str, lat: float, lon: float):
+    return _GOOD / f"{kind}_{round(lat, 2)}_{round(lon, 2)}.json"
+
+
+def _save_good(kind: str, lat: float, lon: float, data: dict[str, Any]) -> None:
+    try:
+        _GOOD.mkdir(parents=True, exist_ok=True)
+        slim = {k: v for k, v in data.items() if not str(k).startswith("_")}
+        _good_path(kind, lat, lon).write_text(json.dumps(slim), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _load_good(kind: str, lat: float, lon: float) -> dict[str, Any] | None:
+    p = _good_path(kind, lat, lon)
+    if not p.exists():
+        return None
+    try:
+        blob = json.loads(p.read_text(encoding="utf-8"))
+        return blob if isinstance(blob, dict) and (blob.get("current") or blob.get("hourly") or blob.get("daily")) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 async def forecast(lat: float, lon: float) -> dict[str, Any]:
     key = f"om:fc3:{round(lat, 3)}:{round(lon, 3)}"
     hit = cache.get(key)
-    if hit is not None:
+    if isinstance(hit, dict) and (hit.get("current") or hit.get("hourly")):
         return hit
     params = {
         "latitude": lat,
@@ -33,11 +60,92 @@ async def forecast(lat: float, lon: float) -> dict[str, Any]:
         "forecast_days": 7,
         "timezone": "Asia/Kolkata",
     }
-    r = await client().get(FORECAST, params=params)
-    r.raise_for_status()
-    data = r.json()
-    cache.set(key, data, 90)
-    return data
+    try:
+        r = await client().get(FORECAST, params=params)
+        if r.status_code == 429:
+            good = _load_good("fc", lat, lon) or await _archive_fallback(lat, lon)
+            if good:
+                good["_stale"] = True
+                good["_stale_reason"] = "open-meteo-429"
+                cache.set(key, good, 180)
+                return good
+            r.raise_for_status()
+        r.raise_for_status()
+        data = r.json()
+        if isinstance(data, dict) and not data.get("error"):
+            _save_good("fc", lat, lon, data)
+            cache.set(key, data, 300)
+            return data
+        good = _load_good("fc", lat, lon)
+        if good:
+            good["_stale"] = True
+            return good
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        good = _load_good("fc", lat, lon) or await _archive_fallback(lat, lon)
+        if good:
+            good["_stale"] = True
+            good["_stale_reason"] = "open-meteo-error"
+            cache.set(key, good, 180)
+            return good
+        raise
+
+
+async def _archive_fallback(lat: float, lon: float) -> dict[str, Any] | None:
+    """ERA5 archive when the live forecast quota is gone. Not a gauge."""
+    from datetime import date, timedelta
+
+    today = date.today()
+    try:
+        r = await client().get(
+            ARCHIVE,
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "start_date": (today - timedelta(days=1)).isoformat(),
+                "end_date": today.isoformat(),
+                "hourly": (
+                    "temperature_2m,precipitation,relative_humidity_2m,weather_code,"
+                    "wind_speed_10m,wind_direction_10m,cloud_cover,et0_fao_evapotranspiration,"
+                    "soil_moisture_0_to_7cm"
+                ),
+                "daily": "precipitation_sum,temperature_2m_max,temperature_2m_min,et0_fao_evapotranspiration,weather_code",
+                "timezone": "Asia/Kolkata",
+            },
+        )
+        if r.status_code >= 400:
+            return None
+        data = r.json()
+        hourly = data.get("hourly") or {}
+        temps = hourly.get("temperature_2m") or []
+        last = None
+        for i in range(len(temps) - 1, -1, -1):
+            if temps[i] is not None:
+                last = i
+                break
+        if last is None:
+            return None
+
+        def _h(name: str):
+            row = hourly.get(name) or []
+            return row[last] if last < len(row) else None
+
+        data["current"] = {
+            "temperature_2m": _h("temperature_2m"),
+            "relative_humidity_2m": _h("relative_humidity_2m"),
+            "precipitation": _h("precipitation"),
+            "weather_code": _h("weather_code"),
+            "wind_speed_10m": _h("wind_speed_10m"),
+            "wind_direction_10m": _h("wind_direction_10m"),
+            "cloud_cover": _h("cloud_cover"),
+            "is_day": 1,
+            "time": (hourly.get("time") or [None])[last],
+        }
+        data["_archive_fallback"] = True
+        _save_good("fc", lat, lon, data)
+        return data
+    except Exception:
+        return None
 
 
 async def flood(lat: float, lon: float) -> dict[str, Any]:

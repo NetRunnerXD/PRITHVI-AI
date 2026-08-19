@@ -56,7 +56,10 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
     async def run(name: str, coro, default):
         try:
             val = await coro
-            status[name] = "ok"
+            if isinstance(val, dict) and val.get("_stale"):
+                status[name] = "stale"
+            else:
+                status[name] = "ok"
             return val
         except Exception:
             status[name] = "error"
@@ -442,7 +445,7 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
     cap_hit = bool(local_caps)
     pre = enrich_features(f, loc, obs.get("mandi") or [])
     try:
-        pre["neighbors"] = await fetch_neighbors(loc, limit=6)
+        pre["neighbors"] = await fetch_neighbors(loc, limit=3)
     except Exception:
         pre["neighbors"] = []
     rg0 = evaluate_regret(
