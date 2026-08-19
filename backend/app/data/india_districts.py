@@ -231,6 +231,52 @@ def is_state_name(q: str) -> bool:
     return False
 
 
+def state_frame(state: str) -> dict:
+    """BBox + centroid from gazetteer districts. Used to crop the live storm map."""
+    needle = (state or "").strip().lower()
+    if needle in {"", "india", "all", "all india", "*"}:
+        rows = list(all_districts())
+        return {
+            "state": "India",
+            "ok": True,
+            "south": 6.6,
+            "west": 68.1,
+            "north": 35.8,
+            "east": 97.4,
+            "lat": 22.5,
+            "lon": 79.0,
+            "n": len(rows),
+            "all_india": True,
+        }
+    rows = districts_in_state(state)
+    if not rows:
+        return {
+            "state": state,
+            "ok": False,
+            "south": 6.5,
+            "west": 68.0,
+            "north": 37.2,
+            "east": 97.5,
+            "lat": 22.5,
+            "lon": 79.0,
+            "n": 0,
+        }
+    lats = [float(d["lat"]) for d in rows]
+    lons = [float(d["lon"]) for d in rows]
+    pad = 0.45
+    return {
+        "state": rows[0]["state"],
+        "ok": True,
+        "south": min(lats) - pad,
+        "west": min(lons) - pad,
+        "north": max(lats) + pad,
+        "east": max(lons) + pad,
+        "lat": sum(lats) / len(lats),
+        "lon": sum(lons) / len(lons),
+        "n": len(rows),
+    }
+
+
 def districts_in_state(state: str) -> list[dict]:
     needle = (state or "").strip().lower()
     if not needle:
@@ -248,7 +294,7 @@ def districts_in_state(state: str) -> list[dict]:
     }
     needle = aliases.get(needle, needle)
     out = [d for d in all_districts() if needle in d["state"].lower() or d["state"].lower() in needle]
-    return out or list(all_districts())
+    return out
 
 
 def extract_places(text: str) -> list[str]:
