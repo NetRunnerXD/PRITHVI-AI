@@ -71,7 +71,7 @@ export function SciencePanel({ dash, locale }: { dash: DashboardSnapshot; locale
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           <Tile
             k={t.nowcast}
-            v={(nc.regime?.name || "—").toUpperCase()}
+            v={nc.regime?.name?.toLowerCase() === "squall" ? "STORM" : (nc.regime?.name || "—").toUpperCase()}
             sub={`${t.onset} ${nc.clock?.t_start ? nc.clock.t_start.slice(11, 16) : "—"} · ${t.cessation} ${
               nc.clock?.t_stop ? nc.clock.t_stop.slice(11, 16) : "—"
             }`}

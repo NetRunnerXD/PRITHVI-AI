@@ -288,8 +288,9 @@ export type DashboardSnapshot = {
     nowcast?: NowcastPack;
     provenance?: Record<string, string>;
     monsoon?: { label?: string; regime?: string };
-    cwc?: { name?: string; km?: number; river?: string };
-    port?: { active?: boolean; signal?: string | null };
+    cwc?: { name?: string; km?: number; river?: string; relevant?: boolean };
+    port?: { active?: boolean; signal?: string | null; relevant?: boolean };
+    phys?: { kind?: string; label?: string; pond_scale?: number; hugli?: boolean; show_tide?: boolean };
     market_lock?: { advice?: string; lock?: boolean };
     ledger?: { days?: { date?: string; precip_mm?: number }[] };
   };
@@ -314,11 +315,12 @@ export type NowcastPack = {
   playhead?: Record<string, unknown>;
   regime?: { name?: string; daily?: string; last_mm?: number; method?: string };
   clock?: { t_start?: string | null; t_stop?: string | null };
-  ponding?: { mm_60?: number; mm_120?: number; factor?: number };
+  ponding?: { mm_60?: number; mm_120?: number; factor?: number; phys?: string };
   pump?: { p_interrupt_90m?: number; liters_at_risk?: number; rain_90m_mm?: number; action?: string };
   access?: { enterable?: boolean; p_closed_2h?: number; reasons?: string[]; stage?: string };
-  kal?: { score_pct?: number; level?: string };
-  tide?: { drain_blocked?: boolean; coastal?: boolean; rain_3h_mm?: number; stay_off_ghat?: boolean };
+  kal?: { score_pct?: number; level?: string; kal_belt?: boolean };
+  tide?: { drain_blocked?: boolean; coastal?: boolean; rain_3h_mm?: number; stay_off_ghat?: boolean; relevant?: boolean };
+  phys?: { kind?: string; label?: string; pond_scale?: number; hugli?: boolean; show_tide?: boolean };
   cost?: { wasted_liters_if_apply?: number; stress_mm_if_wait_2h?: number; prefer?: string };
   air?: { peak_us_aqi?: number | null; hours?: { t?: string; us_aqi?: number }[] };
   labour?: { closed_2h?: boolean; peak_us_aqi?: number };
@@ -329,6 +331,27 @@ export type NowcastPack = {
   locked?: Record<string, unknown>;
   actions?: { id?: string; action?: string; verb?: string; when?: string }[];
   sat?: SatKalmanPack;
+  convective?: ConvectivePack;
+  sat_live?: SatLivePack;
+};
+
+export type ConvectivePack = {
+  lightning?: { level?: string; score_pct?: number; n_strokes?: number; nearest_km?: number | null; detected?: boolean; nowcast?: { eta_min?: number | null } };
+  cloudburst?: { level?: string; score_pct?: number; eta_min?: number | null; rain_sat_mm_h?: number; rain_ir_mm_h?: number };
+  downburst?: { level?: string; score_pct?: number; eta_min?: number | null; gust_env_kmh?: number; cape_jkg?: number };
+  cell?: { id?: string; lat?: number; lon?: number; min_tb_k?: number; rain_ir_mm_h?: number; trend?: string; speed_kmh?: number };
+  n_cells?: number;
+  sensors?: Record<string, boolean>;
+};
+
+export type SatLivePack = {
+  ok?: boolean;
+  as_of?: string;
+  insat?: { ok?: boolean; source?: string; tb_k?: number | null };
+  ir?: { ok?: boolean; source?: string; tb_k?: number | null };
+  imerg?: { ok?: boolean; mm_h?: number | null; source?: string };
+  lightning?: { ok?: boolean; n?: number; nearest_km?: number | null; strokes?: { lat: number; lon: number; distance_km: number; t?: string | null }[] };
+  cells?: ConvectivePack["cell"][];
 };
 
 export type SatKalmanPack = {

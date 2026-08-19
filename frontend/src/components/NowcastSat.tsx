@@ -149,7 +149,6 @@ export function NowcastSat({ loc, locale, seed }: { loc: Location; locale: Local
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.satEngine}</p>
-          <p className="mt-1 text-[11px] text-neo-muted">{t.satGraphHint}</p>
         </div>
         <div className="flex gap-1">
           <button type="button" className={`neo-btn text-xs ${stride === 60 ? "ring-1 ring-neo-accent" : ""}`} onClick={() => pickStride(60)}>
@@ -162,9 +161,8 @@ export function NowcastSat({ loc, locale, seed }: { loc: Location; locale: Local
       </div>
 
       <p className={`mt-2 text-[11px] ${notSat ? "text-neo-muted" : "text-neo-accent"}`}>
-        {notSat ? t.satNotSatellite : t.satSource}: {sat?.source || "om-analysis"}
+        {t.satSource}: {sat?.source || "om-analysis"}
       </p>
-      <p className="mt-1 text-[11px] text-neo-muted">{t.satHint}</p>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Chip k={t.satLiveRate} v={liveRate == null ? "—" : `${liveRate.toFixed(2)} mm/h`} hot={Boolean(liveRate && liveRate >= 4)} />
@@ -204,7 +202,6 @@ export function NowcastSat({ loc, locale, seed }: { loc: Location; locale: Local
 
       <div className="mt-5 border-t border-neo-line pt-4">
         <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.satHistory}</p>
-        <p className="mt-1 text-[11px] text-neo-muted">{t.satHistoryHint}</p>
         {histChart.length ? (
           <>
             <div className="mt-3 h-56">
@@ -244,7 +241,6 @@ export function NowcastSat({ loc, locale, seed }: { loc: Location; locale: Local
                 </ResponsiveContainer>
               </div>
             ) : null}
-            <p className="mt-2 text-[11px] text-neo-muted">{hist?.note}</p>
           </>
         ) : (
           <p className="mt-2 text-sm text-neo-muted">{t.satNoHistory}</p>
@@ -283,7 +279,7 @@ export function NowcastSat({ loc, locale, seed }: { loc: Location; locale: Local
         </div>
       ) : null}
 
-      <p className="mt-3 text-[11px] text-neo-muted">{sat?.note || t.satLearnNote}</p>
+
     </section>
   );
 }

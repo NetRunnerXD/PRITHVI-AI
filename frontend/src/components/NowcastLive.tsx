@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { DashboardSnapshot, NowcastPack, SatKalmanPack } from "@/types/dashboard";
+import type { ConvectivePack, DashboardSnapshot, NowcastPack, SatKalmanPack, SatLivePack } from "@/types/dashboard";
 import { NowcastSat } from "@/components/NowcastSat";
 import { COPY, type Locale } from "@/i18n/copy";
 import { fetchNowcastLive } from "@/lib/api";
@@ -29,14 +29,17 @@ type LivePack = {
   access?: { enterable?: boolean; reasons?: string[] };
   ponding?: { mm_60?: number; factor?: number };
   kal?: { level?: string };
-  tide?: { drain_blocked?: boolean };
+  tide?: { drain_blocked?: boolean; relevant?: boolean };
   locked?: Record<string, unknown>;
   actions?: { id?: string; action?: string }[];
   provenance?: Record<string, string>;
-  port?: { active?: boolean; signal?: string | null };
+  port?: { active?: boolean; signal?: string | null; relevant?: boolean };
   monsoon?: { label?: string; regime?: string };
-  cwc?: { name?: string; km?: number; river?: string };
+  cwc?: { name?: string; km?: number; river?: string; relevant?: boolean };
+  phys?: { kind?: string; show_tide?: boolean };
   sat?: SatKalmanPack;
+  convective?: ConvectivePack;
+  sat_live?: SatLivePack;
 };
 
 function hhmmss(d: Date) {
@@ -105,7 +108,15 @@ export function NowcastLive({ dash, locale }: { dash: DashboardSnapshot; locale:
 
   const nc: NowcastPack | undefined = dash.science?.nowcast;
   const gap = live?.gap?.series || nc?.gap?.series || gapFromHours(live?.knots || nc?.hours);
-  const tideM = tideHaldia(now);
+  const tideRelevant = Boolean(
+    live?.playhead?.tide_relevant ?? live?.tide?.relevant ?? nc?.tide?.relevant ?? live?.phys?.show_tide
+  );
+  const playTide = live?.playhead?.tide_m;
+  const tideM = tideRelevant
+    ? typeof playTide === "number"
+      ? playTide
+      : tideHaldia(now)
+    : null;
   const onset = parseIso(live?.clock?.t_start || nc?.clock?.t_start);
   const secs = onset ? Math.round((onset.getTime() - now.getTime()) / 1000) : null;
   const factor = Number(live?.ponding?.factor ?? nc?.ponding?.factor ?? 0.2);
@@ -136,21 +147,95 @@ export function NowcastLive({ dash, locale }: { dash: DashboardSnapshot; locale:
   const access = live?.access || nc?.access;
   const kal = live?.kal || nc?.kal;
   const drain = live?.tide?.drain_blocked ?? nc?.tide?.drain_blocked;
-  const prov = live?.provenance || dash.science?.provenance;
+  const cwc = live?.cwc || dash.science?.cwc;
+  const port = live?.port || dash.science?.port;
+  const showCwc = Boolean(cwc?.relevant && cwc?.name);
+  const showPort = Boolean(port?.relevant);
+  const conv = live?.convective || nc?.convective;
+  const satLive = live?.sat_live || nc?.sat_live;
+  const strike = satLive?.lightning?.nearest_km ?? conv?.lightning?.nearest_km;
 
   return (
     <div className="space-y-3">
       <section className="neo p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.liveStorm}</h2>
+          <p className="text-[10px] text-neo-muted">
+            {[
+              satLive?.insat?.ok ? "INSAT IR" : null,
+              satLive?.imerg?.ok ? "IMERG" : null,
+              satLive?.lightning?.ok ? "Weatherbit" : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || t.satLive}
+          </p>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <Chip
+            k={t.lightning}
+            v={(conv?.lightning?.level || "—").toUpperCase()}
+            sub={
+              strike != null
+                ? `${t.lastStrike} ${strike} km`
+                : conv?.lightning?.detected
+                  ? `${conv.lightning.n_strokes ?? 0}`
+                  : "—"
+            }
+            hot={conv?.lightning?.level === "alert" || conv?.lightning?.level === "watch"}
+          />
+          <Chip
+            k={t.cloudburst}
+            v={(conv?.cloudburst?.level || "—").toUpperCase()}
+            sub={
+              conv?.cloudburst?.eta_min != null
+                ? `${t.cellEta} ${conv.cloudburst.eta_min} min`
+                : conv?.cloudburst?.rain_sat_mm_h != null
+                  ? `${conv.cloudburst.rain_sat_mm_h} mm/h`
+                  : ""
+            }
+            hot={conv?.cloudburst?.level === "alert" || conv?.cloudburst?.level === "watch"}
+          />
+          <Chip
+            k={t.downburst}
+            v={(conv?.downburst?.level || "—").toUpperCase()}
+            sub={conv?.downburst?.gust_env_kmh != null ? `${conv.downburst.gust_env_kmh} km/h` : ""}
+            hot={conv?.downburst?.level === "alert" || conv?.downburst?.level === "watch"}
+          />
+          <Chip
+            k={t.cellRain}
+            v={
+              conv?.cell?.rain_ir_mm_h != null
+                ? `${conv.cell.rain_ir_mm_h} mm/h`
+                : satLive?.imerg?.mm_h != null
+                  ? `${satLive.imerg.mm_h} mm/h`
+                  : "—"
+            }
+            sub={conv?.cell?.trend || satLive?.insat?.source || ""}
+          />
+        </div>
+        {(satLive?.cells || []).length ? (
+          <ul className="mt-3 space-y-1 text-xs text-neo-muted">
+            {(satLive?.cells || []).slice(0, 4).map((c, i) => (
+              <li key={c?.id || i}>
+                {c?.id} · {c?.lat}, {c?.lon}
+                {c?.min_tb_k != null ? ` · ${c.min_tb_k} K` : ""}
+                {c?.rain_ir_mm_h != null ? ` · ${c.rain_ir_mm_h} mm/h` : ""}
+                {c?.trend ? ` · ${c.trend}` : ""}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
+      <section className="neo p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.tabNowcast}</h2>
           <p className="font-mono text-sm font-bold text-neo-accent">{hhmmss(now)}</p>
         </div>
-        <p className="mt-1 text-xs text-neo-muted">{t.liveClockHint}</p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Chip k={t.secondsToOnset} v={fmtCountdown(secs, t)} />
-          <Chip k={t.tideHaldia} v={`${tideM.toFixed(2)} m`} sub={t.tideProxy} />
+          {tideM != null ? <Chip k={t.tideHaldia} v={`${tideM.toFixed(2)} m`} /> : null}
           <Chip k={t.ponding} v={rain(pond, units)} />
-          <Chip k={t.gapRate} v={`${rate.toFixed(2)} mm/h`} sub={t.notAForecast} />
+          <Chip k={t.gapRate} v={`${rate.toFixed(2)} mm/h`} />
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           <Chip
@@ -233,30 +318,21 @@ export function NowcastLive({ dash, locale }: { dash: DashboardSnapshot; locale:
           <span className="text-neo-muted">{t.monsoonClock}: </span>
           {(live?.monsoon || dash.science?.monsoon)?.label || "—"}
         </p>
-        <p>
-          <span className="text-neo-muted">{t.nearestRiver}: </span>
-          {live?.cwc?.name || dash.science?.cwc?.name || "—"}
-          {live?.cwc?.km != null ? ` · ${live.cwc.km} km` : ""}
-        </p>
-        <p>
-          <span className="text-neo-muted">{t.portSignal}: </span>
-          {live?.port?.active ? live.port.signal || t.watchThis : t.allClear}
-        </p>
-        <p className="text-xs text-neo-muted md:col-span-2">{live?.gap?.note || t.liveClockHint}</p>
+        {showCwc ? (
+          <p>
+            <span className="text-neo-muted">{t.nearestRiver}: </span>
+            {cwc?.name}
+            {cwc?.km != null ? ` · ${cwc.km} km` : ""}
+            {cwc?.river ? ` · ${cwc.river}` : ""}
+          </p>
+        ) : null}
+        {showPort ? (
+          <p>
+            <span className="text-neo-muted">{t.portSignal}: </span>
+            {port?.active ? port.signal || t.watchThis : t.allClear}
+          </p>
+        ) : null}
       </section>
-
-      {prov ? (
-        <section className="neo p-4">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.provenance}</p>
-          <ul className="mt-2 space-y-1 text-xs text-neo-muted">
-            {Object.entries(prov).map(([k, v]) => (
-              <li key={k}>
-                <span className="font-semibold text-neo-text">{k}</span> — {v}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
     </div>
   );
 }

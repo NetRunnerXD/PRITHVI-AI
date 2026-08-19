@@ -113,7 +113,7 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
     {
       k: t.kalWatch,
       v: nc?.kal?.level === "watch" || nc?.tide?.drain_blocked ? (nc?.tide?.drain_blocked ? t.drainBlocked : t.kalWatch) : t.allClear,
-      sub: nc?.regime?.name || "",
+      sub: regimeLabel(nc?.regime?.name),
       hot: nc?.kal?.level === "watch" || Boolean(nc?.tide?.drain_blocked),
     },
   ];
@@ -129,11 +129,6 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
           </div>
         ))}
       </div>
-      {dash.science?.provenance ? (
-        <p className="text-[11px] text-neo-muted">
-          {t.provenance}: {dash.science.provenance.nowcast_mm || dash.science.provenance.rain}
-        </p>
-      ) : null}
       <div className="grid gap-3 lg:grid-cols-12">
         <section className="neo sky-card relative overflow-hidden p-5 lg:col-span-7">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.sky}</p>
@@ -167,9 +162,10 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
           <div className="mt-4 grid grid-cols-2 gap-3">
             <Stat k={t.rain3} v={rain(dash.predictive.precip_next_3d_mm, units)} />
             <Stat k={t.rain7} v={rain(dash.predictive.precip_7d_mm, units)} />
-            <Stat
+            <RainOdds
               k={t.chanceOfRain}
-              v={(dash.predictive.precip_probability_pct || []).slice(0, 3).map((p) => `${p}%`).join(" · ") || "—"}
+              pct={(dash.predictive.precip_probability_pct || []).slice(0, 3)}
+              days={[t.day1, t.day2, t.day3]}
             />
             <Stat k={t.balance} v={rain(dash.predictive.water_balance_7d_mm, units)} />
           </div>
@@ -180,7 +176,6 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
         <section className="neo overflow-x-auto p-3">
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
             <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.nowcast}</p>
-            <p className="text-[10px] text-neo-muted">{t.modelAnalysis}</p>
           </div>
           <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
             {nc?.clock?.t_start ? (
@@ -354,6 +349,32 @@ function Stat({ k, v }: { k: string; v: string }) {
       <p className="font-mono text-lg font-semibold">{v}</p>
     </div>
   );
+}
+
+function RainOdds({ k, pct, days }: { k: string; pct: number[]; days: string[] }) {
+  if (!pct.length) {
+    return <Stat k={k} v="—" />;
+  }
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-widest text-neo-muted">{k}</p>
+      <div className="mt-0.5 grid grid-cols-3 gap-1">
+        {pct.map((p, i) => (
+          <div key={days[i] || i} className="text-center">
+            <p className="font-mono text-lg font-semibold">{p}%</p>
+            <p className="text-[10px] uppercase tracking-widest text-neo-muted">{days[i] || `DAY${i + 1}`}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function regimeLabel(name?: string | null) {
+  if (!name) return "";
+  const n = name.replace(/_/g, " ").trim();
+  if (n.toLowerCase() === "squall") return "STORM";
+  return n.toUpperCase();
 }
 
 function Spark({

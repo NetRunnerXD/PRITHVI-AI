@@ -57,6 +57,36 @@ function marineLabel(live: LiveWatch | undefined, t: Record<string, string>) {
   return t.seaUnavailable;
 }
 
+function stackedRain(text: string) {
+  const low = text.toLowerCase();
+  return (
+    /heavy\s+to\s+very\s+heavy/.test(low) ||
+    /extremely heavy rainfall at/.test(low) ||
+    /heavy to very heavy with/.test(low)
+  );
+}
+
+function bulletinLine(w: EarlyWarning) {
+  const body = (w.body || "").trim();
+  if (!body || stackedRain(body) || stackedRain(w.title || "")) return "";
+  const first = body.split(/(?<=[.!?])\s+/)[0] || body;
+  if (stackedRain(first)) return "";
+  return first.length > 180 ? `${first.slice(0, 177)}…` : first;
+}
+
+function issuedLabel(iso?: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function EarlyWarnings({
   items,
   locale,
@@ -100,9 +130,7 @@ export function EarlyWarnings({
             <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-neo-muted">
               {worst ? worst.title : t.noWarnings}
             </p>
-          ) : (
-            <p className="mt-1 max-w-3xl text-[11px] leading-snug text-neo-muted">{t.warningsCaption}</p>
-          )}
+          ) : null}
         </button>
         {open ? (
           <div className="flex flex-wrap gap-1.5">
@@ -121,18 +149,25 @@ export function EarlyWarnings({
           {items.length === 0 ? (
             <p className="mt-3 text-sm text-neo-muted">{t.noWarnings}</p>
           ) : (
-            <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
-              {items.map((w) => (
-                <article key={w.id} className="neo-in min-w-[260px] flex-1 px-3 py-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className={`text-[10px] uppercase tracking-widest ${tone[w.severity] || ""}`}>{w.severity}</p>
-                    <span className="chip">{HAZARD_LABEL[w.hazard || "weather"] || w.hazard}</span>
-                  </div>
-                  <p className="mt-1 text-sm font-semibold">{w.title}</p>
-                  {w.body ? <p className="mt-1 line-clamp-2 text-xs text-neo-muted">{w.body}</p> : null}
-                  <p className="mt-2 text-[10px] uppercase tracking-wide text-neo-muted">{w.source}</p>
-                </article>
-              ))}
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {items.map((w) => {
+                const line = bulletinLine(w);
+                const when = issuedLabel(w.issued_at);
+                return (
+                  <article key={w.id} className="neo-in px-3 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className={`text-[10px] uppercase tracking-widest ${tone[w.severity] || ""}`}>{w.severity}</p>
+                      <span className="chip">{HAZARD_LABEL[w.hazard || "weather"] || w.hazard}</span>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold leading-snug">{w.title}</p>
+                    {line ? <p className="mt-1 text-xs leading-snug text-neo-muted">{line}</p> : null}
+                    <p className="mt-2 text-[10px] uppercase tracking-wide text-neo-muted">
+                      {w.source}
+                      {when ? ` · ${when}` : ""}
+                    </p>
+                  </article>
+                );
+              })}
             </div>
           )}
 

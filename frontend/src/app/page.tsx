@@ -164,14 +164,14 @@ export default function Page() {
                 <Collapse title={t.plots} defaultOpen={false}>
                   <OverviewPlots dash={dashboard} locale={locale} />
                 </Collapse>
-                <SourcesBox tab="overview" locale={locale} />
+                <SourcesBox tab="overview" locale={locale} provenance={dashboard.science?.provenance} />
               </div>
             ) : null}
 
             {tab === "nowcast" && dashboard ? (
               <div className="space-y-3">
                 <NowcastLive dash={dashboard} locale={locale} />
-                <SourcesBox tab="nowcast" locale={locale} />
+                <SourcesBox tab="nowcast" locale={locale} provenance={dashboard.science?.provenance} />
               </div>
             ) : null}
 
@@ -281,6 +281,13 @@ export default function Page() {
                     />
                   ))}
                 </div>
+                <SquareMap
+                  dash={dashboard}
+                  locale={locale}
+                  onPick={(l) => setLocation(l)}
+                  focus={mapFocus}
+                  compact
+                />
                 <SourcesBox tab="risks" locale={locale} />
               </div>
             ) : null}

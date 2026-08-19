@@ -60,7 +60,7 @@ export function LensGrid({
             <span className="ml-1 text-sm font-medium text-neo-muted">mm / 3d</span>
           </p>
           <p className="mt-1 text-sm text-neo-muted">
-            7d {dash.predictive.precip_7d_mm ?? "—"} mm · balance {dash.predictive.water_balance_7d_mm ?? "—"} mm
+            7d {dash.predictive.precip_7d_mm ?? "—"} mm · {t.balance} {dash.predictive.water_balance_7d_mm ?? "—"} mm
           </p>
           <p className="mt-1 text-xs text-neo-muted">
             P(rain): {(dash.predictive.precip_probability_pct || []).slice(0, 3).map((p) => `${p}%`).join(" · ") || "—"}

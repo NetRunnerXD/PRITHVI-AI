@@ -8,9 +8,16 @@ import type { TabId } from "@/types/dashboard";
 
 const EXTRA: Partial<Record<TabId, Record<Locale, string[]>>> = {
   alerts: {
-    en: ["Alerts: IMD CAP, CPCB, INCOIS, USGS, plus local rule actions."],
-    hi: ["चेतावनी: IMD CAP, CPCB, INCOIS, USGS और स्थानीय नियम।"],
-    bn: ["সতর্কতা: IMD CAP, CPCB, INCOIS, USGS ও স্থানীয় নিয়ম।"],
+    en: [
+      "IMD CAP weather · CPCB air (data.gov.in) · INCOIS ITEWS tsunami · USGS seismic (NCS has no public JSON) · Open-Meteo flood, marine & air. Open-Meteo does not publish earthquakes or tsunami.",
+      "Alerts also include local rule actions (pump, field access, storm watch).",
+    ],
+    hi: [
+      "IMD CAP मौसम · CPCB वायु (data.gov.in) · INCOIS ITEWS सुनामी · USGS भूकंप (NCS सार्वजनिक JSON नहीं) · Open-Meteo बाढ़, समुद्र और वायु। Open-Meteo भूकंप/सुनामी नहीं देता।",
+    ],
+    bn: [
+      "IMD CAP আবহাওয়া · CPCB বায়ু (data.gov.in) · INCOIS ITEWS সুনামি · USGS ভূকম্প (NCS-এর পাবলিক JSON নেই) · Open-Meteo বন্যা, সমুদ্র ও বায়ু। Open-Meteo ভূকম্প/সুনামি দেয় না।",
+    ],
   },
   settings: {
     en: ["Settings stay on this device (browser storage)."],
@@ -57,10 +64,10 @@ export function Pill({ level, locale }: { level: Level; locale: Locale }) {
 const TAB_SOURCES: Partial<Record<TabId, Record<Locale, string[]>>> = {
   nowcast: {
     en: [
-      "Nowcasting tab: 1 Hz playhead (clock, Hugli tide, countdown). Rain shape is 1-minute and sums to the locked hour.",
-      "Between-scene Kalman: predicts rain-rate every second until the next Open-Meteo (or INSAT/IMERG) hour, then updates on obs − pred. Minute / Second is graph stride, not two models.",
-      "History panel: causal predicted path, scene dots, last-scene hold, and offset bars. No rain is invented between scenes.",
-      "Not MinuteCast / MetNet / IMD radar. Open-Meteo hours are not a rain-gauge and not a satellite.",
+      "Live storm: IMD INSAT-3D/3DS public IR JPEG, NASA GIBS IR + IMERG, Weatherbit lightning strokes. Cells are tracked; 15–60 min is Lagrangian nowcast.",
+      "Cloudburst = extreme-rain cell at the pin. Downburst = collapsing cell + gust/CAPE. Lightning detections are strokes when Weatherbit returns them.",
+      "Locked hourly millimetres stay Open-Meteo (Advisor totals). Satellite rain-rate is a separate live estimate.",
+      "INSAT HEM HDF needs MOSDAC approval. Hugli tide / port only on the estuary.",
     ],
     hi: [
       "नाउकास्टिंग: सेकंड घड़ी (समय, हुगली ज्वार)। बारिश 1-मिनट और लॉक घंटे के बराबर।",
@@ -94,7 +101,11 @@ const TAB_SOURCES: Partial<Record<TabId, Record<Locale, string[]>>> = {
     ],
   },
   map: {
-    en: ["Places: Indian gazetteer first, then Open-Meteo India search.", "Overlay: Bhuvan / NRSC geomorphology via our map proxy."],
+    en: [
+      "Places: Indian gazetteer first, then Open-Meteo India search.",
+      "Live storm map: pick a state to crop. Lightning from Weatherbit, cells from IMD INSAT IR + GIBS. Views: Storm, Live IR, IMERG rain, satellite.",
+      "Overlay: Bhuvan / NRSC geomorphology via our map proxy.",
+    ],
     hi: ["जगह: पहले भारत गज़ेटियर, फिर Open-Meteo भारत खोज।", "परत: भूवन / NRSC, हमारे प्रॉक्सी से।"],
     bn: ["জায়গা: আগে ভারত গেজেটিয়ার, পরে Open-Meteo ভারত খোঁজ।", "স্তর: ভুবন / NRSC, আমাদের প্রক্সি দিয়ে।"],
   },
@@ -125,9 +136,18 @@ const TAB_SOURCES: Partial<Record<TabId, Record<Locale, string[]>>> = {
   },
 };
 
-export function SourcesBox({ tab, locale }: { tab: TabId; locale: Locale }) {
+export function SourcesBox({
+  tab,
+  locale,
+  provenance,
+}: {
+  tab: TabId;
+  locale: Locale;
+  provenance?: Record<string, string>;
+}) {
   const t = COPY[locale];
   const lines = (TAB_SOURCES[tab] || EXTRA[tab])?.[locale] || EXTRA[tab]?.[locale] || [];
+  const prov = Object.entries(provenance || {}).filter(([k]) => k !== "as_of");
   return (
     <Collapse title={t.sourcesAndMethods} subtitle={t.sourcesHint} defaultOpen={false}>
       <ul className="space-y-2 text-sm text-neo-muted">
@@ -135,6 +155,18 @@ export function SourcesBox({ tab, locale }: { tab: TabId; locale: Locale }) {
           <li key={line}>• {line}</li>
         ))}
       </ul>
+      {prov.length ? (
+        <div className="mt-3 border-t border-neo-line pt-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.provenance}</p>
+          <ul className="mt-2 space-y-1 text-xs text-neo-muted">
+            {prov.map(([k, v]) => (
+              <li key={k}>
+                <span className="font-semibold text-neo-text">{k}</span> — {v}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </Collapse>
   );
 }
