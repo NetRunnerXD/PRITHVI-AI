@@ -42,6 +42,9 @@ Default focus: **Haldia, Purba Medinipur, West Bengal** (`22.0667, 88.0698`). Na
 - **Speech and CAP do not write millimetres.** Vernacular tags and IMD CAP change category and timing only (`nowcast.fuse_speech`, `cap_prior`).
 - **Open-Meteo past hours are not rain-gauges.** Nowcast labels them `observed` / `open-meteo-analysis`. Do not call them station observations in the UI.
 - **Kalman scenes are not satellite.** Default knots are Open-Meteo hourly analysis (`source_kind: model-analysis`). MOSDAC HEM / IMERG Early stay settings stubs until a legal download is wired. Do not label the live/history graph “INSAT”.
+- **Storm-map IR is a public JPEG, not HEM millimetres.** `imd_insat.py` georeferences IMD’s Asia-sector INSAT-3D/3DS IR1 JPEG. Adler–Negri rain-rate is a Tb proxy. Do not quote it as a rain-gauge or as MOSDAC HEM. Cells are clipped with `india_mask.in_india` — the 68–97.5°E rectangle includes Tibet/Yunnan.
+- **Weatherbit lightning is observed flashes, not a model watch.** Current search is 75 km / 45 min; history costs 10 quota units per call. On 429, keep the last good cache; do not overwrite it with an empty list. Open-Meteo weather_code ≥ 95 at hubs is a thunder nowcast, not GPS strokes.
+- **Hugli tide / CWC / pond-tank are physiography-gated.** `physiography.classify` (Leh = orographic before arid). Jaipur and Leh must not show Hooghly port or Hugli tide.
 - **Daily “today” is the IST calendar date.** `features.extract` skips `past_days` rows before today. Do not use `daily[0]` after `past_days=1` — that is yesterday (this showed ~80 mm as “today’s rainfall” in Haldia).
 - **Backend serves no frontend assets.** Do not mount `StaticFiles` from `frontend/`. Clients call HTTP + CORS.
 - **Comments:** short, factual; no step-by-step narration in code.
@@ -54,7 +57,14 @@ Default focus: **Haldia, Purba Medinipur, West Bengal** (`22.0667, 88.0698`). Na
 Windows / PowerShell. `&&` is not reliable in some agent shells — use `;` or separate commands.
 
 ```powershell
-# Backend (cwd must be backend/ for pytest and uvicorn)
+# Both processes from the repo root
+cd D:\Project\Random\RainFall
+python main.py
+# API http://127.0.0.1:8000/docs   dashboard http://localhost:3000
+# python main.py --api-only     API only
+# python main.py --host 0.0.0.0
+
+# Backend only (cwd must be backend/ for pytest and uvicorn)
 cd D:\Project\Random\RainFall\backend
 python -m pip install -r requirements.txt
 # copy .env.example .env   if missing
@@ -104,6 +114,8 @@ Any client (frontend/ or a new web / React Native folder using clients/js)
                           ├─ /api/live-nowcast      alias
                           ├─ /api/nowcast/sat       Kalman rain-rate between scenes (stride=1|60)
                           ├─ /api/nowcast-sat       alias
+                          ├─ /api/nowcast/storm-map  state / All-India IR cells + lightning feed
+                          ├─ /api/nowcast-storm-map  alias
                           ├─ /api/science
                           ├─ /api/geo/*        India search + Bhuvan WMS proxy
                           ├─ /api/chat         SSE ← agents.orchestrator.run_agent
@@ -144,13 +156,14 @@ Location
 | `config.py` | pydantic-settings; `backend/.env` |
 | `http_urls.py` | Absolute API URLs (`PUBLIC_BASE_URL` or request host) |
 | `cache.py` | In-memory TTL cache (do not slam Open-Meteo/CAP) |
-| `api/dashboard.py` | `/dashboard`, `/forecast`, `/predictions`, `/outlook`, `/risks`, `/science`, `/nowcast`, `/nowcast/live`, `/nowcast-live`, `/live-nowcast`, `/nowcast/sat`, `/nowcast-sat`, `/insights`, `/scan`, `/compare`, `/states`, `/districts`, `/brief`, `/agent/tools` |
+| `api/dashboard.py` | `/dashboard`, `/forecast`, `/predictions`, `/outlook`, `/risks`, `/science`, `/nowcast`, `/nowcast/live`, `/nowcast-live`, `/live-nowcast`, `/nowcast/sat`, `/nowcast-sat`, `/nowcast/storm-map`, `/nowcast-storm-map`, `/insights`, `/scan`, `/compare`, `/states`, `/districts`, `/brief`, `/agent/tools` |
 | `api/geo.py` | `/geo/search`, `/geo/reverse`, `/geo/nearby`, `/map/layers`, **`/map/wms` Bhuvan proxy** |
 | `api/deps.py` | `loc_from_query(district, place, lat, lon)` |
 | `api/chat.py` | `POST /chat` SSE (`data: {json}\n\n`) |
 | `services/snapshot.py` | Observation gather, warning build, `LiveWatch`, `primary_reply`, science + nowcast actions |
-| `services/location_svc.py` | Resolve/search: **towns first**, then districts, then Open-Meteo geocode |
-| `services/scan.py` | Rank districts in a state (semaphore 8, Open-Meteo) |
+| `services/location_svc.py` | Resolve/search: towns → districts → state capital → Open-Meteo India (`resolve_india_place`) |
+| `services/scan.py` | Rank districts **in that state only**. A town name is `unknown_state` (empty), never all-India. |
+| `services/locality.py` | Keep a bulletin on the pin: drop Sachet/CAP rows that name another state; Hooghly port only on the Hooghly belt |
 | `services/compare.py` | Two-district snapshot delta |
 | `providers/open_meteo.py` | forecast (TTL 90s, `past_days=1` for hourly history, extra CAPE/dew/gust/cloud layers), flood, air (`past_days=7`), marine, geocode, **`daily_window`** (forecast + archive by `start_date`/`end_date`) |
 | `providers/imd.py` | CAP RSS + humanize_cap_title + official REST (usually 401) |
@@ -163,6 +176,19 @@ Location
 | `providers/sachet.py` | NDMA Sachet CAP RSS (state + India) |
 | `providers/port_signal.py` | IMD Hooghly / Haldia port signal (best-effort scrape) |
 | `providers/http.py` | Shared `httpx.AsyncClient` (25s timeout) |
+| `providers/imd_insat.py` | Public IMD INSAT-3D/3DS Asia-sector IR1 JPEG → India crop + Tb grid |
+| `providers/gibs_ir.py` | NASA GIBS Himawari IR + IMERG rate at a pin |
+| `providers/weatherbit_lightning.py` | Current + historical lightning (75 km cap; last-good cache on 429) |
+| `providers/lightning_feed.py` | Optional bbox URL, else Weatherbit hubs + 6 h stroke memory |
+| `providers/om_thunder.py` | Open-Meteo weather_code / CAPE thunder, including `past_hours=6` |
+| `science/sat_cv.py` | IR connected-component cells, hull rings, 15/30/60 min advection |
+| `science/cv_nowcast.py` | Two-frame cooling, block-match flow, P(lightning) / P(cloudburst) |
+| `science/thunder_predict.py` | Per-cell lifetime, predicted strikes, confidence band, storm polygons |
+| `science/storm_map.py` | State / All-India pack: past/live/predicted incidents (skips network under pytest) |
+| `science/convective.py` | Pin-level cloudburst / downburst / lightning scores from live IR + strokes |
+| `science/sat_live.py` | Assemble INSAT + GIBS + lightning for the nowcast pin |
+| `data/india_mask.py` | Point-in-India (mainland + NE rings, Andaman, Lakshadweep) |
+| `data/physiography.py` | hugli / orographic / arid / plateau / plains — gates tide, CWC, pond scale |
 | `ml/features.py` | Flatten OM/flood/air/marine; **slice daily series from IST today** (`_start_today`); keep `precip_yesterday_mm` |
 | `ml/risk.py` | Weighted-linear XAI cards: flood, drought, heat, irrigation, air, seismic, tsunami, livelihood |
 | `ml/blend.py` | Dual 7-day forecast; ours stays within ~±12% of trusted Open-Meteo |
@@ -191,7 +217,7 @@ Location
 | `science/blindspot.py` | Unobserved hydrology flag |
 | `science/wb_xai.py` | 3-day P−ET−runoff−ΔS identity |
 | `science/verify.py` | Skill proxy vs climatology (+ nowcast error if present) |
-| `data/india_districts.py` | District gazetteer + aliases (`puruliya`, `calcutta`, …) + `is_state_name` |
+| `data/india_districts.py` | District gazetteer + aliases + `state_frame` (All India bbox is 68.1–97.4°E, 6.6–35.8°N) |
 | `data/india_towns.py` | Cities/towns (Haldia, Cherrapunji, Santiniketan, …) + fuzzy `extract_town` |
 | `data/india_coast.py` | Coast snap for marine |
 | `data/cwc_wb.py` | Static Hugli / WB CWC station table |
@@ -202,8 +228,8 @@ Location
 | `i18n/number_lock.py` | Digit scan used by claim-check (ungrounded figures become `—`) |
 | `agents/intent_router.py` | Legacy intent labels + required-tool packs (tests / docs). Live chat uses `utterance.interpret`. |
 | `agents/dates.py` | Parse “23 to 28th August” / ISO / next N days |
-| `agents/utterance.py` | Classify any line: catalog / follow-up / refuse / data needs + fuzzy place span |
-| `agents/facts.py` | `source_gate`, `quote_facts`, `[temp_c]` slot fill, false-shrug strip |
+| `agents/utterance.py` | Classify any line: catalog / follow-up / refuse / `How about Malda` place-retarget / data needs |
+| `agents/facts.py` | `source_gate`, `quote_facts` (incl. outlook days), `[temp_c]` fill, false-shrug strip, `is_dash_soup` |
 | `agents/data_tool.py` | One `data()` function (`forecast`, `nowcast`, `rain_window`, `aqi`, `mandi`, `warnings`, `risks`, `rank`, `states_weather`, `capability`, …) |
 | `agents/claims.py` | Span-level numeral lock against this-turn payloads |
 | `agents/memory.py` | In-process conversation: last place, collected keys, last refuse, catalog flag |
@@ -255,6 +281,29 @@ Location
 
 If Next or a proxy 404s the nested `/nowcast/live` path, the frontend tries the aliases and can rebuild a 1-min gap in `lib/nowcastGap.ts`. Same pattern for `/nowcast/sat`.
 
+### 5.2 Live storm map (`science/storm_map.py`)
+
+India-only convective nowcast for the Map (and Risks) tab. **Does not rewrite locked Open-Meteo millimetres.**
+
+| Piece | What it does |
+|---|---|
+| INSAT IR1 JPEG | Public Asia-sector image, cropped with `in_india` (non-India pixels warmed to 300 K) |
+| GIBS | Himawari IR + IMERG as map overlays, not HEM mm |
+| CV cells | Connected components on Tb ≤ 248 K; convex hull `ring`; Adler–Negri `rain_ir_mm_h` |
+| Two-frame CV | Persist last India grid; cooling; 8×8 block flow; lightning-jump / cloudburst heuristics |
+| Lifetime | Per-cell minutes from size, Tb, cooling, P(ltn), rain, speed, trend — not a kind-only +45 min |
+| Predicted strikes | Lagrangian 15/30/45/60 min, `P(t)=P0·exp(−t/τ)`, `confidence` + `confidence_band` |
+| Polygons | Live hull + +30 min advected hull |
+| Past lightning | Weatherbit current (hubs, 75 km / 45 min) + optional today history (2 hubs, 10 credits/call) + 6 h memory. 429 → last-good cache. If still empty, Open-Meteo past-hour thunder at hubs (labelled, not GPS). |
+| Past storm | IR cells that dropped off the live set, kept ~4 h |
+| India crop | `in_india` then `state_frame`. All-India map does **not** draw the Tibet-covering rectangle. |
+
+`GET /api/nowcast/storm-map?state=India` (alias `/nowcast-storm-map`). Under `PYTEST_CURRENT_TEST` returns `test-skip` with no HTTP.
+
+Incident `phase`: `past` | `live` | `predicted`. Feed and highlights toggle those separately. Predicted rows must show `confidence`. Cell/pin circles use geographic metres, then a zoom floor (~8 px) and a zoom-out cap (~18 px) so they stay visible without covering India.
+
+Clicking an incident focuses the map only — it must **not** call `onPick` / change the forecast pin.
+
 ### Important schema fields
 
 `Location`: `id, label, state, district, lat, lon, place_kind, place_name, crop_hint, plot_m2, …`
@@ -278,7 +327,7 @@ This folder is **one optional web client**. Do not treat it as the API. New UIs 
 | `app/page.tsx` | Shell: header search + live stamp; tab bodies |
 | `app/globals.css` | CSS-variable themes (`.neo`, `.chip`, `.live-dot`) |
 | `lib/config.ts` | `API_BASE` / `apiUrl()` from `NEXT_PUBLIC_API_BASE` |
-| `lib/api.ts` | `fetchDashboard`, `fetchNowcastLive` (tries `/nowcast/live` then aliases), `fetchNowcastSat`, `searchPlaces`, `streamChat` |
+| `lib/api.ts` | `fetchDashboard`, `fetchNowcastLive` (tries `/nowcast/live` then aliases), `fetchNowcastSat`, `fetchStormMap`, `fetchStates`, `searchPlaces`, `streamChat` |
 | `lib/nowcastGap.ts` | Client 1-min gap if live endpoint 404s |
 | `lib/satKalman.ts` | Envelope twin + `chartFromPredSeries` / `interpSeries` (plot **server** points; do not run `sat_phys` in the browser) |
 | `lib/store.ts` | Zustand: locale, **outputLocale**, tab, dashboard, chat, settings, favorites, **`applySuggestion` (tab + `setLocation` + `mapFocus`)** |
@@ -297,7 +346,8 @@ This folder is **one optional web client**. Do not treat it as the API. New UIs 
 | `components/SettingsPanel.tsx` | Theme, units, language, refresh, **API origin** |
 | `components/ChatDock.tsx` | Presets; `ChatBlocks`; suggestion chips call `applySuggestion` (no auto tab switch) |
 | `components/ChatBlocks.tsx` | Always show prose + optional tables/metrics |
-| `components/SquareMap.tsx` + `MapView.tsx` | Leaflet; Bhuvan via `apiUrl("/map/wms")`; `focus` recenters when a chip sets `mapFocus` |
+| `components/SquareMap.tsx` + `MapView.tsx` + `StormFeed.tsx` | Leaflet storm map: state / All India, basemap vs weather layers (no duplicate View/Basemap satellite), past/predicted/live highlights, zoom-aware circles, Weatherbit past ⚡, predicted ✦ + confidence, storm polygons. Incident click focuses only. |
+| `components/MapWrap.tsx` | Dynamic `MapView` (no SSR) |
 | `components/ThemeBoot.tsx` | Applies `data-theme` from settings |
 
 **Tabs:** `overview | nowcast | alerts | map | forecast | predicted | risks | market | advisor | settings`  
@@ -305,7 +355,9 @@ Keys `1–9` switch the first nine tabs.
 
 **Overview order:** decision chips (pump / field / Kal-ghat) → sky + today’s rain → engine-labelled 0–6 h nowcast → 7-day glance → wind → collapsed Decision science → collapsed plots.
 
-**Nowcasting tab:** 1 Hz playhead, Hugli tide, onset countdown, between-scene Kalman (Minute / Second + **History vs scenes**), locked-shape sweep, 120-min bar, ponding tank. Hours stay locked. Advisor never quotes Kalman mm/h. History line is the server physical series, not a bar between two hours.
+**Nowcasting tab:** 1 Hz playhead, Hugli tide (only if `phys.show_tide`), onset countdown, between-scene Kalman (Minute / Second + **History vs scenes**), locked-shape sweep, 120-min bar, ponding tank. Hours stay locked. Advisor never quotes Kalman mm/h. History line is the server physical series, not a bar between two hours.
+
+**Map tab:** All India by default. Highlights: past lightning, predicted lightning, past storm, predicted storm, live cells. Fit events / overlay opacity / past window 1–6 h / predicted confidence filter. Same map on Risks.
 
 **Quiet refresh:** every `settings.refreshSec` (default 60s) via `quietRefresh()`. Open-Meteo forecast cache is 90s.
 
@@ -346,11 +398,11 @@ message, locale_hint, output_locale, location, history[], regenerate, conversati
 
 1. **Inbound MT:** detect language. Translate any non-English question to English (Google gtx → MyMemory). The LLM only ever sees English.
 2. **Reply language:** `pick_output_locale` (`output_locale` wins).
-3. **`utterance.interpret`** on the English line: refuse (pets / tourism / fiction), catalog (“all metrics”), follow-up (`yes` / `all of them`), or named `data()` needs. Bare “Puruliya” is a forecast request, not chit-chat.
+3. **`utterance.interpret`** on the English line: refuse (pets / tourism / fiction), catalog (“all metrics”), follow-up (`yes` / `all of them`), or named `data()` needs. Bare “Puruliya” is a forecast. **`How about Malda` / `what about Puri`** is a place retarget → `forecast` at that town. **`what about Kerala?`** after a rank stays a **state follow-up** (not a capital forecast).
 4. **Resolve place:** `resolve_named_place` (towns → districts → state/UT capital) then, if needed, `resolve_india_place` (Open-Meteo `countryCode=IN`). Never fall back to Haldia for an unknown or fictitious name. `Puruliya` ≠ Puri. `Delhi` is the city, not a state ranking. `all of them` is not a place.
 5. Follow-ups inherit the last **asked** town from `memory.TurnState`. After a refuse, `yes` / `still tell me` stays refused (no Haldia AQI).
-6. Optional Ollama tool loop (`data()` only). Deterministic needs (bare place, catalog, date window) are **prefetched** so qwen cannot shrug “I couldn’t find data”.
-7. **Grounding:** `check_claims` replaces unbound digits with `—`. `fill_slots` replaces `[temp_c]` / `[rain_mm]`. `drop_false_shrug` drops “couldn’t find weather” when a pack exists. `quote_facts` appends this-turn numbers if the prose forgot them.
+6. Optional Ollama tool loop (`data()` only). Deterministic needs (bare place, **how-about place**, catalog, date window) are **prefetched** so qwen cannot shrug or invent a 7-day table.
+7. **Grounding:** `check_claims` replaces unbound digits with `—`. `fill_slots` replaces `[temp_c]` / `[rain_mm]`. `drop_false_shrug` drops “couldn’t find weather” when a pack exists. If the draft is **dash-soup** (`August —` / `—%` / `— mm` four or more times), **replace it** with `quote_facts` (now includes `outlook_days`). Otherwise append `quote_facts` when the prose forgot numbers.
 8. **Outbound MT** of the English draft. No second Ollama rewrite. If MT fails: `compose_indic` for hi/bn, else English.
 9. Suggestions (`focus-map`, forecast, nowcast, alerts, risks) include `location` + `center`. The UI calls `applySuggestion` → `setLocation` + `mapFocus`. Do **not** auto-`setTab`.
 
@@ -381,7 +433,10 @@ Legacy intent labels (`rank`, `irrigation`, `window`, …) still exist on `inten
 | INCOIS ITEWS | `tsunami.incois.gov.in/itews/DSSProducts/OPR/past90days.json` | Tsunami/quake bulletins (TLS verify disabled for this host) |
 | OpenAQ v2 | `api.openaq.org/v2/measurements` | Historical PM2.5 |
 | Bhuvan WMS | `bhuvan-vec3.nrsc.gov.in/bhuvan/ows` | `gw_wfs:WB_LGEOM` and other `*_LGEOM` |
-| NASA GIBS | `gibs.earthdata.nasa.gov/wms/...` | Optional true-color overlay |
+| NASA GIBS | `gibs.earthdata.nasa.gov/wms/...` | Himawari IR + IMERG overlays; optional true-color |
+| IMD INSAT IR1 JPEG | `mausam.imd.gov.in/Satellite/3Dasiasec_ir1.jpg` | Public Asia-sector IR for storm-map cells (not HEM) |
+| Weatherbit lightning | `api.weatherbit.io/v2.0/current/lightning` (+ `/history/lightning`) | Observed flashes, 75 km cap |
+| Open-Meteo thunder | same forecast API, `weather_code` + CAPE | Hub thunder nowcast / past 6 h |
 
 Nowcast neighbor fetch reuses Open-Meteo forecast (same 90s cache) for up to 6 nearby gazetteer points.
 
@@ -397,11 +452,12 @@ CARTO Positron, OSM, Esri World Imagery, OpenTopoMap.
 |---|---|
 | IMD REST `api.imd.gov.in` | 401 without whitelist |
 | AIKosh | `missing_key` without `AIKOSH_API_KEY` |
-| MOSDAC / NASA Earthdata / OpenWeather | Settings only; not on snapshot path. No radar / INSAT ingest. |
+| MOSDAC / NASA Earthdata / EUMETSAT | Settings only. No HEM/IMR HDF. Public INSAT JPEG is a different path (`imd_insat`). |
+| Weatherbit | `WEATHERBIT_API_KEY`. 429 after ~1500 calls/day; circuit-break and keep last-good strokes. |
 
 ### Local data
 
-`india_districts.py`, `india_towns.py`, `india_capitals.py`, `india_coast.py`, `fuzzy.py`, `blocked_places.py`, `rag/knowledge/*.md`.
+`india_districts.py`, `india_towns.py`, `india_capitals.py`, `india_coast.py`, `india_mask.py`, `physiography.py`, `fuzzy.py`, `blocked_places.py`, `rag/knowledge/*.md`.
 
 **Bhuvan pitfall:** `geomorphology.wb_gm50k_0506_new` on vec2 does **not** work. Use `GET /api/map/wms` with `gw_wfs:WB_LGEOM`. Leaflet url = `apiUrl("/map/wms")` (absolute when `PUBLIC_BASE_URL` or request host is set). `/api/map/layers` returns both `url` (absolute) and `path` (`/api/map/wms`).
 
@@ -422,6 +478,8 @@ Chat and search share the same pipeline (`resolve_named_place` then `resolve_ind
 
 `resolve_location()` with no query still defaults to Haldia. `data(place=…)` uses `resolve_india_place` and returns `unknown_place` instead of the pin.
 
+**Pin isolation (every tab):** a Howrah dashboard / scan / alerts list must not quote Chhattisgarh (or any other state). `districts_in_state("Howrah")` is empty — a town is not a state, and must **not** fall back to all-India. `rank_districts` on an unknown state returns `{ranked: [], error: unknown_state}` and does not fetch. Sachet/CAP rows that name another state are dropped (`services/locality.py`). Hooghly port signal only attaches for Howrah / Haldia / Kolkata / adjacent Hugli districts — not Jaipur or Malda. Nearby map points must stay within a few degrees of the pin.
+
 Dashboard query: `district`, `place`, `lat`, `lon`. Frontend sends `place_name` as `place`.
 
 `place_kind`: `district | city | town | place`. Nowcast `place` is the resolved point, not a district mean.
@@ -436,11 +494,25 @@ Run from `backend/`:
 python -m pytest -q
 ```
 
-Notable tests: `test_imd_title`, `test_warnings`, `test_sky`, `test_coast`, `test_blend`, `test_translate_reply`, `test_mt_layer`, `test_location` (Haldia / Cherrapunji / Puruliya≠Puri), `test_risk_xai`, `test_science`, `test_nowcast`, `test_live`, `test_sat_kalman`, `test_sat_phys`, `test_features`, `test_dates`, `test_rain_window`, `test_agent_tools`, `test_intent`, `test_api`.
+Notable tests: `test_imd_title`, `test_warnings`, `test_sky`, `test_coast`, `test_blend`, `test_translate_reply`, `test_mt_layer`, `test_location` (Haldia / Cherrapunji / Puruliya≠Puri), `test_risk_xai`, `test_science`, `test_nowcast`, `test_live`, `test_sat_kalman`, `test_sat_phys`, `test_features`, `test_dates`, `test_rain_window`, `test_agent_tools`, `test_intent`, `test_api`, `test_physiography` (Leh orographic, Jaipur no tide), `test_india_mask` (Kolkata in, Lhasa/Dhaka/Kathmandu out), `test_convective`, `test_cv_nowcast`, `test_thunder_predict` (distinct lifetimes + confidence), `test_storm_map` (pytest skips network).
 
-Chat / place: `test_fuzzy`, `test_fuzzy_names`, `test_fuzzy_contradictions`, `test_fictitious_places`, `test_bare_place`, `test_utterance`, `test_place_resolution`, `test_unpopular_places`, `test_human_utterances`, `test_followup_catalog` (`yes` / `all of them` stay on Purulia; chips carry `location`), `test_orchestrator`, `test_facts`, `test_claims`, `test_binder`, `test_llm_eval` + `tests/llm/cases.json`. Scripts: `scripts/eval_chat.py`, `scripts/eval_chat_live.py`.
+Chat / place: `test_fuzzy`, `test_fuzzy_names`, `test_fuzzy_contradictions`, `test_fictitious_places`, `test_bare_place`, `test_utterance`, `test_place_resolution`, `test_unpopular_places`, `test_human_utterances`, `test_followup_catalog` (`yes` / `all of them` stay on Purulia; chips carry `location`), `test_orchestrator`, `test_facts` (incl. dash-soup), `test_claims`, `test_binder`, `test_llm_eval` + `tests/llm/cases.json` (`How about malda` → forecast). Scripts: `scripts/eval_chat.py`, `scripts/eval_chat_live.py`.
 
-When changing `extract`, `all_risks`, `compose_indic`, CAP titles, nowcast millimetre rules, date parsing, CORS, place fold, or `interpret` — update these tests. Each place/chat pass should keep a contradiction sibling (Puruliya≠Puri, Howrah≠Hogwarts, catalog≠single AQI).
+**Per-tab isolation** (`tests/tabs/`): each dashboard tab has a module plus a contradiction sibling. Howrah must not leak Raipur / Chhattisgarh; Malda must not be Haldia; a joke is not a forecast; `what about Kerala?` is not a capital forecast.
+
+| Module | Tab | Isolation | Contradiction |
+|---|---|---|---|
+| `test_tab_overview.py` | Overview | Howrah pin is WB | Raipur is Chhattisgarh |
+| `test_tab_alerts.py` | Alerts | CG Sachet dropped for Howrah | Raipur keeps CG; port only on Hooghly belt |
+| `test_tab_forecast.py` | Forecast / scan | WB rank is only WB | `rank("Howrah")` is empty, not India |
+| `test_tab_risks.py` | Risks | Howrah labels name no far state | Raipur cards don’t say Howrah |
+| `test_tab_nowcast.py` | Nowcast | Howrah ≠ Raipur coords | Malda ≠ Haldia |
+| `test_tab_predicted.py` | Predicted | Outlook from that pin | Wet vs dry series don’t copy |
+| `test_tab_market.py` | Market | Howrah key is WB | Raipur key is not Howrah |
+| `test_tab_map.py` | Map | Nearby has no Raipur/CG | Search Raipur is CG |
+| `test_tab_advisor.py` | Advisor | `How about malda` fetches Malda numbers | Joke stays chat; Kerala follow-up stays rank |
+
+When changing `extract`, `all_risks`, `compose_indic`, CAP titles, nowcast millimetre rules, date parsing, CORS, place fold, `interpret`, or `locality` — update these tests. Each pass should keep a contradiction sibling (Puruliya≠Puri, Howrah≠Hogwarts, Howrah≠Chhattisgarh, catalog≠single AQI). If a test fails, add the inverse case before “fixing” only the happy path.
 
 ---
 
@@ -454,6 +526,10 @@ When changing `extract`, `all_risks`, `compose_indic`, CAP titles, nowcast milli
 | `OLLAMA_MODEL` | `qwen2.5` |
 | `TRANSLATE_ENABLED` | default true; Google gtx + MyMemory, no key |
 | `DATA_GOV_IN_API_KEY` | CPCB + Agmarknet |
+| `WEATHERBIT_API_KEY` | Current / historical lightning |
+| `LIGHTNING_FEED_URL` / `LIGHTNING_FEED_KEY` | Optional bbox lightning (`{south}{west}{north}{east}{key}`) |
+| `NASA_EARTHDATA_USER` / `PASS` | GIBS / future IMERG; not required for Himawari WMS tiles |
+| `EUMETSAT_TOKEN` | Optional; not on the default storm-map path |
 | `IMD_API_KEY` | unused until REST whitelist |
 | `AIKOSH_API_KEY` | AIKosh search |
 | `DEFAULT_LAT/LON/STATE/DISTRICT/PLACE` | Haldia / Purba Medinipur defaults |
@@ -501,6 +577,8 @@ Frontend `frontend/.env.local`:
 | `all of them` → gazetteer refuse | Follow-up / catalog, not a place; inherit last asked town |
 | Map chip stays on Haldia | Suggestion includes `location`+`center`; `applySuggestion` calls `setLocation` + `mapFocus` |
 | Elephant then “Still tell me” fetches AQI | Sticky `last_refuse`; do not prefetch weather |
+| `How about malda` → `August —` / `—%` / `— mm` | Treat as place retarget + prefetch `forecast`; quote `outlook_days`; replace dash-soup with `quote_facts` |
+| Howrah bulletin names Chhattisgarh | `locality.alert_belongs`; `districts_in_state` must not fall back to all-India; no Hooghly port on inland/far pins |
 
 ---
 
@@ -529,6 +607,9 @@ Add to `templates.py` **and** `compose_indic` — do not regex-replace English.
 **New town**  
 Append `india_towns.py` (name, state, district, lat, lon, kind, aliases). Unlisted real Indian places still resolve via Open-Meteo India geocode — do not add one-off ifs.
 
+**New tab / bulletin field**  
+Add a `tests/tabs/test_tab_*.py` isolation case **and** a contradiction (far state / other pin). Filter through `locality.py` if the field can name another state.
+
 **New mobile / web client**  
 Use `clients/js`. Do not fork `frontend/` unless you need that exact Next dashboard.
 
@@ -552,10 +633,12 @@ Only one listener on 8000. After a restart, `/api/health` should be 200 and `/` 
 1. This file
 2. `backend/app/services/snapshot.py`
 3. `backend/app/science/nowcast.py` + `science/live.py` + `science/sat_kalman.py` + `science/sat_phys.py`
-4. `backend/app/science/__init__.py`
-5. `backend/app/agents/orchestrator.py` + `agents/dates.py` + `services/rain_window.py`
-6. `backend/app/main.py` (standalone API + CORS)
-7. `frontend/src/components/NowcastLive.tsx` + `NowcastSat.tsx` + `frontend/src/lib/config.ts`
-8. `clients/js/src/index.ts`
+4. `backend/app/science/storm_map.py` + `thunder_predict.py` + `cv_nowcast.py` + `data/india_mask.py`
+5. `backend/app/science/__init__.py`
+6. `backend/app/agents/orchestrator.py` + `agents/dates.py` + `services/rain_window.py`
+7. Repo `main.py` launcher + `backend/app/main.py` (standalone API + CORS)
+8. `frontend/src/components/SquareMap.tsx` + `MapView.tsx` + `StormFeed.tsx`
+9. `frontend/src/components/NowcastLive.tsx` + `NowcastSat.tsx` + `frontend/src/lib/config.ts`
+10. `clients/js/src/index.ts`
 
-Then grep for the feature name (`compose_indic`, `humanize_cap_title`, `WB_LGEOM`, `get_nowcast`, `get_rain_window`, `apiUrl`, `quietRefresh`, …).
+Then grep for the feature name (`compose_indic`, `humanize_cap_title`, `WB_LGEOM`, `get_nowcast`, `get_rain_window`, `in_india`, `storm-map`, `apiUrl`, `quietRefresh`, …).
