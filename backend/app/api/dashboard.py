@@ -88,6 +88,8 @@ async def nowcast_api(loc: Location = Depends(loc_from_query)):
         "method": nc.get("method"),
         "live_note": nc.get("live_note"),
         "sat": nc.get("sat") or {},
+        "convective": nc.get("convective") or {},
+        "sat_live": nc.get("sat_live") or {},
     }
 
 
@@ -114,10 +116,13 @@ def _nowcast_live_body(snap) -> dict:
         "provenance": (snap.science or {}).get("provenance"),
         "cwc": (snap.science or {}).get("cwc"),
         "port": (snap.science or {}).get("port"),
+        "phys": nc.get("phys") or (snap.science or {}).get("phys"),
         "monsoon": (snap.science or {}).get("monsoon"),
         "verify": (snap.science or {}).get("verify"),
         "engine_note": (nc.get("locked") or {}).get("engine_note"),
         "sat": nc.get("sat") or {},
+        "convective": nc.get("convective") or {},
+        "sat_live": nc.get("sat_live") or {},
     }
 
 
@@ -190,6 +195,14 @@ async def insights(loc: Location = Depends(loc_from_query)):
 @router.get("/compare")
 async def compare_api(a: str = Query(min_length=2), b: str = Query(min_length=2)):
     return await compare(a, b)
+
+
+@router.get("/nowcast/storm-map")
+@router.get("/nowcast-storm-map")
+async def storm_map_api(state: str = Query(min_length=2)):
+    from app.science.storm_map import build as build_storm_map
+
+    return await build_storm_map(state)
 
 
 @router.get("/states")
