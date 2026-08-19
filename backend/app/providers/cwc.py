@@ -13,5 +13,5 @@ def lookup(lat: float, lon: float) -> dict[str, Any]:
         **hit,
         "source": "cwc-station-table",
         "live_hydrograph": False,
-        "method": "nearest documented Hugli/Ganga station v1",
+        "method": "nearest documented station within 100 km, else hidden",
     }

@@ -168,9 +168,7 @@ def _warnings(
         seen_titles.add(key)
         if sum(1 for w in out if w.source == "imd-cap") >= 3:
             break
-        body = (a.get("body") or "").strip()
-        if raw_title and raw_title not in title:
-            body = (raw_title + (". " + body if body else "")).strip()
+        body = imd.clean_cap_body(a.get("body") or "", title=title, raw_title=raw_title)
         out.append(
             EarlyWarning(
                 id=str(a.get("id"))[:64],
@@ -463,6 +461,13 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
         tsunami=obs.get("tsunami") or [],
     )
     flood = next(r for r in risks if r.id == "flood")
+    live_sat = {}
+    try:
+        from app.science.sat_live import fetch as fetch_sat_live
+
+        live_sat = await fetch_sat_live(loc)
+    except Exception:
+        live_sat = {"ok": False, "status": "error"}
     science = build_science(
         f,
         loc,
@@ -471,6 +476,7 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
         cap_hit=cap_hit,
         plot_m2=loc.plot_m2,
         caps=local_caps,
+        live_sat=live_sat,
     )
     anomalies, drivers, stories = compute_anomalies(f, obs["nasa_precip"])
     if science["hysteresis"]["flip"] == "runoff":
@@ -578,8 +584,10 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
             if act:
                 extra = f" Do: {act.action}"
             a.body = (a.body or "") + extra
+    from app.services.locality import alert_belongs, port_relevant
+
     port = obs.get("port") or {}
-    if port.get("active"):
+    if port.get("active") and port_relevant(loc):
         warnings.insert(
             0,
             EarlyWarning(
@@ -592,19 +600,24 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
                 hazard="marine",
             ),
         )
-    for i, item in enumerate((obs.get("sachet") or [])[:2]):
+    local_sachet = [it for it in (obs.get("sachet") or []) if alert_belongs(it, loc)]
+    for i, item in enumerate(local_sachet[:2]):
         warnings.append(
             EarlyWarning(
                 id=f"sachet_{i}",
                 severity="watch",
                 title=imd.humanize_cap_title(item.get("title") or "SACHET alert", item.get("body") or "", loc.district),
-                body=(item.get("body") or "")[:240] or "NDMA SACHET. Timing prior only.",
+                body=imd.clean_cap_body(item.get("body") or "", title=item.get("title") or "", raw_title=item.get("title") or "")
+                or "NDMA SACHET. Timing prior only.",
                 lenses=["prescriptive"],
                 source="sachet-ndma",
                 hazard="weather",
             )
         )
-    science["port"] = port
+    if port_relevant(loc):
+        science["port"] = {**(port or {}), "relevant": True}
+    else:
+        science["port"] = {"relevant": False, "active": False, "signal": None, "source": "imd-coastal-bulletin"}
     science["sachet_n"] = len(obs.get("sachet") or [])
 
     hourly_t = f.get("hourly_times") or []

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import ROOT
+from app.data.physiography import classify, hugli_relevant
 from app.science.nowcast import IST, _clip, _now, _parse
 
 LOG_PATH = Path(ROOT) / ".cache" / "nowcast_issues.jsonl"
@@ -186,12 +187,24 @@ def playhead(
     access = pack.get("access") or {}
     hy = pack.get("hysteresis") or {}
     place = pack.get("place") or {}
-    station = hugli_station(
-        place.get("lat") if place.get("lat") is not None else getattr(loc, "lat", None),
-        place.get("lon") if place.get("lon") is not None else getattr(loc, "lon", None),
-        place.get("name"),
-    )
-    td = tide_height_m(now, station)
+    lat = place.get("lat") if place.get("lat") is not None else getattr(loc, "lat", None)
+    lon = place.get("lon") if place.get("lon") is not None else getattr(loc, "lon", None)
+    name = place.get("name")
+    show_tide = hugli_relevant(
+        lat,
+        lon,
+        loc=loc,
+        district=place.get("district"),
+        place=name,
+    ) or bool((pack.get("phys") or {}).get("show_tide"))
+    station = hugli_station(lat, lon, name) if show_tide else None
+    td = tide_height_m(now, station) if show_tide and station else {
+        "tide_m": None,
+        "high_tide": False,
+        "station": None,
+        "source": None,
+        "note": "Hugli tide is not used off the estuary.",
+    }
     onset = _parse(str(clock.get("t_start") or ""))
     secs = None
     if onset is not None:
@@ -213,10 +226,12 @@ def playhead(
     return {
         "t": now.astimezone(IST).isoformat(timespec="seconds"),
         "seconds_to_onset": secs,
-        "tide_m": td["tide_m"],
-        "high_tide": td["high_tide"],
-        "tide_source": td["source"],
+        "tide_m": td.get("tide_m"),
+        "tide_relevant": bool(show_tide),
+        "high_tide": td.get("high_tide"),
+        "tide_source": td.get("source"),
         "tide_station": station,
+        "phys": (pack.get("phys") or classify(lat, lon, loc=loc)).get("kind"),
         "pond_mm": round(pond_mm, 3),
         "gap_mm": round(mm_now, 4),
         "gap_mm_h": round(mm_h, 3),

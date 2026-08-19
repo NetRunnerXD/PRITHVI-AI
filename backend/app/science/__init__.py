@@ -36,6 +36,7 @@ def build_science(
     plot_m2: float,
     speech: str | None = None,
     caps: list[dict] | None = None,
+    live_sat: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     hy = pre["hysteresis"]
     ph = pre["phenology"]
@@ -59,6 +60,7 @@ def build_science(
         cap_hit=cap_hit,
         caps=caps,
         flood_score=flood_score,
+        live_sat=live_sat,
     )
     if nc.get("error"):
         skill["nowcast"] = nc["error"]
@@ -68,6 +70,15 @@ def build_science(
     from app.providers import cwc as cwc_prov
 
     river = cwc_prov.lookup(float(getattr(loc, "lat", 0) or 0), float(getattr(loc, "lon", 0) or 0))
+    if not river.get("relevant"):
+        river = {
+            "relevant": False,
+            "name": None,
+            "km": river.get("km"),
+            "live_hydrograph": False,
+            "source": "cwc-station-table",
+            "note": "No documented CWC station within 100 km.",
+        }
     rain3 = float(f.get("precip_3d_mm") or 0)
     mandi_n = int(ph.get("arrivals") or 0)
     market = {

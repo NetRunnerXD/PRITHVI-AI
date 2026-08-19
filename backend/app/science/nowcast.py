@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app import cache
+from app.data.physiography import classify
 from app.science.residual import monsoon_regime
 from app.science.vernacular import observe_speech
 
@@ -96,14 +97,20 @@ def state_vector(f: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def regime(past: list[dict[str, Any]], f: dict[str, Any], st: dict[str, Any], lat: float | None) -> dict[str, Any]:
+def regime(
+    past: list[dict[str, Any]],
+    f: dict[str, Any],
+    st: dict[str, Any],
+    lat: float | None,
+    phys: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     last = [p["mm"] for p in past[-3:]] or [0.0]
     mean3 = sum(last) / len(last)
     last1 = last[-1]
     prev = last[-2] if len(last) > 1 else last1
     jump = last1 - prev
     daily = monsoon_regime(f)
-    hills = lat is not None and 26.2 <= float(lat) <= 27.6
+    hills = (phys or {}).get("kind") == "orographic" or (lat is not None and 26.2 <= float(lat) <= 27.6)
     if last1 >= 4 or jump >= 2.5:
         name = "cell"
     elif hills and mean3 >= 1.0:
@@ -338,46 +345,71 @@ def onset_cessation(hours: list[dict[str, Any]], pull: bool = False) -> dict[str
     return {"t_start": start, "t_stop": stop, "pulled": bool(pull and start), "method": "onset/cessation clock v1"}
 
 
-def kal_baisakhi(f: dict[str, Any], past: list[dict[str, Any]], st: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
+def kal_baisakhi(
+    f: dict[str, Any],
+    past: list[dict[str, Any]],
+    st: dict[str, Any],
+    now: datetime | None = None,
+    phys: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     now = now or _now()
     hour = now.hour
+    month = now.month
     temps = [float(x) for x in (f.get("hourly_temp") or [])[:6]]
     dT = (temps[0] - temps[3]) if len(temps) >= 4 else 0.0
-    score = 8
-    if 12 <= hour <= 18:
-        score += 20
-    if dT >= 2:
-        score += 18
-    if float(st.get("rh_jump") or 0) >= 8:
-        score += 16
-    if float(st.get("cloud_jump") or 0) >= 20:
-        score += 16
-    if float(st.get("wind_shift_deg") or 0) >= 40:
-        score += 10
-    if past and past[-1]["mm"] >= 1:
-        score += 10
+    code = int(f.get("weather_code") or 0)
+    belt = bool((phys or {}).get("kal_belt"))
+    pre = month in {3, 4, 5, 6}
+    if belt and pre:
+        score = 8
+        if 12 <= hour <= 18:
+            score += 20
+        if dT >= 2:
+            score += 18
+        if float(st.get("rh_jump") or 0) >= 8:
+            score += 16
+        if float(st.get("cloud_jump") or 0) >= 20:
+            score += 16
+        if float(st.get("wind_shift_deg") or 0) >= 40:
+            score += 10
+        if past and past[-1]["mm"] >= 1:
+            score += 10
+        method = "Kal Baisakhi instability proxy v1 (not lightning)"
+    else:
+        score = 8
+        if code >= 95:
+            score = 72
+        elif code >= 80:
+            score = 38
+        if st.get("visibility_km") is not None and float(st["visibility_km"]) < 2:
+            score += 15
+        method = "storm watch from sky code — not Kal Baisakhi"
     score = int(_clip(score, 0, 95))
     return {
         "score_pct": score,
         "level": "watch" if score >= 55 else "quiet",
         "dT_c": round(dT, 2),
-        "method": "Kal Baisakhi instability proxy v1 (not lightning)",
+        "kal_belt": belt,
+        "method": method,
         "note": "Watch only. Does not add millimetres.",
     }
 
 
-def ponding(hours: list[dict[str, Any]], hy: dict[str, Any]) -> dict[str, Any]:
+def ponding(hours: list[dict[str, Any]], hy: dict[str, Any], phys: dict[str, Any] | None = None) -> dict[str, Any]:
     rain60 = sum(h["mm"] for h in hours[:1])
     rain120 = sum(h["mm"] for h in hours[:2])
     mem = float(hy.get("memory") or 0.4)
     wet = hy.get("limb") == "wetting" or hy.get("flip") == "runoff"
     factor = 0.25 + 0.65 * mem if wet else 0.08 + 0.12 * mem
+    scale = float((phys or {}).get("pond_scale") or 1.0)
+    factor = factor * scale
     return {
         "mm_60": round(rain60 * factor, 2),
         "mm_120": round(rain120 * factor, 2),
         "factor": round(factor, 3),
         "limb": hy.get("limb"),
-        "method": "hysteresis ponding v1",
+        "phys": (phys or {}).get("kind"),
+        "method": "hysteresis ponding v2 (region scale)",
     }
 
 
@@ -408,24 +440,27 @@ def tide_rain(
     lon: float | None,
     wave_m: float | None,
     now: datetime | None = None,
+    phys: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     now = now or _now()
-    coastal = coast_km is not None and float(coast_km) <= 40
+    hugli = bool((phys or {}).get("show_tide") or (phys or {}).get("hugli"))
+    coastal = hugli and coast_km is not None and float(coast_km) <= 40
     rain3 = sum(h["mm"] for h in hours[:3])
     phase = (now.hour + now.minute / 60 + (float(lon or 88.5) / 15.0)) % 12.42
     high = phase < 2.2 or phase > 10.2
     drain = bool(coastal and high and rain3 >= 4)
     swell = bool(coastal and wave_m is not None and float(wave_m) >= 1.8 and rain3 >= 2)
     return {
+        "relevant": hugli,
         "coastal": coastal,
         "high_tide": high if coastal else False,
-        "phase_h": round(phase, 2),
+        "phase_h": round(phase, 2) if hugli else None,
         "rain_3h_mm": round(rain3, 2),
         "wave_height_m": wave_m,
         "drain_blocked": drain,
         "stay_off_ghat": bool(drain or swell),
-        "method": "tide-rain compound v1 (harmonic proxy)",
-        "note": "Tide height is a labelled harmonic proxy, not a tide gauge.",
+        "method": "tide-rain compound v2 (Hugli only)",
+        "note": "Hugli harmonic prior only. Hidden off the estuary.",
     }
 
 
@@ -547,8 +582,10 @@ def field_access(
     labour: dict[str, Any],
     ph: dict[str, Any],
     squall: dict[str, Any],
+    phys: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     stage = ph.get("stage") or "unknown"
+    kind = (phys or {}).get("kind") or ""
     if stage in {"transplant", "cri", "flowering"}:
         pond_lim = 1.5
         need_dry = False
@@ -558,15 +595,21 @@ def field_access(
     else:
         pond_lim = 3.0
         need_dry = False
+    if kind == "arid":
+        pond_lim *= 3.0
+    elif kind == "orographic":
+        pond_lim *= 1.6
     reasons: list[str] = []
     if pond["mm_60"] >= pond_lim:
         reasons.append("ponding")
+    if kind == "orographic" and hours and hours[0]["mm"] >= 1.2:
+        reasons.append("slope-runoff")
     if clock.get("t_start") and hours and hours[0]["lead_h"] <= 2 and hours[0]["mm"] >= 0.8:
         reasons.append("onset")
     if labour.get("closed_2h"):
         reasons.append("heat×AQI")
     if squall.get("watch") and hours and hours[0]["mm"] >= 0.4:
-        reasons.append("squall")
+        reasons.append("storm")
     if need_dry:
         dry2 = all(h["mm"] < 0.3 for h in hours[:2]) if hours[:2] else False
         if not dry2:
@@ -716,6 +759,11 @@ def decide_actions(pack: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     if kal.get("level") == "watch" or squall.get("watch"):
+        kal_line = (
+            "Storm / Kal Baisakhi watch — do not stay on the bund."
+            if kal.get("kal_belt")
+            else "Storm watch — do not stay in the open."
+        )
         out.append(
             {
                 "id": "nowcast_take_cover",
@@ -723,7 +771,7 @@ def decide_actions(pack: dict[str, Any]) -> list[dict[str, Any]]:
                 "verb": "take_cover",
                 "who": "labour",
                 "when": "next 2 h",
-                "action": "Squall / Kal Baisakhi watch — do not stay on the bund.",
+                "action": kal_line,
                 "template_id": "nowcast_take_cover",
                 "slots": {"kal_level": kal.get("level"), "visibility_km": squall.get("visibility_km")},
             }
@@ -801,6 +849,11 @@ def locked(pack: dict[str, Any]) -> dict[str, Any]:
         "labour_closed_2h": labour.get("closed_2h"),
         "place_name": place.get("name"),
         "place_kind": place.get("kind"),
+        "convective": {
+            "lightning": (pack.get("convective") or {}).get("lightning"),
+            "cloudburst": (pack.get("convective") or {}).get("cloudburst"),
+            "downburst": (pack.get("convective") or {}).get("downburst"),
+        },
         "engine_note": "0–2h nowcast, 3–4h blend, 5–6h NWP. Past hours are Open-Meteo model analysis, not a gauge. Do not invent millimetres.",
     }
 
@@ -817,6 +870,7 @@ def build(
     cap_hit: bool = False,
     caps: list[dict[str, Any]] | None = None,
     flood_score: int = 0,
+    live_sat: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     ph = ph or {}
     neighbors = neighbors or []
@@ -825,7 +879,8 @@ def build(
     past, future = split_hours(times, vals)
     st = state_vector(f)
     lat = getattr(loc, "lat", None)
-    reg = regime(past, f, st, lat)
+    phys = classify(lat, getattr(loc, "lon", None), loc=loc, coast_km=f.get("coast_km"))
+    reg = regime(past, f, st, lat, phys)
     adv = advection(loc, neighbors)
     pair = stream_pair(loc, neighbors, adv)
     storm = neighbor_storm(neighbors, past)
@@ -838,20 +893,20 @@ def build(
         _, pf = split_hours(times, all_prob)
         probs_future = [p["mm"] for p in pf[:6]]
     hours = blend_hours(past, future, reg, adv, float(err0.get("frac") or 0), cap, probs_future)
-    kal = kal_baisakhi(f, past, st)
+    kal = kal_baisakhi(f, past, st, phys=phys)
     speech_pack = fuse_speech(speech, kal)
     pull = bool(speech_pack["onset_pull"] or cap.get("onset_pull"))
     clock = onset_cessation(hours, pull=pull)
-    pond = ponding(hours, hy)
+    pond = ponding(hours, hy, phys)
     budget = hourly_budget(hours, hy)
-    tide = tide_rain(hours, f.get("coast_km"), getattr(loc, "lon", None), f.get("wave_height_m"))
+    tide = tide_rain(hours, f.get("coast_km"), getattr(loc, "lon", None), f.get("wave_height_m"), phys=phys)
     split = pluvial_fluvial(pond, f, flood_score)
     pump = pump_regret(hours, plot_m2, hy, p_delta=float(speech_pack.get("p_interrupt_delta") or 0))
     cost = cost_loss(pump, hours, ph, plot_m2)
     air = air_hours(f)
     labour = labour_window(f, air)
     squall = squall_vis(st, kal)
-    access = field_access(hours, pond, clock, labour, ph, squall)
+    access = field_access(hours, pond, clock, labour, ph, squall, phys)
     err = error_memory(getattr(loc, "district", "") or "", reg["name"], hours, past)
     place = {
         "kind": getattr(loc, "place_kind", None) or "district",
@@ -890,8 +945,14 @@ def build(
         "speech": speech_pack,
         "error": err,
         "place": place,
-        "method": "decision nowcast angles A–H v1",
+        "phys": phys,
+        "method": "decision nowcast angles A–H v2",
     }
+    from app.science.convective import build as build_conv
+    from app.science.sat_live import compact as compact_sat
+
+    pack["sat_live"] = compact_sat(live_sat)
+    pack["convective"] = build_conv(f, loc, live=live_sat, phys=phys)
     pack["actions"] = decide_actions(pack)
     pack["locked"] = locked(pack)
     from app.science.live import attach_live, persist_issue
