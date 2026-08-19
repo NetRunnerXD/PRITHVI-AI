@@ -25,6 +25,18 @@ def _stop(proc: subprocess.Popen[bytes] | None) -> None:
         proc.kill()
 
 
+def _port_busy(host: str, port: int) -> bool:
+    import socket
+
+    bind = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.4)
+        try:
+            return s.connect_ex((bind, port)) == 0
+        except OSError:
+            return False
+
+
 def _npm() -> str | None:
     names = ("npm.cmd", "npm.exe", "npm") if os.name == "nt" else ("npm",)
     for name in names:
@@ -60,6 +72,14 @@ def main() -> int:
         api_cmd.append("--reload")
 
     origin = f"http://{args.host}:{args.port}"
+    if _port_busy(args.host, args.port):
+        print(
+            f"Port {args.port} is already in use. Stop the other uvicorn / python main.py "
+            f"or start with --port 8001.\n"
+            f"Health of whatever is bound: {origin}/api/health",
+            file=sys.stderr,
+        )
+        return 1
     print(f"API        {origin}/docs")
     print(f"Health     {origin}/api/health")
 
@@ -68,6 +88,14 @@ def main() -> int:
     try:
         api = subprocess.Popen(api_cmd, cwd=BACKEND)
         children.append(api)
+        time.sleep(0.8)
+        if api.poll() is not None:
+            print(
+                f"API exited immediately ({api.returncode}). "
+                f"Run from backend/:  python -m uvicorn app.main:app --host {args.host} --port {args.port}",
+                file=sys.stderr,
+            )
+            return api.returncode or 1
 
         if not args.api_only:
             npm = _npm()
