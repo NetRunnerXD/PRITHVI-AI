@@ -280,12 +280,18 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
     async def capability(metric: str = "", **_: Any) -> dict:
         holes = {
             "radar": "No radar ingest. Nowcast is a 0–6 h decision object on Open-Meteo hours.",
-            "insat": "MOSDAC / INSAT is not wired. Kalman scenes are Open-Meteo model-analysis, not satellite.",
+            "insat": "INSAT-3D HEM HDF needs MOSDAC approval. Live nowcast uses IMD public INSAT IR JPEG + NASA GIBS IMERG.",
+            "lightning": "Live strokes from Weatherbit when WEATHERBIT_API_KEY is set.",
             "ncs": "NCS has no public JSON. Seismic is USGS FDSN.",
             "imd_rest": "api.imd.gov.in returns 401 without IP whitelist. Official warnings are IMD CAP RSS.",
             "gauge": "Open-Meteo daily/hourly is a model, not a rain-gauge.",
         }
         key = (metric or "").strip().lower()
+        if key == "lightning":
+            from app.config import get_settings
+
+            on = bool(get_settings().weatherbit_api_key)
+            return {"available": on, "metric": key, "reason": holes["lightning"], "source": "weatherbit"}
         if key in holes:
             return {"available": False, "metric": key, "reason": holes[key]}
         return {

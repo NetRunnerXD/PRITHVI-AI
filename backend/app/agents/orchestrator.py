@@ -22,6 +22,7 @@ from app.data.india_districts import match_states
 from app.agents.facts import (
     drop_false_shrug,
     fill_slots,
+    is_dash_soup,
     is_pushback,
     needed_facts,
     prose_has_payload_number,
@@ -543,8 +544,8 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     content_en = fill_slots(content_en, collected)
     content_en = drop_false_shrug(content_en, collected)
     quoted = quote_facts(collected)
-    if quoted and not prose_has_payload_number(content_en, collected):
-        content_en = f"{content_en}\n\n{quoted}".strip() if content_en else quoted
+    if quoted and (not prose_has_payload_number(content_en, collected) or is_dash_soup(content_en)):
+        content_en = quoted if is_dash_soup(content_en) else f"{content_en}\n\n{quoted}".strip() if content_en else quoted
     if not content_en:
         if collected:
             content_en = quoted or "Here is what Rituchakra has for that."

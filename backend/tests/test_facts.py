@@ -99,6 +99,17 @@ def test_fill_slots_from_forecast():
     assert fill_slots("plain text", collected) == "plain text"
 
 
+def test_dash_soup_from_stripped_outlook():
+    from app.agents.facts import is_dash_soup
+
+    soup = (
+        "August —: Partly cloudy with a high chance of rain (—%), "
+        "temperature ranging from —°C to —°C. The total is — mm."
+    )
+    assert is_dash_soup(soup)
+    assert not is_dash_soup("Malda now: 25.2°C, this hour 0 mm (Open-Meteo).")
+
+
 def test_drop_false_shrug_when_forecast_exists():
     from app.agents.facts import drop_false_shrug
 

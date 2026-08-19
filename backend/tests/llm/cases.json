@@ -45,6 +45,7 @@
   {"id": "wx-aqi-chennai", "q": "Air quality in Chennai", "place": "Chennai", "needs": ["aqi"], "weather": true},
   {"id": "wx-rain-kochi", "q": "How much rain in Kochi tomorrow?", "place": "Kochi", "needs": ["rain_window"], "weather": true},
   {"id": "wx-rain-guwahati", "q": "Rain forecast for Guwahati next 5 days", "place": "Guwahati", "needs": ["rain_window"], "weather": true},
+  {"id": "wx-how-about-malda", "q": "How about malda", "place": "Malda", "needs": ["forecast"], "weather": true},
   {"id": "wx-catalog-puruliya", "q": "List all metrics present on Rituchakra for Puruliya", "place": "Purulia", "needs": ["forecast", "nowcast", "aqi", "warnings", "risks", "mandi"], "weather": true},
   {"id": "wx-delhi-bare", "q": "Delhi", "place": "Delhi", "needs": ["forecast"], "weather": true},
   {"id": "wx-delhi-wx", "q": "weather in Delhi", "place": "Delhi", "needs": ["forecast"], "weather": true},

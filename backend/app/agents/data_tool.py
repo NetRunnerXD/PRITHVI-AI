@@ -57,7 +57,8 @@ SCHEMA = {
 
 HOLES = {
     "radar": "No radar ingest. Nowcast is a 0–6 h decision object on Open-Meteo hours.",
-    "insat": "MOSDAC / INSAT is not wired. Kalman scenes are Open-Meteo model-analysis, not satellite.",
+    "insat": "INSAT-3D HEM HDF needs MOSDAC approval. Live nowcast uses IMD public INSAT IR JPEG + NASA GIBS IMERG.",
+    "lightning": "Live strokes from Weatherbit when WEATHERBIT_API_KEY is set.",
     "ncs": "NCS has no public JSON. Seismic is USGS FDSN.",
     "imd_rest": "api.imd.gov.in returns 401. Official warnings are IMD CAP RSS.",
     "gauge": "Open-Meteo daily/hourly is a model, not a rain-gauge.",

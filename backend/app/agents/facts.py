@@ -108,6 +108,15 @@ def fill_slots(text: str, collected: dict) -> str:
     return _SLOT.sub(repl, text)
 
 
+def is_dash_soup(text: str) -> bool:
+    """True when claim-check turned a hallucinated outlook into 'August — / —%'."""
+    raw = text or ""
+    if raw.count("—") < 4:
+        return False
+    digits = NUM.findall(raw)
+    return len(digits) <= 2
+
+
 def drop_false_shrug(text: str, collected: dict) -> str:
     """If we already fetched figures, drop 'I couldn't find any weather' waffle."""
     if not text or not collected:
@@ -215,6 +224,22 @@ def quote_facts(collected: dict[str, Any]) -> str:
                 f"{place} next 3 days {_fmt(fc.get('precip_next_3d_mm'))} mm, "
                 f"7 days {_fmt(fc.get('precip_7d_mm'))} mm."
             )
+        for row in (fc.get("outlook_days") or [])[:7]:
+            if not isinstance(row, dict):
+                continue
+            day = row.get("date")
+            if not day:
+                continue
+            bit = f"{day}"
+            if row.get("temp_max_c") is not None:
+                bit += f" tmax {_fmt(row.get('temp_max_c'))}°C"
+            if row.get("temp_min_c") is not None:
+                bit += f" / {_fmt(row.get('temp_min_c'))}°C"
+            if row.get("precip_mm") is not None:
+                bit += f", {_fmt(row.get('precip_mm'))} mm"
+            if row.get("precip_prob_pct") is not None:
+                bit += f" ({row.get('precip_prob_pct')}%)"
+            lines.append(bit + ".")
     aqi = collected.get("aqi")
     if isinstance(aqi, dict) and aqi:
         cpcb = aqi.get("cpcb") or {}

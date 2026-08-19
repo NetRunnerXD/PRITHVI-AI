@@ -6,6 +6,8 @@ CAP RSS is public and is the live India-official warning source on day one.
 
 from __future__ import annotations
 
+import html
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Any
@@ -136,6 +138,37 @@ def humanize_cap_title(title: str, body: str = "", place: str = "") -> str:
             cleaned = cleaned[:69] + "…"
         return f"{cleaned}{where}" if cleaned else f"IMD weather bulletin{where}"
     return f"{kind}{where}"
+
+
+_STACKED_RAIN = re.compile(
+    r"heavy\s+to\s+very\s+heavy|extremely heavy rainfall at|heavy to very heavy with",
+    re.I,
+)
+
+
+def clean_cap_body(body: str, *, title: str = "", raw_title: str = "") -> str:
+    """Drop stacked IMD intensity phrases; keep one useful sentence."""
+    text = re.sub(r"<[^>]+>", " ", body or "")
+    text = html.unescape(text)
+    text = " ".join(text.split())
+    for drop in (raw_title, title):
+        if drop:
+            text = re.sub(re.escape(drop), " ", text, flags=re.I)
+    keep: list[str] = []
+    for part in re.split(r"(?<=[.!?])\s+", text):
+        chunk = part.strip(" .")
+        if not chunk:
+            continue
+        if _STACKED_RAIN.search(chunk):
+            continue
+        low = chunk.lower()
+        if re.fullmatch(r"(heavy|very heavy|extremely heavy)(\s+(to|with)\s+(very heavy|extremely heavy))*(\s+rainfall)?", low):
+            continue
+        keep.append(chunk)
+    out = ". ".join(keep).strip(" .")
+    if len(out) > 220:
+        out = out[:217].rstrip() + "…"
+    return out
 
 
 def now_iso() -> str:

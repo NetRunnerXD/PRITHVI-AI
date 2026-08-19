@@ -45,6 +45,7 @@ def compact_nowcast(nc: dict[str, Any] | None) -> dict[str, Any]:
             "labour": pack.get("labour"),
             "actions": pack.get("actions") or [],
             "speech": (pack.get("speech") or {}).get("heard"),
+            "convective": pack.get("convective"),
             "note": locked.get("engine_note") or pack.get("note"),
             "widget": "nowcast",
         }

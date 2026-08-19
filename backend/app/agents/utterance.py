@@ -55,6 +55,11 @@ _PLACE_WX = re.compile(
     r"([A-Za-z][A-Za-z .'-]{1,40}?)\s*$",
     re.I,
 )
+_ABOUT_PLACE = re.compile(
+    r"^\s*(?:how about|what about|and(?: then)?|also|try|check)\s+"
+    r"([A-Za-z][A-Za-z .'-]{1,40}?)\s*[?.!]?\s*$",
+    re.I,
+)
 _STOP_HEAD = {
     "the", "my", "a", "an", "this", "that", "these", "those",
     "next", "last", "past", "coming", "few", "some", "any",
@@ -174,6 +179,16 @@ def _looks_like_name(span: str | None) -> bool:
     return True
 
 
+def is_place_retarget(text: str) -> bool:
+    """'How about Malda' / 'what about Puri' is a request for that place, not chit-chat."""
+    raw = (text or "").strip()
+    if looks_like_bare_place(raw):
+        return True
+    if _ABOUT_PLACE.match(raw) and len(raw.split()) <= 6:
+        return True
+    return False
+
+
 def extract_asked_span(text: str) -> str | None:
     """The place-like span the human pointed at, even if it is fictitious."""
     raw = (text or "").strip()
@@ -186,6 +201,11 @@ def extract_asked_span(text: str) -> str | None:
     known = mentioned_place(raw)
     if known:
         return known
+    about = _ABOUT_PLACE.match(raw)
+    if about:
+        span = _usable_span(about.group(1))
+        if span and _looks_like_name(span):
+            return span
     hits = list(_PREP.finditer(raw))
     for m in reversed(hits):
         span = _usable_span(m.group(1))
@@ -410,5 +430,16 @@ def interpret(text: str) -> Plan:
             states=states,
             asked=asked,
             needs_geocode=bool(asked and not resolved and not state_only),
+        )
+    if (resolved or asked) and is_place_retarget(text):
+        # "what about Kerala?" after a rank is a state follow-up, not a capital forecast.
+        if is_state_name(asked or "") and not looks_like_bare_place(text):
+            return Plan(mode="chat", states=states or match_states(asked or text), asked=asked)
+        return Plan(
+            mode="data",
+            needs=["forecast"],
+            states=states,
+            asked=asked,
+            needs_geocode=bool(asked and not resolved),
         )
     return Plan(mode="chat", states=states, asked=asked)

@@ -107,6 +107,16 @@ def _sort_key(metric: str):
 async def rank_districts(state: str | None, metric: str = "flood", limit: int = 40) -> dict[str, Any]:
     rows = districts_in_state(state) if state else list(all_districts())
     note = None
+    if state and not rows:
+        return {
+            "state": state,
+            "metric": metric,
+            "count": 0,
+            "ranked": [],
+            "note": f"No gazetteer districts for {state}. Pass an Indian state, not a town.",
+            "method": "open-meteo 3-day precip + soil + elevation proxy (local-ml-v1)",
+            "error": "unknown_state",
+        }
     if not state and len(rows) > 80:
         note = "India-wide scan uses the bundled gazetteer (HQ towns). Pass a state for a complete district list."
     scored = await asyncio.gather(*[_one(r) for r in rows])
