@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     nasa_earthdata_user: str | None = None
     nasa_earthdata_pass: str | None = None
     openweather_api_key: str | None = None
+    weatherbit_api_key: str | None = None
+    eumetsat_token: str | None = None
+    lightning_feed_url: str | None = None
+    lightning_feed_key: str | None = None
 
     # Google gtx + MyMemory, no key. Off = skip inbound/outbound MT.
     translate_enabled: bool = True
