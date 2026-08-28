@@ -14,7 +14,8 @@ import {
 import type { DashboardSnapshot } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
 import { useApp } from "@/lib/store";
-import { rain, speed, temp } from "@/lib/units";
+import { todayStory } from "@/lib/plain";
+import { dist, height, rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
 
 function hhmm(t: string) {
   const i = t.indexOf("T");
@@ -118,8 +119,10 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
     },
   ];
 
+  const story = todayStory(dash, locale);
   return (
     <div className="space-y-3">
+      {story ? <p className="text-sm text-neo-muted">{story}</p> : null}
       <div className="grid gap-2 sm:grid-cols-3">
         {decide.map((c) => (
           <div key={c.k} className={`neo px-3 py-2 ${c.hot ? "ring-1 ring-neo-danger" : ""}`}>
@@ -149,7 +152,7 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
             <Stat k={`${t.humidity}`} v={sky.humidity_pct != null ? `${Math.round(Number(sky.humidity_pct))} %` : "—"} />
             <Stat k={t.cloud} v={sky.cloud_cover_pct != null ? `${Math.round(Number(sky.cloud_cover_pct))} %` : "—"} />
-            <Stat k={t.visibility} v={sky.visibility_km != null ? `${sky.visibility_km} km` : "—"} />
+            <Stat k={t.visibility} v={sky.visibility_km != null ? dist(sky.visibility_km, units) : "—"} />
             <Stat k={t.lastHourRain} v={rain(sky.precip_1h_mm, units)} />
           </div>
         </section>
@@ -305,7 +308,7 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
             <Stat k={`${t.windSpeed}`} v={speed(wind.speed_kmh, units)} />
             <Stat
               k={t.waves}
-              v={live?.marine?.wave_height_m != null ? `${Number(live.marine.wave_height_m).toFixed(1)} m` : "—"}
+              v={live?.marine?.wave_height_m != null ? height(live.marine.wave_height_m, units) : "—"}
             />
             <Stat k={t.discharge} v={dash.predictive.flood_discharge_trend || "—"} />
           </div>
@@ -317,27 +320,28 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
 
 export function OverviewPlots({ dash, locale }: { dash: DashboardSnapshot; locale: Locale }) {
   const t = COPY[locale];
+  const units = useApp((s) => s.settings.units);
   const live = dash.live;
   const series = dash.descriptive.series;
-  const rainH = (series.precip_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }));
-  const tempH = (series.temp_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }));
-  const wspd = (series.wind_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }));
+  const rainH = (series.precip_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: units === "imperial" ? p.value / 25.4 : p.value }));
+  const tempH = (series.temp_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: units === "imperial" ? (p.value * 9) / 5 + 32 : p.value }));
+  const wspd = (series.wind_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: units === "imperial" ? p.value * 0.621 : p.value }));
   const aqi = (series.aqi_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }));
   const aqiHist = (series.aqi_history || []).slice(-24).map((p) => ({ t: hhmm(p.t), v: p.value }));
-  const wave = (series.wave_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }));
+  const wave = (series.wave_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: units === "imperial" ? p.value * 3.281 : p.value }));
   const discharge = (live?.flood?.discharge || dash.predictive.river_discharge || []).map((v, i) => ({
     t: `d+${i}`,
     v,
   }));
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      <Spark title={`${t.tabForecast} · 24h`} data={rainH} color="var(--rain)" unit="mm" kind="bar" />
-      <Spark title="24h" data={tempH} color="var(--gold)" unit="°C" />
-      <Spark title={t.windSpeed} data={wspd} color="var(--accent)" unit="km/h" />
+      <Spark title={`${t.tabForecast} · 24h`} data={rainH} color="var(--rain)" unit={rainUnit(units)} kind="bar" />
+      <Spark title="24h" data={tempH} color="var(--gold)" unit={tempUnit(units)} />
+      <Spark title={t.windSpeed} data={wspd} color="var(--accent)" unit={units === "imperial" ? "mph" : "km/h"} />
       <Spark title={t.discharge} data={discharge} color="var(--flood)" unit="m³/s" />
       <Spark title={t.omAqi} data={aqi} color="var(--accent2)" unit="US AQI" />
       <Spark title={t.histAqi} data={aqiHist.length ? aqiHist : aqi} color="var(--accent2)" unit={aqiHist.length ? "µg/m³" : "US AQI"} />
-      <Spark title={t.waves} data={wave} color="var(--rain)" unit="m" />
+      <Spark title={t.waves} data={wave} color="var(--rain)" unit={units === "imperial" ? "ft" : "m"} />
     </div>
   );
 }

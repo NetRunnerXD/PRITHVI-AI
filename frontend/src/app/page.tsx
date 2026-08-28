@@ -75,6 +75,10 @@ export default function Page() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "0") {
+        setTab("settings");
+        return;
+      }
       const n = Number(e.key);
       if (n >= 1 && n <= 9) setTab(TAB_ORDER[n - 1]);
     };
@@ -145,6 +149,9 @@ export default function Page() {
               <button className="neo-btn text-xs" onClick={copyBrief}>
                 {copied ? t.copied : t.copyBrief}
               </button>
+              {settings.showHints ? (
+                <span className="hidden text-[11px] text-neo-muted md:inline">{t.keyboardHint}</span>
+              ) : null}
             </div>
           ) : null}
         </header>
@@ -224,14 +231,14 @@ export default function Page() {
             {tab === "forecast" && dashboard ? (
               <div className="space-y-4">
                 {windowPack && Array.isArray((windowPack as { days?: unknown[] }).days) ? (
-                  <section className="neo p-4">
+                  <section className="neo overflow-x-auto p-4">
                     <h3 className="text-sm font-bold">{t.predictive}</h3>
-                    <table className="mt-2 w-full text-left text-sm">
+                    <table className="mt-2 w-full min-w-[20rem] text-left text-sm">
                       <thead>
                         <tr className="text-neo-muted">
-                          <th className="py-1">date</th>
-                          <th className="py-1">mm</th>
-                          <th className="py-1">%</th>
+                          <th className="py-1">{t.colDate}</th>
+                          <th className="py-1">{t.colRain}</th>
+                          <th className="py-1">{t.colProb}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -255,6 +262,9 @@ export default function Page() {
                       {cmpBusy ? "…" : t.compare}
                     </button>
                   </div>
+                  {cmp && "error" in cmp ? (
+                    <p className="mt-2 text-sm text-neo-danger">{String((cmp as { error: string }).error)}</p>
+                  ) : null}
                   {cmp && !("error" in cmp) ? (
                     <table className="mt-3 w-full text-left text-sm">
                       <tbody>

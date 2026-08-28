@@ -3,21 +3,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
 import type { DashboardSnapshot, Location } from "@/types/dashboard";
-import { fetchStates, fetchStormMap, type StormIncident, type StormMapPack } from "@/lib/api";
+import { fetchStates, fetchStormMap, reverseGeocode, type StormIncident, type StormMapPack } from "@/lib/api";
 import { MapWrap } from "./MapWrap";
 import { StormFeed } from "./StormFeed";
 
 const BASES = ["positron", "streets", "satellite", "terrain"] as const;
-const HIGHLIGHTS = [
-  { id: "past_lightning", label: "Past lightning" },
-  { id: "pred_lightning", label: "Predicted lightning" },
-  { id: "past_storm", label: "Past storm" },
-  { id: "pred_storm", label: "Predicted storm" },
-  { id: "lightning", label: "Live lightning" },
-  { id: "storm", label: "Live storm" },
-  { id: "cloudburst", label: "Cloudburst" },
-  { id: "downburst", label: "Downburst" },
-  { id: "cloud", label: "Cold cloud" },
+const HIGHLIGHT_IDS = [
+  "past_lightning",
+  "pred_lightning",
+  "past_storm",
+  "pred_storm",
+  "lightning",
+  "storm",
+  "cloudburst",
+  "downburst",
+  "cloud",
 ] as const;
 
 export function SquareMap({
@@ -99,10 +99,11 @@ export function SquareMap({
         focusPin={selected ? { lat: selected.lat, lon: selected.lon, zoom: 8 } : focus ? { lat: focus.center[0], lon: focus.center[1], zoom: focus.zoom } : null}
         selectedId={selected?.id}
         tools={{ overlayOpacity, showPin, pastHours, minConfidence, fitNonce }}
+        locale={locale}
         onPick={onPick}
       />
     ),
-    [dash.location, rain, zoom, mapBasemap, nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, fitNonce]
+    [dash.location, rain, zoom, mapBasemap, nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, fitNonce, locale]
   );
 
   function toggleOverlay(id: string) {
@@ -115,14 +116,13 @@ export function SquareMap({
 
   function locate() {
     if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((pos) => {
-      onPick({
-        ...dash.location,
-        lat: pos.coords.latitude,
-        lon: pos.coords.longitude,
-        label: "My location",
-        id: "geo",
-      });
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try {
+        const loc = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+        onPick(loc);
+      } catch {
+        window.alert(t.locateOutside || "That pin is outside India");
+      }
     });
   }
 
@@ -133,6 +133,17 @@ export function SquareMap({
   }
 
   const counts = storm?.counts || {};
+  const hlLabel: Record<(typeof HIGHLIGHT_IDS)[number], string> = {
+    past_lightning: t.hlPastLightning,
+    pred_lightning: t.hlPredLightning,
+    past_storm: t.hlPastStorm,
+    pred_storm: t.hlPredStorm,
+    lightning: t.hlLiveLightning,
+    storm: t.hlLiveStorm,
+    cloudburst: t.cloudburst,
+    downburst: t.downburst,
+    cloud: t.hlColdCloud,
+  };
 
   function pickIncident(inc: StormIncident) {
     setSelected(inc);
@@ -198,8 +209,8 @@ export function SquareMap({
             </button>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            <button className="neo-btn text-xs" onClick={() => setZoom((z) => Math.min(14, z + 1))}>+</button>
-            <button className="neo-btn text-xs" onClick={() => setZoom((z) => Math.max(5, z - 1))}>−</button>
+            <button type="button" className="neo-btn text-xs" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(14, z + 1))}>+</button>
+            <button type="button" className="neo-btn text-xs" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(5, z - 1))}>−</button>
             <button className="neo-btn text-xs" onClick={() => setZoom(8)}>{t.reset}</button>
             <button className="neo-btn text-xs" onClick={() => setFitNonce((n) => n + 1)}>{t.stormFit || "Fit events"}</button>
             <button className="neo-btn text-xs" onClick={locate}>{t.locate}</button>
@@ -253,23 +264,23 @@ export function SquareMap({
             {t.stormHighlights || "Highlights"}
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-labelledby="storm-hi-label">
-            {HIGHLIGHTS.map((h) => (
+            {HIGHLIGHT_IDS.map((id) => (
               <button
-                key={h.id}
+                key={id}
                 type="button"
-                className={`neo-btn text-xs ${highlights.includes(h.id) ? "neo-btn-on" : ""}`}
-                aria-pressed={highlights.includes(h.id)}
-                onClick={() => toggleHighlight(h.id)}
+                className={`neo-btn text-xs ${highlights.includes(id) ? "neo-btn-on" : ""}`}
+                aria-pressed={highlights.includes(id)}
+                onClick={() => toggleHighlight(id)}
               >
-                {h.label}
+                {hlLabel[id]}
               </button>
             ))}
           </div>
           <ul className="mt-2 space-y-0.5 text-[11px] text-neo-muted">
-            <li>⚡ grey — past lightning (Weatherbit)</li>
-            <li>⚡ gold — live lightning cell</li>
-            <li>✦ — predicted lightning</li>
-            <li>◆ dashed — predicted storm</li>
+            <li>⚡ {t.hlPastLightning}</li>
+            <li>⚡ {t.hlLiveLightning}</li>
+            <li>✦ {t.hlPredLightning}</li>
+            <li>◆ {t.hlPredStorm}</li>
           </ul>
         </section>
         <StormFeed storm={storm} locale={locale} selectedId={selected?.id} onSelect={pickIncident} />

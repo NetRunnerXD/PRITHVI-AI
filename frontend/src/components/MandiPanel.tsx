@@ -52,7 +52,7 @@ export function MandiPanel({ dash, locale }: { dash: DashboardSnapshot; locale: 
             </thead>
             <tbody>
               {filtered.map((r, i) => (
-                <tr key={`${r.commodity}-${r.market}-${i}`} className="border-t border-[#ead9c2]">
+                <tr key={`${r.commodity}-${r.market}-${i}`} className="border-t border-neo-line">
                   <td className="py-1.5">
                     {r.commodity}
                     {r.variety ? <span className="text-neo-muted"> · {r.variety}</span> : null}
@@ -70,11 +70,11 @@ export function MandiPanel({ dash, locale }: { dash: DashboardSnapshot; locale: 
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chart} layout="vertical" margin={{ left: 24 }}>
-              <CartesianGrid stroke="#ead9c2" horizontal={false} />
-              <XAxis type="number" stroke="#5c6570" fontSize={10} />
-              <YAxis type="category" dataKey="name" stroke="#5c6570" fontSize={10} width={80} />
-              <Tooltip contentStyle={{ background: "#fffaf2", border: "none", borderRadius: 12 }} />
-              <Bar dataKey="price" fill="#0d6e63" radius={[0, 6, 6, 0]} />
+              <CartesianGrid stroke="var(--line)" horizontal={false} />
+              <XAxis type="number" stroke="var(--muted)" fontSize={10} />
+              <YAxis type="category" dataKey="name" stroke="var(--muted)" fontSize={10} width={80} />
+              <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 12, color: "var(--text)" }} />
+              <Bar dataKey="price" fill="var(--accent)" radius={[0, 6, 6, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

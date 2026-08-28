@@ -56,7 +56,7 @@ export function Sidebar() {
   return (
     <aside
       className={`neo flex w-full shrink-0 flex-col gap-3 p-3 transition-[width] duration-200 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:overflow-y-auto ${
-        sidebarOpen ? "lg:w-56" : "lg:w-[4.25rem]"
+        sidebarOpen ? "lg:w-56" : "max-lg:gap-2 max-lg:p-2 lg:w-[4.25rem]"
       }`}
     >
       <div className={`flex items-center ${sidebarOpen ? "justify-between" : "flex-col gap-2"}`}>
@@ -75,12 +75,13 @@ export function Sidebar() {
         </button>
       </div>
 
-      <nav className="flex flex-wrap gap-1 lg:flex-col">
+      <nav className={`flex flex-wrap gap-1 ${sidebarOpen ? "lg:flex-col" : "max-lg:flex-nowrap max-lg:overflow-x-auto lg:flex-col"}`}>
         {TABS.map(({ id, Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
             title={tabLabel[id]}
+            data-testid={`tab-${id}`}
             className={`flex items-center gap-2.5 rounded-2xl px-2.5 py-2 text-sm font-semibold transition ${
               sidebarOpen ? "w-full text-left" : "justify-center lg:w-full"
             } ${tab === id ? "bg-neo-accent text-white shadow-neo-sm" : "text-neo-text hover:text-neo-accent"}`}

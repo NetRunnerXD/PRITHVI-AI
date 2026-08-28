@@ -13,9 +13,12 @@ import {
 } from "recharts";
 import { COPY, type Locale } from "@/i18n/copy";
 import type { DashboardSnapshot, PredictionPack } from "@/types/dashboard";
+import { rain } from "@/lib/units";
+import { useApp } from "@/lib/store";
 
 export function PredictionsPanel({ dash, locale }: { dash: DashboardSnapshot; locale: Locale }) {
   const t = COPY[locale];
+  const units = useApp((s) => s.settings.units);
   const [src, setSrc] = useState<"ours" | "trusted">("ours");
   const pack: PredictionPack | undefined = src === "ours" ? dash.predictions?.ours : dash.predictions?.trusted;
   const other = src === "ours" ? dash.predictions?.trusted : dash.predictions?.ours;
@@ -47,9 +50,9 @@ export function PredictionsPanel({ dash, locale }: { dash: DashboardSnapshot; lo
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Kpi label={t.rain3} value={`${pack.precip_3d_mm} mm`} sub={other ? `API ${other.precip_3d_mm}` : ""} />
-        <Kpi label={t.rain7} value={`${pack.precip_7d_mm} mm`} sub={other ? `API ${other.precip_7d_mm}` : ""} />
-        <Kpi label={t.balance} value={`${pack.water_balance_7d_mm} mm`} />
+        <Kpi label={t.rain3} value={rain(pack.precip_3d_mm, units)} sub={other ? `API ${rain(other.precip_3d_mm, units)}` : ""} />
+        <Kpi label={t.rain7} value={rain(pack.precip_7d_mm, units)} sub={other ? `API ${rain(other.precip_7d_mm, units)}` : ""} />
+        <Kpi label={t.balance} value={rain(pack.water_balance_7d_mm, units)} />
       </div>
 
       <section className="neo p-4">
@@ -58,13 +61,13 @@ export function PredictionsPanel({ dash, locale }: { dash: DashboardSnapshot; lo
         <div className="mt-3 h-56">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chart}>
-              <CartesianGrid stroke="#cfe0dd" vertical={false} />
-              <XAxis dataKey="d" stroke="#4d6b70" fontSize={10} />
-              <YAxis stroke="#4d6b70" fontSize={10} width={28} />
-              <Tooltip contentStyle={{ background: "#eef6f4", border: "none", borderRadius: 16 }} />
+              <CartesianGrid stroke="var(--line)" vertical={false} />
+              <XAxis dataKey="d" stroke="var(--muted)" fontSize={10} />
+              <YAxis stroke="var(--muted)" fontSize={10} width={28} />
+              <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 16, color: "var(--text)" }} />
               <Legend />
-              <Bar dataKey="ours" fill="#146b7a" radius={[6, 6, 0, 0]} />
-              <Bar dataKey="trusted" fill="#4aa3b5" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="ours" fill="var(--accent)" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="trusted" fill="var(--rain)" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -115,11 +118,11 @@ export function PredictionsPanel({ dash, locale }: { dash: DashboardSnapshot; lo
           </thead>
           <tbody>
             {pack.days.map((d) => (
-              <tr key={d.date} className="border-t border-[#cfe0dd]">
+              <tr key={d.date} className="border-t border-neo-line">
                 <td className="py-2 font-mono">{d.date}</td>
-                <td>{d.precip_mm}</td>
+                <td>{rain(d.precip_mm, units)}</td>
                 <td>{d.precip_prob_pct}</td>
-                <td>{d.et0_mm}</td>
+                <td>{rain(d.et0_mm, units)}</td>
                 <td>{d.soil_m3m3}</td>
                 <td>{d.confidence_pct ?? "—"}</td>
                 <td className="text-neo-muted">{d.adjustment || (d.flood_watch ? "flood" : d.irrigate ? "irrigate" : "—")}</td>

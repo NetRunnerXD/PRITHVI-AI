@@ -17,6 +17,7 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import type { Location } from "@/types/dashboard";
+import { COPY, type Locale } from "@/i18n/copy";
 import type { StormMapPack, StormMapTools, StormStroke } from "@/lib/api";
 import { apiUrl, reverseGeocode } from "@/lib/api";
 
@@ -96,8 +97,12 @@ function FitEvents({ nonce, points }: { nonce: number; points: [number, number][
 function Click({ onPick }: { onPick: (l: Location) => void }) {
   useMapEvents({
     click: async (e) => {
-      const loc = await reverseGeocode(e.latlng.lat, e.latlng.lng);
-      onPick({ ...loc, lat: e.latlng.lat, lon: e.latlng.lng });
+      try {
+        const loc = await reverseGeocode(e.latlng.lat, e.latlng.lng);
+        onPick({ ...loc, lat: e.latlng.lat, lon: e.latlng.lng });
+      } catch {
+        /* outside India or reverse failed */
+      }
     },
   });
   return null;
@@ -111,7 +116,7 @@ function CursorReadout() {
   });
   if (!txt) return null;
   return (
-    <div className="pointer-events-none absolute bottom-7 left-2 z-[500] rounded-md bg-white/90 px-2 py-0.5 font-mono text-[10px] text-neo-ink shadow">
+    <div className="pointer-events-none absolute bottom-7 left-2 z-[500] rounded-md bg-neo-card/90 px-2 py-0.5 font-mono text-[10px] text-neo-text shadow">
       {txt}
     </div>
   );
@@ -232,6 +237,7 @@ export function MapView({
   focusPin,
   selectedId,
   tools,
+  locale,
   onPick,
 }: {
   lat: number;
@@ -247,8 +253,10 @@ export function MapView({
   focusPin?: { lat: number; lon: number; zoom?: number } | null;
   selectedId?: string | null;
   tools?: StormMapTools;
+  locale?: Locale;
   onPick: (l: Location) => void;
 }) {
+  const t = COPY[locale || "en"];
   const opt = tools || DEFAULT_TOOLS;
   const tile = BASE[basemap] || BASE.positron;
   const frame = storm?.frame;
@@ -333,7 +341,7 @@ export function MapView({
       {overlays.includes("bhuvan_geomorph_in") ? (
         <WMSTileLayer
           url={apiUrl("/map/wms")}
-          layers="gw_wfs:AN_LGEOM,gw_wfs:AP_LGEOM,gw_wfs:AS_LGEOM,gw_wfs:BR_LGEOM,gw_wfs:GA_LGEOM,gw_wfs:JH_LGEOM,gw_wfs:KA_LGEOM,gw_wfs:KL_LGEOM,gw_wfs:MH_LGEOM,gw_wfs:MP_LGEOM,gw_wfs:OR_LGEOM,gw_wfs:PB_LGEOM,gw_wfs:RJ_LGEOM,gw_wfs:TN_LGEOM,gw_wfs:TS_LGEOM,gw_wfs:UK_LGEOM,gw_wfs:UP_LGEOM,gw_wfs:WB_LGEOM"
+          layers="gw_wfs:AN_LGEOM,gw_wfs:AP_LGEOM,gw_wfs:AR_LGEOM,gw_wfs:AS_LGEOM,gw_wfs:BR_LGEOM,gw_wfs:CG_LGEOM,gw_wfs:CH_LGEOM,gw_wfs:DL_LGEOM,gw_wfs:GA_LGEOM,gw_wfs:GJ_LGEOM,gw_wfs:HP_LGEOM,gw_wfs:HR_LGEOM,gw_wfs:JH_LGEOM,gw_wfs:JK_LGEOM,gw_wfs:KA_LGEOM,gw_wfs:KL_LGEOM,gw_wfs:LD_LGEOM,gw_wfs:MH_LGEOM,gw_wfs:ML_LGEOM,gw_wfs:MN_LGEOM,gw_wfs:MP_LGEOM,gw_wfs:MZ_LGEOM,gw_wfs:NL_LGEOM,gw_wfs:OR_LGEOM,gw_wfs:PB_LGEOM,gw_wfs:PY_LGEOM,gw_wfs:RJ_LGEOM,gw_wfs:SK_LGEOM,gw_wfs:TN_LGEOM,gw_wfs:TR_LGEOM,gw_wfs:TS_LGEOM,gw_wfs:UK_LGEOM,gw_wfs:UP_LGEOM,gw_wfs:WB_LGEOM"
           format="image/png"
           transparent
           version="1.1.1"
@@ -381,7 +389,7 @@ export function MapView({
               pathOptions={{ color: "#8e6b1f", fillColor: "#f1c40f", fillOpacity: 0.85, weight: 1.5 }}
             >
               <Popup>
-                <strong>Past lightning</strong>
+                <strong>{t.hlPastLightning}</strong>
                 <br />
                 {s.place || `${s.lat.toFixed(2)}, ${s.lon.toFixed(2)}`}
                 {s.t || s.timestamp_utc ? (
@@ -408,7 +416,7 @@ export function MapView({
             .map((s, i) => (
               <Marker key={`live-ltn-${s.id || i}`} position={[s.lat, s.lon]} icon={liveStrikeIcon}>
                 <Popup>
-                  <strong>Live lightning cell</strong>
+                  <strong>{t.hlLiveLightning}</strong>
                   <br />
                   {s.place || `${s.lat.toFixed(2)}, ${s.lon.toFixed(2)}`}
                 </Popup>
@@ -419,7 +427,7 @@ export function MapView({
         ? predLtn.map((s) => (
             <Marker key={s.id} position={[s.lat, s.lon]} icon={predStrikeIcon}>
               <Popup>
-                <strong>Predicted lightning</strong>
+                <strong>{t.hlPredLightning}</strong>
                 <br />
                 {s.place}
                 {s.lead_min != null ? (
@@ -447,7 +455,7 @@ export function MapView({
         ? predStorms.map((s) => (
             <Marker key={s.id} position={[s.lat, s.lon]} icon={predStormIcon}>
               <Popup>
-                <strong>Predicted storm</strong>
+                <strong>{t.hlPredStorm}</strong>
                 <br />
                 {s.place}
                 {s.lead_min != null ? (

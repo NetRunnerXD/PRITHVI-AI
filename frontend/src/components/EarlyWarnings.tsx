@@ -11,14 +11,17 @@ const tone: Record<string, string> = {
   watch: "text-neo-accent2",
 };
 
-const HAZARD_LABEL: Record<string, string> = {
-  weather: "Sky",
-  flood: "Water",
-  air: "Air",
-  marine: "Sea",
-  seismic: "Quake",
-  tsunami: "Sea wave",
-};
+function hazardLabel(hazard: string | undefined, t: Record<string, string>) {
+  const map: Record<string, string> = {
+    weather: t.sky,
+    flood: t.floodWatch,
+    air: t.aqi,
+    marine: t.marine,
+    seismic: t.seismic,
+    tsunami: t.tsunami,
+  };
+  return map[hazard || "weather"] || hazard || t.sky;
+}
 
 const FEEDS: { key: string; label: string }[] = [
   { key: "imd-cap", label: "IMD CAP" },
@@ -157,7 +160,7 @@ export function EarlyWarnings({
                   <article key={w.id} className="neo-in px-3 py-3">
                     <div className="flex items-center justify-between gap-2">
                       <p className={`text-[10px] uppercase tracking-widest ${tone[w.severity] || ""}`}>{w.severity}</p>
-                      <span className="chip">{HAZARD_LABEL[w.hazard || "weather"] || w.hazard}</span>
+                      <span className="chip">{hazardLabel(w.hazard, t)}</span>
                     </div>
                     <p className="mt-2 text-sm font-semibold leading-snug">{w.title}</p>
                     {line ? <p className="mt-1 text-xs leading-snug text-neo-muted">{line}</p> : null}

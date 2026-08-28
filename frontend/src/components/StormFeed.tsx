@@ -33,13 +33,16 @@ function windowBits(inc: StormIncident, now: number) {
   return { phase: "ended", label: "ended" };
 }
 
-const KIND_LABEL: Record<string, string> = {
-  lightning: "Lightning",
-  cloudburst: "Cloudburst",
-  downburst: "Downburst",
-  storm: "Storm",
-  cloud: "Cold cloud",
-};
+function kindLabel(kind: string, t: Record<string, string>) {
+  const map: Record<string, string> = {
+    lightning: t.kindLightning || "Lightning",
+    cloudburst: t.kindCloudburst || "Cloudburst",
+    downburst: t.kindDownburst || "Downburst",
+    storm: t.kindStorm || "Storm",
+    cloud: t.kindCloud || "Cold cloud",
+  };
+  return map[kind] || kind;
+}
 
 export function StormFeed({
   storm,
@@ -54,7 +57,8 @@ export function StormFeed({
 }) {
   const t = COPY[locale];
   const [now, setNow] = useState(() => Date.now());
-  const [filter, setFilter] = useState<string>("all");
+  const [phaseFilter, setPhaseFilter] = useState<string>("all");
+  const [kindFilter, setKindFilter] = useState<string>("all");
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
@@ -62,43 +66,32 @@ export function StormFeed({
   }, []);
 
   const rows = useMemo(() => {
-    let list = storm?.incidents || [];
-    if (!list.length && storm?.cells?.length) {
-      const asOf = storm.as_of_ms || Date.parse(storm.as_of || "") || Date.now();
-      list = storm.cells.map((c, i) => {
-        const life = Math.round(25 + ((c.p_lightning || 0) * 40) + Math.min(30, (c.area_km2 || 80) / 20));
-        return {
-          id: c.id || `cell-${i}`,
-          kind: c.kind || "storm",
-          lat: c.lat,
-          lon: c.lon,
-          place: c.place || `${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}`,
-          started_at: new Date(asOf - 10 * 60_000).toISOString(),
-          closes_at: new Date(asOf + life * 60_000).toISOString(),
-          started_ms: asOf - 10 * 60_000,
-          closes_ms: asOf + life * 60_000,
-          rain_ir_mm_h: c.rain_ir_mm_h,
-          min_tb_k: c.min_tb_k,
-          p_lightning: c.p_lightning,
-          p_cloudburst: c.p_cloudburst,
-          phase: "live" as const,
-        };
-      });
-    }
-    if (filter === "past") return list.filter((i) => i.phase === "past");
-    if (filter === "predicted") return list.filter((i) => i.phase === "predicted" || (i.lead_min || 0) > 0);
-    if (filter === "live") return list.filter((i) => (i.phase || "live") === "live");
-    const open = list.filter((inc) => {
-      if (inc.phase === "past") return filter === "all" || inc.kind === filter;
-      const close = ts(inc, inc.closes_at, inc.closes_ms);
-      if (Number.isNaN(close)) return inc.phase !== "ended";
-      return close + 15_000 >= now;
+    const list = storm?.incidents || [];
+    return list.filter((inc) => {
+      // Phase filter
+      if (phaseFilter !== "all") {
+        const incPhase = inc.phase || "live";
+        if (phaseFilter === "predicted") {
+          if (incPhase !== "predicted" && !((inc.lead_min || 0) > 0)) return false;
+        } else if (incPhase !== phaseFilter) {
+          return false;
+        }
+      } else {
+        // When phase is "all", still drop expired non-past incidents
+        if (inc.phase !== "past") {
+          const close = ts(inc, inc.closes_at, inc.closes_ms);
+          if (!Number.isNaN(close) && close + 15_000 < now) return false;
+          if (Number.isNaN(close) && inc.phase === "ended") return false;
+        }
+      }
+      // Kind filter
+      if (kindFilter !== "all" && inc.kind !== kindFilter) return false;
+      return true;
     });
-    if (filter === "all") return open;
-    return open.filter((i) => i.kind === filter);
-  }, [storm, filter, now]);
+  }, [storm, phaseFilter, kindFilter, now]);
 
-  const kinds = ["all", "past", "predicted", "live", "lightning", "storm", "cloudburst"];
+  const phases = ["all", "live", "predicted", "past"];
+  const kinds = ["all", "lightning", "storm", "cloudburst"];
   const ltn = storm?.sensors?.lightning_status;
 
   return (
@@ -108,30 +101,43 @@ export function StormFeed({
           {t.stormFeed || "Live incidents"}
         </h2>
         <p className="text-[11px] text-neo-muted" aria-live="polite">
-          {storm?.counts?.all ?? rows.length} {t.activeAlerts || "active"}
+          {rows.length} {t.activeAlerts || "active"}
           {storm?.counts?.predicted ? ` · ${storm.counts.predicted} ${t.stormPredicted || "predicted"}` : ""}
         </p>
       </div>
-      <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label={t.stormHighlights || "Kind"}>
-        {kinds.map((k) => (
-          <button
-            key={k}
-            type="button"
-            className={`neo-btn text-xs ${filter === k ? "neo-btn-on" : ""}`}
-            aria-pressed={filter === k}
-            onClick={() => setFilter(k)}
-          >
-            {k === "all"
-              ? t.stormAll || "All"
-              : k === "predicted"
-                ? t.stormPredicted || "Predicted"
-                : k === "past"
-                  ? t.stormPast || "Past"
-                  : k === "live"
-                    ? t.stormLive || "Live"
-                    : KIND_LABEL[k] || k}
-          </button>
-        ))}
+      <div className="mt-2 space-y-1.5">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by phase">
+          {phases.map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`neo-btn text-xs ${phaseFilter === p ? "neo-btn-on" : ""}`}
+              aria-pressed={phaseFilter === p}
+              onClick={() => setPhaseFilter(p)}
+            >
+              {p === "all"
+                ? t.stormAll || "All"
+                : p === "predicted"
+                  ? t.stormPredicted || "Predicted"
+                  : p === "past"
+                    ? t.stormPast || "Past"
+                    : t.stormLive || "Live"}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by kind">
+          {kinds.map((k) => (
+            <button
+              key={k}
+              type="button"
+              className={`neo-btn text-xs ${kindFilter === k ? "neo-btn-on" : ""}`}
+              aria-pressed={kindFilter === k}
+              onClick={() => setKindFilter(k)}
+            >
+              {k === "all" ? t.stormAll || "All" : kindLabel(k, t)}
+            </button>
+          ))}
+        </div>
       </div>
       {ltn && ltn !== "ok" && ltn !== "cv+open-meteo" ? (
         <p className="mt-2 text-xs text-neo-warn" role="status">
@@ -159,7 +165,7 @@ export function StormFeed({
                 >
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="font-semibold">
-                      {KIND_LABEL[inc.kind] || inc.kind}
+                      {kindLabel(inc.kind, t)}
                       {inc.phase === "past" ? (
                         <span className="ml-1 text-[10px] font-bold uppercase tracking-wide text-neo-muted">{t.stormPast || "past"}</span>
                       ) : null}

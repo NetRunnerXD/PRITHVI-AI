@@ -2,7 +2,7 @@
 
 import type { RiskCard as Risk } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
-import { levelOf, riskTitle } from "@/lib/plain";
+import { levelOf, riskTip, riskTitle } from "@/lib/plain";
 import { Pill } from "./ui";
 
 export function RiskCard({
@@ -27,6 +27,7 @@ export function RiskCard({
           <Pill level={level} locale={locale} />
         </div>
       </div>
+      {riskTip(risk.id, locale) ? <p className="mt-2 text-xs text-neo-muted">{riskTip(risk.id, locale)}</p> : null}
       <p className="mt-3 text-[11px] font-bold uppercase tracking-wide text-neo-muted">{t.factors}</p>
       <ul className="mt-2 space-y-2">
         {risk.factors.map((f) => {

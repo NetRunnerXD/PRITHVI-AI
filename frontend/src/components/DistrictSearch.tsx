@@ -34,6 +34,7 @@ export function DistrictSearch({
         onChange={(e) => setQ(e.target.value)}
         placeholder={COPY[locale].search}
         className="neo-in w-full px-3 py-2 text-sm outline-none"
+        data-testid="district-search"
         onFocus={() => setFocus(true)}
         onBlur={() => window.setTimeout(() => setFocus(false), 180)}
       />

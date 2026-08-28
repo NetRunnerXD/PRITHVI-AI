@@ -16,6 +16,7 @@ export type AppSettings = {
   refreshSec: number;
   defaultTab: TabId;
   showHints: boolean;
+  locale?: Locale;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -27,6 +28,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   refreshSec: 60,
   defaultTab: "overview",
   showHints: false,
+  locale: "en",
 };
 
 export function readSettings(): AppSettings {
@@ -38,13 +40,15 @@ export function readSettings(): AppSettings {
   }
 }
 
-export function applyTheme(s: AppSettings) {
+export function applyTheme(s: AppSettings, locale?: Locale) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   root.dataset.theme = s.theme;
   root.dataset.density = s.density;
   root.dataset.motion = s.reduceMotion ? "off" : "on";
   root.style.fontSize = `${s.fontScale}%`;
+  const lang = locale || s.locale || "en";
+  root.lang = lang;
 }
 
 function readList(key: string): Location[] {
@@ -158,7 +162,12 @@ export const useApp = create<State>((set, get) => ({
   },
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setPendingAsk: (pendingAsk) => set({ pendingAsk }),
-  setLocale: (locale) => set({ locale, outputLocale: locale }),
+  setLocale: (locale) => {
+    const settings = { ...get().settings, locale };
+    if (typeof window !== "undefined") window.localStorage.setItem(SET_KEY, JSON.stringify(settings));
+    applyTheme(settings, locale);
+    set({ locale, outputLocale: locale, settings });
+  },
   setOutputLocale: (outputLocale) => set({ outputLocale }),
   setTab: (tab) => set({ tab }),
   applySnapshot: (dashboard) =>
@@ -255,6 +264,7 @@ export const useApp = create<State>((set, get) => ({
         : null;
     if (s.window) set({ windowPack: s.window });
     if (center) set({ mapFocus: { center, zoom: s.zoom ?? 10 } });
+    // Chip click with an explicit tab is an open-tab action. Location-only suggestions do not switch tabs.
     if (s.tab && TABS.has(s.tab as TabId)) set({ tab: s.tab as TabId });
     if (loc && typeof loc.lat === "number" && typeof loc.lon === "number") {
       const cur = get().location;

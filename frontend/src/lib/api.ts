@@ -69,6 +69,7 @@ export async function searchPlaces(q: string): Promise<Location[]> {
 
 export async function reverseGeocode(lat: number, lon: number): Promise<Location> {
   const r = await fetch(`${apiUrl("/geo/reverse")}?lat=${lat}&lon=${lon}`);
+  if (!r.ok) throw new Error(`reverse ${r.status}`);
   return r.json();
 }
 
@@ -201,13 +202,17 @@ export async function fetchStates(): Promise<string[]> {
 }
 
 export async function fetchStormMap(state: string): Promise<StormMapPack | null> {
-  try {
-    const r = await fetch(`${apiUrl("/nowcast/storm-map")}?state=${encodeURIComponent(state)}`);
-    if (!r.ok) return null;
-    return (await r.json()) as StormMapPack;
-  } catch {
-    return null;
+  const q = `state=${encodeURIComponent(state)}`;
+  for (const path of ["/nowcast/storm-map", "/nowcast-storm-map"]) {
+    try {
+      const r = await fetch(`${apiUrl(path)}?${q}`);
+      if (!r.ok) continue;
+      return (await r.json()) as StormMapPack;
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 export async function fetchNearby(lat: number, lon: number): Promise<Location[]> {
@@ -247,6 +252,7 @@ export async function streamChat(
       conversation_id: conversationId || undefined,
     }),
   });
+  if (!r.ok) throw new Error(`chat ${r.status}`);
   if (!r.body) throw new Error("no stream");
   const reader = r.body.getReader();
   const dec = new TextDecoder();

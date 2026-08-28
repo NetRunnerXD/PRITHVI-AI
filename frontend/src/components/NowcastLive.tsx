@@ -16,7 +16,7 @@ import { NowcastSat } from "@/components/NowcastSat";
 import { COPY, type Locale } from "@/i18n/copy";
 import { fetchNowcastLive } from "@/lib/api";
 import { gapFromHours } from "@/lib/nowcastGap";
-import { rain } from "@/lib/units";
+import { height, rain } from "@/lib/units";
 import { useApp } from "@/lib/store";
 
 type LivePack = {
@@ -233,7 +233,7 @@ export function NowcastLive({ dash, locale }: { dash: DashboardSnapshot; locale:
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Chip k={t.secondsToOnset} v={fmtCountdown(secs, t)} />
-          {tideM != null ? <Chip k={t.tideHaldia} v={`${tideM.toFixed(2)} m`} /> : null}
+          {tideM != null ? <Chip k={t.tideHaldia} v={height(tideM, units)} /> : null}
           <Chip k={t.ponding} v={rain(pond, units)} />
           <Chip k={t.gapRate} v={`${rate.toFixed(2)} mm/h`} />
         </div>

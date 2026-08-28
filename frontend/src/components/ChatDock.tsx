@@ -26,11 +26,13 @@ export function ChatDock() {
     conversationId,
     pendingAsk,
     setPendingAsk,
+    applyUi,
   } = useApp();
   const t = COPY[locale];
   const [text, setText] = useState("");
   const [preset, setPreset] = useState("");
   const [showEn, setShowEn] = useState(false);
+  const [answerFor, setAnswerFor] = useState("");
   const presets = presetsFor(locale);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -52,7 +54,7 @@ export function ChatDock() {
   const lastUser = useMemo(() => [...chat].reverse().find((m) => m.role === "user"), [chat]);
 
   async function run(message: string, opts?: { regenerate?: boolean }) {
-    if (!message || streaming) return;
+    if (!message || streaming || !location) return;
     const history = opts?.regenerate
       ? chat.filter((m) => m.role === "user" || m.id !== chat[chat.length - 1]?.id)
       : [...chat];
@@ -70,6 +72,10 @@ export function ChatDock() {
           if (ev.type === "meta" && typeof ev.question_en === "string") {
             patchLastUser({ content_en: ev.question_en });
           }
+          if (ev.type === "meta" && ev.location && typeof ev.location === "object") {
+            const locn = ev.location as { label?: string };
+            if (locn.label) setAnswerFor(locn.label);
+          }
           if (ev.type === "widget_patch" && ev.path === "dashboard" && ev.value) {
             applySnapshot(ev.value as DashboardSnapshot);
           }
@@ -81,6 +87,7 @@ export function ChatDock() {
       if (final) {
         if (opts?.regenerate) replaceLastAssistant(final);
         else addChat(final);
+        if (final.ui?.length) applyUi(final.ui);
       }
     } catch (e) {
       const err: ChatMsg = { id: `e-${Date.now()}`, role: "assistant", content: `Chat failed: ${e}` };
@@ -92,9 +99,16 @@ export function ChatDock() {
   }
 
   return (
-    <section className="neo flex h-[min(720px,calc(100vh-11rem))] min-h-[420px] flex-col overflow-hidden">
+    <section className="neo flex h-[min(70dvh,calc(100dvh-8rem))] min-h-[280px] flex-col overflow-hidden lg:h-[min(720px,calc(100vh-11rem))] lg:min-h-[420px]">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-neo-line px-3 py-2">
-        <p className="text-sm font-bold">{t.chat}</p>
+        <div>
+          <p className="text-sm font-bold">{t.chat}</p>
+          {answerFor || location?.label ? (
+            <p className="text-[10px] text-neo-muted" data-testid="chat-locus">
+              {t.answeringFor} {answerFor || location?.label}
+            </p>
+          ) : null}
+        </div>
         <div className="flex flex-wrap gap-1">
           {(["en", "hi", "bn"] as Locale[]).map((l) => (
             <button
@@ -102,11 +116,19 @@ export function ChatDock() {
               type="button"
               className={`rounded-lg px-2 py-1 text-[10px] font-bold ${outputLocale === l ? "bg-neo-accent text-white" : "neo-btn"}`}
               onClick={() => setOutputLocale(l)}
+              data-testid={`locale-${l}`}
             >
               {l.toUpperCase()}
             </button>
           ))}
-          <button className="neo-btn text-xs" onClick={() => clearChat()} disabled={streaming || !chat.length}>
+          <button
+            className="neo-btn text-xs"
+            onClick={() => {
+              clearChat();
+              setAnswerFor("");
+            }}
+            disabled={streaming || !chat.length}
+          >
             {t.clear}
           </button>
           <button className="neo-btn text-xs" disabled={streaming || !lastUser} onClick={() => lastUser && run(lastUser.content, { regenerate: true })}>
@@ -131,7 +153,7 @@ export function ChatDock() {
         ))}
       </div>
 
-      <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
+      <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3" data-testid="chat-thread">
         {chat.length === 0 ? <p className="text-xs text-neo-muted">{t.pickPreset}</p> : null}
         {chat.map((m) => (
           <div
@@ -139,6 +161,7 @@ export function ChatDock() {
             className={`max-w-[92%] rounded-2xl px-3 py-2 text-sm ${
               m.role === "user" ? "ml-auto bg-neo-rain/15" : "bg-neo-bg"
             }`}
+            data-testid={m.role === "assistant" ? "chat-assistant" : "chat-user"}
           >
             {m.role === "assistant" ? (
               m.blocks && m.blocks.length ? (
@@ -170,7 +193,11 @@ export function ChatDock() {
             ) : null}
           </div>
         ))}
-        {streaming ? <p className="text-xs text-neo-accent">…</p> : null}
+        {streaming ? (
+          <p className="text-xs text-neo-accent" data-testid="chat-streaming">
+            …
+          </p>
+        ) : null}
       </div>
 
       <div className="shrink-0 border-t border-neo-line p-3">
@@ -191,9 +218,16 @@ export function ChatDock() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             className="neo-in min-w-0 flex-1 px-3 py-2 text-sm outline-none"
-            placeholder={t.message}
+            placeholder={location ? t.message : t.loading}
+            disabled={!location || streaming}
+            data-testid="chat-input"
           />
-          <button type="submit" disabled={streaming} className="neo-btn shrink-0 disabled:opacity-50">
+          <button
+            type="submit"
+            disabled={streaming || !location}
+            className="neo-btn shrink-0 disabled:opacity-50"
+            data-testid="chat-send"
+          >
             {t.send}
           </button>
         </form>

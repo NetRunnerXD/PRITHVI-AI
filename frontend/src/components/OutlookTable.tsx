@@ -2,7 +2,7 @@
 
 import type { DashboardSnapshot } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
-import { rain, temp } from "@/lib/units";
+import { rain, rainUnit, temp, tempUnit } from "@/lib/units";
 import { useApp } from "@/lib/store";
 
 export function OutlookTable({ dash, locale }: { dash: DashboardSnapshot; locale: Locale }) {
@@ -30,10 +30,10 @@ export function OutlookTable({ dash, locale }: { dash: DashboardSnapshot; locale
         <thead className="text-xs text-neo-muted">
           <tr>
             <th className="py-2">{t.colDate}</th>
-            <th>{t.colRain}</th>
+            <th>{t.colRain.replace("mm", rainUnit(units))}</th>
             <th>{t.colProb}</th>
-            <th>{t.colTmax}</th>
-            <th>{t.colEt0}</th>
+            <th>{t.colTmax.replace("°C", tempUnit(units))}</th>
+            <th>{t.colEt0.replace("mm", rainUnit(units))}</th>
             <th>{t.colSoil}</th>
             <th>{t.colWb}</th>
             <th></th>
