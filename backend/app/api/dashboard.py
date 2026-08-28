@@ -192,6 +192,34 @@ async def insights(loc: Location = Depends(loc_from_query)):
     }
 
 
+@router.get("/alerts")
+async def alerts_api(loc: Location = Depends(loc_from_query)):
+    """Warnings, actions, and live hazard lists without the full dashboard."""
+    snap = await build_snapshot(loc)
+    live = snap.live
+    return {
+        "location": snap.location.model_dump(),
+        "generated_at": snap.generated_at,
+        "warnings": [w.model_dump() for w in snap.prescriptive.warnings],
+        "actions": [a.model_dump() for a in snap.prescriptive.actions],
+        "quakes": live.quakes,
+        "tsunami": live.tsunami,
+        "air": live.air,
+        "flood": live.flood,
+    }
+
+
+@router.get("/market")
+async def market_api(loc: Location = Depends(loc_from_query)):
+    """Agmarknet / OGD mandi slice."""
+    snap = await build_snapshot(loc)
+    return {
+        "location": snap.location.model_dump(),
+        "generated_at": snap.generated_at,
+        "ogd": snap.ogd,
+    }
+
+
 @router.get("/compare")
 async def compare_api(a: str = Query(min_length=2), b: str = Query(min_length=2)):
     return await compare(a, b)

@@ -49,9 +49,17 @@ class Settings(BaseSettings):
     public_base_url: str = ""
     api_version: str = "0.3.0"
     # Comma list, or * for any browser / React Native origin.
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8081,http://localhost:19006"
+    cors_origins: str = (
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "http://localhost:8081,http://127.0.0.1:8081,"
+        "https://localhost:8081,https://127.0.0.1:8081,"
+        "http://localhost:19006,http://127.0.0.1:19006"
+    )
     # LAN / Expo / Metro. Used when a phone hits this machine's API.
-    cors_origin_regex: str = r"https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?"
+    cors_origin_regex: str = (
+        r"https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|"
+        r"172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?"
+    )
 
     user_agent: str = "Rituchakra/0.3 (India environmental intelligence; local-dev)"
 

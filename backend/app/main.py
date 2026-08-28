@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.api import chat, dashboard, geo
 from app.config import get_settings
@@ -72,6 +72,7 @@ def _service_card() -> dict:
         "redoc": "/redoc",
         "openapi": "/openapi.json",
         "health": "/api/health",
+        "bootstrap": "/api/bootstrap",
         "catalog": "/api",
         "note": "Standalone JSON API. No frontend assets. Point a web or mobile client at this origin.",
     }
@@ -96,6 +97,54 @@ async def api_catalog():
         routes.append({"methods": verb, "path": path})
     routes.sort(key=lambda r: (r["path"], r["methods"]))
     return {**_service_card(), "routes": routes}
+
+
+@app.head("/api/health", tags=["meta"], summary="Liveness probe")
+async def health_head():
+    return Response(status_code=200)
+
+
+@app.get("/api/bootstrap", tags=["meta"], summary="Client boot pack")
+async def bootstrap():
+    """First request for web or Android: pin, locales, flags, and route map."""
+    ollama_ok, ollama_msg = await ollama_client.ping()
+    loc = resolve_location()
+    return {
+        **_service_card(),
+        "default_location": loc.model_dump(),
+        "locales": ["en", "hi", "bn"],
+        "tabs": [
+            "overview",
+            "nowcast",
+            "alerts",
+            "map",
+            "forecast",
+            "predicted",
+            "risks",
+            "market",
+            "advisor",
+            "settings",
+        ],
+        "public_base_url": settings.public_base_url or None,
+        "ollama": {"ok": ollama_ok, "detail": ollama_msg, "model": settings.ollama_model},
+        "keys": {
+            "imd_api_key": bool(settings.imd_api_key),
+            "aikosh_api_key": bool(settings.aikosh_api_key),
+            "data_gov_in_api_key": bool(settings.data_gov_in_api_key),
+            "weatherbit_api_key": bool(settings.weatherbit_api_key),
+        },
+        "capabilities": {
+            "sse_chat": True,
+            "json_chat": True,
+            "storm_map": True,
+            "nowcast_live": True,
+            "geo_india_only": True,
+        },
+        "chat": {
+            "sse": "POST /api/chat with Accept: text/event-stream",
+            "json": "POST /api/chat with {\"stream\": false} or Accept: application/json",
+        },
+    }
 
 
 @app.get("/api/health", tags=["meta"], summary="Liveness")
