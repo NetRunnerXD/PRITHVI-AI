@@ -416,6 +416,8 @@ def interpret(text: str) -> Plan:
             needs.append("forecast")
         elif asked and _looks_like_name(asked):
             needs.append("forecast")
+        elif not any(w in t for w in _OFF):
+            needs.append("forecast")
 
     seen: set[str] = set()
     out: list[str] = []

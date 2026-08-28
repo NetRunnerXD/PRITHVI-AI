@@ -3,7 +3,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-NUM = re.compile(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?(?![A-Za-z])")
+# Unsigned figures. A hyphen in 2026-08-28 is a date separator, not minus.
+# A leading minus is allowed only at start or after whitespace (" -3.1").
+NUM = re.compile(r"(?:(?<=^)|(?<=\s)|(?<=\())-?\d+(?:\.\d+)?|(?<![A-Za-z0-9.])\d+(?:\.\d+)?")
+ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 
 # Years and tiny structural counts only. Percents and scores must come from tools.
 _HARMLESS = {str(i) for i in range(0, 16)} | {

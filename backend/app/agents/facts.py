@@ -147,6 +147,28 @@ def strip_unasked_pin(text: str, asked: str | None, pin_label: str | None) -> st
     return " ".join(keep).strip() or text
 
 
+def strip_foreign_places(
+    text: str,
+    allowed: list[str] | None,
+    forbidden: list[str] | None = None,
+) -> str:
+    """Drop sentences that name a town that is not the locus (or an explicit extra)."""
+    if not text:
+        return text
+    allow = {n.split(",")[0].strip().lower() for n in (allowed or []) if n}
+    forbid = {n.split(",")[0].strip().lower() for n in (forbidden or []) if n}
+    forbid -= {a for a in allow if a}
+    if not forbid:
+        return text
+    keep = []
+    for sent in re.split(r"(?<=[.!?])\s+", text):
+        low = sent.lower()
+        if any(f in low for f in forbid) and not any(a and a in low for a in allow):
+            continue
+        keep.append(sent)
+    return " ".join(keep).strip()
+
+
 def needed_facts(text: str) -> list[str]:
     return source_gate(text).needs
 
@@ -199,7 +221,8 @@ def quote_facts(collected: dict[str, Any]) -> str:
             p = pump.get("p_interrupt_90m")
         onset = locked.get("onset")
         enter = locked.get("enterable_2h")
-        bits = ["0–6 h nowcast (locked):"]
+        where = nc.get("place") or ""
+        bits = [f"{where} 0–6 h nowcast (locked):".strip() if where else "0–6 h nowcast (locked):"]
         if p is not None:
             bits.append(f"90 min interrupt {_fmt(p)}")
         if onset:

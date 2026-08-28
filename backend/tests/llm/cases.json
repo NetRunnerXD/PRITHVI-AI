@@ -56,5 +56,9 @@
   {"id": "wx-calcutta", "q": "weather in Calcutta", "place": "Kolkata", "needs": ["forecast"], "weather": true},
   {"id": "refuse-atlantis", "q": "Atlantis", "place": "Haldia", "needs": [], "weather": false, "refuse": true},
   {"id": "refuse-atlantis-wx", "q": "weather in Atlantis", "place": "Haldia", "needs": [], "weather": false, "refuse": true},
-  {"id": "refuse-hogwarts", "q": "How about the weather in Hogwarts", "place": "Haldia", "needs": [], "weather": false, "refuse": true}
+  {"id": "refuse-hogwarts", "q": "How about the weather in Hogwarts", "place": "Haldia", "needs": [], "weather": false, "refuse": true},
+  {"id": "pin-howrah-weather", "q": "What's the weather today?", "focus": "Howrah", "place": "Howrah", "needs": ["forecast"], "weather": true, "forbidden": ["Haldia", "Malda", "Chhattisgarh"]},
+  {"id": "pin-howrah-irrigate", "q": "Should I irrigate?", "focus": "Howrah", "place": "Howrah", "needs": ["nowcast"], "weather": true, "forbidden": ["Haldia", "Malda"]},
+  {"id": "pin-malda-rain", "q": "Will it rain today?", "focus": "Malda", "place": "Malda", "needs": ["rain_window"], "weather": true, "forbidden": ["Haldia", "Howrah"]},
+  {"id": "pin-haldia-how-about-malda", "q": "How about malda", "focus": "Haldia", "place": "Malda", "needs": ["forecast"], "weather": true, "forbidden": ["Haldia", "Chhattisgarh"]}
 ]

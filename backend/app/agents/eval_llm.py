@@ -83,7 +83,18 @@ def score_case(case: dict[str, Any], final: dict[str, Any], gold: dict[str, Any]
             "hits": hits,
             "reason": "fetched (no numeric gold)" if ok else "not fetched",
         }
+    forbidden = [str(n) for n in (case.get("forbidden") or [])]
+    gold_place = str(case.get("place") or "").lower()
+    leaked = [
+        n
+        for n in forbidden
+        if n and n.lower() in text.lower() and n.lower() not in gold_place and gold_place not in n.lower()
+    ]
     ok = bool(hits)
+    reason = "quoted gold" if ok else "missing gold numbers"
+    if leaked:
+        ok = False
+        reason = f"leaked {leaked}"
     return {
         "id": case["id"],
         "ok": ok,
@@ -92,7 +103,8 @@ def score_case(case: dict[str, Any], final: dict[str, Any], gold: dict[str, Any]
         "fetched": fetched,
         "gold": sorted(gold_nums)[:12],
         "hits": hits,
-        "reason": "quoted gold" if ok else "missing gold numbers",
+        "leaked": leaked,
+        "reason": reason,
         "traces": traces,
     }
 

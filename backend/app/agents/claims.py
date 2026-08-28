@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from app.agents.binder import looks_like_dump
-from app.i18n.number_lock import NUM, allowed_from_tools, ungrounded, walk_numbers
+from app.i18n.number_lock import ISO_DATE, NUM, allowed_from_tools, ungrounded, walk_numbers
 
 
 def walk_payload_nums(payloads: list[Any], acc: set[str]) -> None:
@@ -14,9 +13,6 @@ def walk_payload_nums(payloads: list[Any], acc: set[str]) -> None:
         walk_numbers(p, acc)
 
 _NOTE = "I only quote figures from Rituchakra data."
-
-
-_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 
 
 def check_claims(text: str, payloads: list[Any]) -> tuple[str, list[str]]:
@@ -30,12 +26,19 @@ def check_claims(text: str, payloads: list[Any]) -> tuple[str, list[str]]:
     walk_payload_nums(payloads, payload_nums)
     allowed = (raw_allowed - tiny) | years | (tiny & payload_nums)
     blob_pay = str(payloads)
-    for y, mo, d in _ISO.findall(blob_pay):
+    for raw in ISO_DATE.findall(blob_pay) + ISO_DATE.findall(blob):
+        y, mo, d = raw.split("-")
+        allowed.add(raw)
         allowed.add(d)
         allowed.add(mo)
         allowed.add(str(int(d)))
         allowed.add(str(int(mo)))
         allowed.add(y)
+    iso_spans = [(m.start(), m.end()) for m in ISO_DATE.finditer(blob)]
+
+    def _in_iso(pos: int) -> bool:
+        return any(a <= pos < b for a, b in iso_spans)
+
     # this-turn payloads only: do not treat the harmless year set as a license for scores
     # but years in _HARMLESS stay so "2026" in a title is ok
     out = []
@@ -43,8 +46,12 @@ def check_claims(text: str, payloads: list[Any]) -> tuple[str, list[str]]:
     last = 0
     for m in NUM.finditer(blob):
         token = m.group(0)
-        bad = ungrounded(token, allowed)
         out.append(blob[last : m.start()])
+        if _in_iso(m.start()):
+            out.append(token)
+            last = m.end()
+            continue
+        bad = ungrounded(token, allowed)
         if bad:
             out.append("—")
             rejected.append(token)

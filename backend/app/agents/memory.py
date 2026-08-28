@@ -18,6 +18,7 @@ class TurnState:
     last_refuse: str | None = None
     asked: str | None = None
     catalog: bool = False
+    pin: dict[str, Any] | None = None
 
 
 _STORE: dict[str, TurnState] = {}

@@ -23,7 +23,7 @@ from app.agents.eval_llm import load_cases, score_case  # noqa: E402
 
 
 async def gold_for(case: dict) -> dict:
-    loc = resolve_location(q=case.get("place") or "Haldia")
+    loc = resolve_location(q=case.get("place") or case.get("focus") or "Haldia")
     lib = DataLib(loc, speech=case["q"])
     out = {}
     for need in case.get("needs") or []:
@@ -36,7 +36,7 @@ async def gold_for(case: dict) -> dict:
 
 
 async def run_one(case: dict) -> dict:
-    loc = resolve_location(q=case.get("place") or "Haldia")
+    loc = resolve_location(q=case.get("focus") or case.get("place") or "Haldia")
     payload = ChatRequest(message=case["q"], location=loc)
     final = None
     fetched: list[str] = []

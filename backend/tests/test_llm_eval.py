@@ -138,7 +138,10 @@ async def test_bulk_forgetful_llm_quotes_gold_metrics(forgetful_llm, gold_data):
     failures = []
     for case in load_cases():
         gold_data.clear()
-        payload = ChatRequest(message=case["q"], location=_loc(case.get("place") or "Haldia"))
+        payload = ChatRequest(
+            message=case["q"],
+            location=_loc(case.get("focus") or case.get("place") or "Haldia"),
+        )
         final = None
         async for ev in run_agent(payload):
             if ev.get("type") == "final":
@@ -159,7 +162,10 @@ async def test_offtopic_never_hits_weather_data(forgetful_llm, gold_data):
         if case.get("weather"):
             continue
         gold_data.clear()
-        payload = ChatRequest(message=case["q"], location=_loc(case.get("place") or "Haldia"))
+        payload = ChatRequest(
+            message=case["q"],
+            location=_loc(case.get("focus") or case.get("place") or "Haldia"),
+        )
         final = None
         async for ev in run_agent(payload):
             if ev.get("type") == "final":

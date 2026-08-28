@@ -40,6 +40,15 @@ def test_strip_unasked_haldia():
     assert "Haldia" not in out
 
 
+def test_strip_foreign_places_drops_default_pin():
+    from app.agents.facts import strip_foreign_places
+
+    raw = "Howrah is cloudy. Haldia has 40 mm this week."
+    out = strip_foreign_places(raw, ["Howrah"], ["Haldia"])
+    assert "Howrah" in out
+    assert "Haldia" not in out
+
+
 def test_source_gate_refuses_unsourced_visit():
     g = source_gate("Best places to take my pet to visit")
     assert g.mode == "refuse"

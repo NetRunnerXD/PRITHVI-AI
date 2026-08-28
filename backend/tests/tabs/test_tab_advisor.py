@@ -111,3 +111,102 @@ def test_howrah_advisor_plan_does_not_rank_chhattisgarh():
     assert p.mode == "data"
     assert "rank" not in p.needs or loc("Howrah").state in (p.states or [loc("Howrah").state])
     assert "Chhattisgarh" not in (p.states or [])
+
+
+@pytest.mark.asyncio
+async def test_howrah_pin_weather_does_not_quote_haldia(monkeypatch):
+    from app.agents import orchestrator
+    from app.llm import ollama_client
+
+    async def fake_ping():
+        return True, "qwen2.5"
+
+    async def fake_chat(messages, tools=None):
+        return {
+            "content": "Haldia looks wet today with 91.3 mm.",
+            "tool_calls": [],
+            "tools_stripped": False,
+        }
+
+    async def fake_call(self, args):
+        locn = self.loc
+        return {
+            "need": args.get("need") or "forecast",
+            "place": locn.place_name or locn.district,
+            "label": locn.label,
+            "temp_c": 29.4,
+            "precip_1h_mm": 0.2,
+            "precip_next_3d_mm": 7.1,
+            "precip_7d_mm": 15.0,
+            "sky_label": "Cloudy",
+        }
+
+    monkeypatch.setattr(ollama_client, "ping", fake_ping)
+    monkeypatch.setattr(ollama_client, "chat", fake_chat)
+    monkeypatch.setattr("app.agents.data_tool.DataLib.call", fake_call)
+
+    events = []
+    async for ev in orchestrator.run_agent(
+        ChatRequest(message="What's the weather today?", location=loc("Howrah"))
+    ):
+        events.append(ev)
+    body = next(e for e in events if e["type"] == "final")["message"].get("content_en") or ""
+    meta = next(e for e in events if e["type"] == "meta")
+    assert "Howrah" in (meta["location"].get("label") or "")
+    assert "Howrah" in body
+    assert "Haldia" not in body
+    assert "Malda" not in body
+    assert "91.3" not in body
+
+
+@pytest.mark.asyncio
+async def test_hindi_reply_keeps_figures_when_mt_dashes(monkeypatch):
+    from app.agents import orchestrator
+    from app.i18n.mt import MTResult
+    from app.llm import ollama_client
+
+    async def fake_ping():
+        return True, "qwen2.5"
+
+    async def fake_chat(messages, tools=None):
+        return {
+            "content": "Howrah is 29.4°C with 7.1 mm in 3 days.",
+            "tool_calls": [],
+            "tools_stripped": False,
+        }
+
+    async def fake_call(self, args):
+        locn = self.loc
+        return {
+            "need": "forecast",
+            "place": locn.place_name or locn.district,
+            "label": locn.label,
+            "temp_c": 29.4,
+            "precip_next_3d_mm": 7.1,
+            "precip_7d_mm": 15.0,
+        }
+
+    async def dash_mt(text, tgt, src="en"):
+        return MTResult(
+            text="कितना — मिमी। तापमान —°C। अगले — दिन।",
+            src="en",
+            tgt="hi",
+            engine="google-gtx",
+            ok=True,
+        )
+
+    monkeypatch.setattr(ollama_client, "ping", fake_ping)
+    monkeypatch.setattr(ollama_client, "chat", fake_chat)
+    monkeypatch.setattr("app.agents.data_tool.DataLib.call", fake_call)
+    monkeypatch.setattr(orchestrator, "mt_outbound", dash_mt)
+
+    events = []
+    async for ev in orchestrator.run_agent(
+        ChatRequest(message="What's the weather today?", location=loc("Howrah"), output_locale="hi")
+    ):
+        events.append(ev)
+    msg = next(e for e in events if e["type"] == "final")["message"]
+    body = msg.get("content") or ""
+    assert "29.4" in body
+    assert "7.1" in body
+    assert body.count("—") < 4

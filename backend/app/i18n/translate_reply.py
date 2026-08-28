@@ -11,6 +11,8 @@ def compose_indic(locale: str, intent: str, snap: Any, collected: dict[str, Any]
     if intent == "rank":
         return _rank(locale, collected)
     if intent in {"irrigation", "rain", "flood"}:
+        if snap is None:
+            return _outlook_from_collected(locale, collected)
         return _weather(locale, snap, collected)
     if intent == "aqi":
         return _aqi(locale, collected, snap)
@@ -19,9 +21,14 @@ def compose_indic(locale: str, intent: str, snap: Any, collected: dict[str, Any]
     if intent == "price":
         return _price(locale, collected)
     if intent == "outlook":
-        return _outlook(locale, snap)
+        text = _outlook(locale, snap) if snap is not None else None
+        return text or _outlook_from_collected(locale, collected)
     if intent == "window":
-        pack = collected.get("get_rain_window") or collected.get("get_weather_forecast")
+        pack = (
+            collected.get("rain_window")
+            or collected.get("get_rain_window")
+            or collected.get("get_weather_forecast")
+        )
         if pack and pack.get("days"):
             from app.services.rain_window import format_indic
 
@@ -54,8 +61,34 @@ def _outlook(locale: str, snap: Any) -> str | None:
     return "\n".join(lines)
 
 
+def _outlook_from_collected(locale: str, collected: dict) -> str | None:
+    fc = collected.get("forecast") or {}
+    if not fc:
+        return None
+    loc = fc.get("label") or fc.get("place") or ""
+    t3 = fc.get("precip_next_3d_mm")
+    t7 = fc.get("precip_7d_mm")
+    temp = fc.get("temp_c")
+    days = list(fc.get("outlook_days") or [])[:5]
+    if locale == "bn":
+        lines = [f"{loc}: এখন {temp}°C।" if temp is not None else f"{loc}:"]
+        if t3 is not None:
+            lines.append(f"আগামী ৩ দিন {t3} মিমি, ৭ দিন {t7} মিমি।")
+        for d in days:
+            date = d.get("date") or ""
+            lines.append(f"{date}: {d.get('precip_mm')} মিমি, সম্ভাবনা {d.get('precip_prob_pct')}%")
+        return "\n".join(x for x in lines if x)
+    lines = [f"{loc}: अभी {temp}°C।" if temp is not None else f"{loc}:"]
+    if t3 is not None:
+        lines.append(f"अगले 3 दिन {t3} मिमी, 7 दिन {t7} मिमी।")
+    for d in days:
+        date = d.get("date") or ""
+        lines.append(f"{date}: {d.get('precip_mm')} मिमी, संभावना {d.get('precip_prob_pct')}%")
+    return "\n".join(x for x in lines if x)
+
+
 def _compare(locale: str, collected: dict) -> str | None:
-    src = collected.get("compare_districts") or {}
+    src = collected.get("compare") or collected.get("compare_districts") or {}
     delta = src.get("delta_a_minus_b") or src.get("delta") or {}
     if not delta and not src:
         return None
@@ -102,7 +135,12 @@ def _general(locale: str, snap: Any) -> str | None:
 
 
 def _rank(locale: str, collected: dict) -> str | None:
-    src = collected.get("rank_districts") or {}
+    src = collected.get("rank") or collected.get("rank_districts") or {}
+    if not src.get("ranked"):
+        for k, v in collected.items():
+            if str(k).startswith("rank:") and isinstance(v, dict) and v.get("ranked"):
+                src = v
+                break
     ranked = src.get("ranked") or []
     if not ranked:
         return None
@@ -169,11 +207,11 @@ def _weather(locale: str, snap: Any, collected: dict) -> str | None:
 
 
 def _aqi(locale: str, collected: dict, snap: Any) -> str | None:
-    block = collected.get("get_air_quality") or {}
+    block = collected.get("aqi") or collected.get("get_air_quality") or {}
     cpcb = block.get("cpcb") or (snap.ogd or {}).get("aqi") or {}
     if not cpcb or cpcb.get("value") is None:
         return None
-    place = cpcb.get("queried_place") or snap.location.district
+    place = cpcb.get("queried_place") or (snap.location.district if snap is not None else "")
     city = cpcb.get("city") or ""
     station = cpcb.get("station") or ""
     local = cpcb.get("is_local_station")
@@ -223,7 +261,7 @@ def _price(locale: str, collected: dict) -> str | None:
     src = collected.get("get_state_mandi") or {}
     grouped = src.get("districts") or {}
     if not grouped:
-        rows = (collected.get("get_mandi_prices") or {}).get("mandi") or []
+        rows = (collected.get("mandi") or collected.get("get_mandi_prices") or {}).get("mandi") or []
         if not rows:
             return None
         bits = [f"{r.get('commodity')} {int(r.get('modal_price'))}" for r in rows[:6] if r.get("modal_price")]

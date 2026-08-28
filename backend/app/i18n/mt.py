@@ -15,6 +15,7 @@ from typing import Any
 from app import cache
 from app.config import get_settings
 from app.i18n.detect import detect_lang, has_script, normalize_lang, script_of
+from app.i18n.number_lock import ISO_DATE
 from app.providers import http as http_provider
 
 GTX_URL = "https://translate.googleapis.com/translate_a/single"
@@ -53,7 +54,7 @@ _PROTECT_TERMS = [
 ]
 
 # Skip digits already inside ⟦0⟧ so we do not re-mask tokens.
-_NUM = re.compile(r"(?<![A-Za-z⟦])[-+]?\d+(?:\.\d+)?(?![A-Za-z⟧])")
+_NUM = re.compile(r"(?<![A-Za-z⟦0-9.])\d+(?:\.\d+)?(?![A-Za-z⟧])")
 _TERM_RES = [
     (term, re.compile(rf"(?<![A-Za-z]){re.escape(term)}(?![A-Za-z])", re.I))
     for term in _PROTECT_TERMS
@@ -83,7 +84,7 @@ def _tok(i: int) -> str:
 
 
 def protect(text: str) -> tuple[str, list[str]]:
-    """Replace numbers and source acronyms with inert tokens."""
+    """Replace numbers, ISO dates, and source acronyms with inert tokens."""
     held: list[str] = []
     out = text or ""
 
@@ -91,18 +92,51 @@ def protect(text: str) -> tuple[str, list[str]]:
         held.append(raw)
         return _tok(len(held) - 1)
 
+    out = ISO_DATE.sub(lambda m: stash(m.group(0)), out)
     for _term, pat in _TERM_RES:
         out = pat.sub(lambda m: stash(m.group(0)), out)
     out = _NUM.sub(lambda m: stash(m.group(0)), out)
     return out, held
 
 
+def _token_forms(i: int) -> list[str]:
+    fw = "".join(chr(0xFF10 + int(c)) if c.isdigit() else c for c in str(i))
+    return [
+        f"⟦{i}⟧",
+        f"⟦ {i} ⟧",
+        f"[[{i}]]",
+        f"[{i}]",
+        f"[ {i} ]",
+        f"【{i}】",
+        f"({i})",
+        f"（{i}）",
+        f"{{{i}}}",
+        f"⟦{fw}⟧",
+    ]
+
+
 def restore(text: str, held: list[str]) -> str:
     out = text or ""
     for i, val in enumerate(held):
-        for pat in (f"⟦{i}⟧", f"⟦ {i} ⟧", f"[[{i}]]"):
-            out = out.replace(pat, val)
+        for pat in _token_forms(i):
+            if pat in out:
+                out = out.replace(pat, val)
+
+    def _by_index(m: re.Match[str]) -> str:
+        idx = int(m.group(1))
+        if 0 <= idx < len(held):
+            return held[idx]
+        return m.group(0)
+
+    out = re.sub(r"[⟦\[]\s*(\d+)\s*[⟧\]]", _by_index, out)
+    out = re.sub(r"⟦\s*(\d+)", _by_index, out)
+    out = re.sub(r"(\d+)\s*⟧", _by_index, out)
     return out
+
+
+def held_missing(text: str, held: list[str]) -> list[str]:
+    blob = text or ""
+    return [v for v in held if v and v not in blob]
 
 
 def _chunks(text: str, limit: int = 900) -> list[str]:
@@ -252,6 +286,13 @@ async def translate(text: str, src: str, tgt: str) -> MTResult:
         if failed:
             continue
         body = restore("\n".join(translated), held)
+        if "⟦" in body or "⟧" in body:
+            last_err = f"{engine}-leaked-lock"
+            continue
+        lost = held_missing(body, held)
+        if lost:
+            last_err = f"{engine}-lost-lock"
+            continue
         if tgt_n != "en" and not _plausible(blob, body, tgt_n):
             last_err = f"{engine}-implausible"
             continue

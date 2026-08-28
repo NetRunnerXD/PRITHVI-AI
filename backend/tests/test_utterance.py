@@ -74,6 +74,18 @@ def test_garbage_and_punctuation():
     assert n.mode in {"chat", "refuse", "data"}
 
 
+def test_pin_only_weather_still_fetches():
+    for q, need in (
+        ("What's the weather today?", "forecast"),
+        ("Should I irrigate?", "nowcast"),
+        ("Will it rain today?", "rain_window"),
+    ):
+        p = interpret(q)
+        assert p.mode == "data", q
+        assert need in p.needs, (q, p.needs)
+        assert not p.asked
+
+
 def test_source_gate_matches_interpret():
     for q in ("Puruliya", "Puri", "Atlantis", "hello there", "AQI in Jaipur"):
         g = source_gate(q)

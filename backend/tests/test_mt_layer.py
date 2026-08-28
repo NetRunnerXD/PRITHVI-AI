@@ -9,9 +9,9 @@ from app.i18n.mt import MTResult, inbound, outbound, protect, restore, translate
 
 @pytest.fixture(autouse=True)
 def _clear_mt_cache():
-    cache._store.clear()
+    cache.clear()
     yield
-    cache._store.clear()
+    cache.clear()
 
 
 def test_protect_restore_numbers_and_acronyms():
@@ -25,6 +25,14 @@ def test_protect_restore_numbers_and_acronyms():
     assert "Open-Meteo" not in masked
     assert "XLT" not in masked
     assert "⟦" in masked
+    assert restore(masked, held) == src
+
+
+def test_protect_keeps_iso_date_as_one_token():
+    src = "Haldia 2026-08-28: 4.2 mm, 32°C, CPCB AQI 47."
+    masked, held = protect(src)
+    assert "2026-08-28" in held
+    assert "2026-08-28" not in masked
     assert restore(masked, held) == src
 
 
@@ -98,6 +106,30 @@ async def test_translate_restores_locked_tokens(monkeypatch):
     assert "CPCB" in out.text
     assert "AQI" in out.text
     assert "বৃষ্টি" in out.text
+
+
+@pytest.mark.asyncio
+async def test_translate_fails_when_engine_drops_lock(monkeypatch):
+    from app.i18n.mt import held_missing
+
+    async def drop_token(text, src, tgt):
+        return MTResult(text=text.replace("⟦1⟧", ""), src="en", tgt="bn", engine="google-gtx", ok=True)
+
+    monkeypatch.setattr("app.i18n.mt._gtx", drop_token)
+    monkeypatch.setattr("app.i18n.mt._mymemory", drop_token)
+    out = await translate("Haldia 2026-08-28: 4.2 mm rain.", "en", "bn")
+    assert not out.ok
+
+
+@pytest.mark.asyncio
+async def test_translate_fails_on_leaked_brackets(monkeypatch):
+    async def leak(text, src, tgt):
+        return MTResult(text=text + " ⟦4", src="en", tgt="hi", engine="mymemory", ok=True)
+
+    monkeypatch.setattr("app.i18n.mt._gtx", leak)
+    monkeypatch.setattr("app.i18n.mt._mymemory", leak)
+    out = await translate("Howrah is 29.4 C.", "en", "hi")
+    assert not out.ok
 
 
 @pytest.mark.asyncio

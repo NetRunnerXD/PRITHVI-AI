@@ -33,6 +33,8 @@ TURNS = [
     {"id": "rain-chennai", "q": "How much rain in Chennai tomorrow?", "place": "Chennai", "want": ["rain_window"], "refuse": False},
     {"id": "rain-guwahati", "q": "Rain next 5 days in Guwahati", "place": "Guwahati", "want": ["rain_window"], "refuse": False},
     {"id": "hello", "q": "hello there", "place": "Haldia", "want": [], "refuse": False},
+    {"id": "pin-howrah-weather", "q": "What's the weather today?", "place": "Howrah", "want": ["forecast"], "refuse": False, "forbidden": ["Haldia", "Malda"]},
+    {"id": "pin-malda-irrigate", "q": "Should I irrigate?", "place": "Malda", "want": ["nowcast"], "refuse": False, "forbidden": ["Haldia"]},
 ]
 
 
@@ -67,6 +69,10 @@ async def one(case: dict, cid: str | None) -> dict:
         if "AQI 0" in text or "AQI 0 " in text:
             ok = False
             reasons.append("fake AQI 0")
+        for n in case.get("forbidden") or []:
+            if n and n.lower() in text.lower():
+                ok = False
+                reasons.append(f"leaked {n}")
         if case.get("want") and not any(ch.isdigit() for ch in text) and not case.get("refuse"):
             if "no AQI" not in text and "not in" not in text.lower() and "cannot" not in text.lower():
                 if case["want"] != ["aqi"]:

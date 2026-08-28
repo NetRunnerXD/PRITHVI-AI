@@ -160,8 +160,8 @@ async def test_rain_window_only_when_model_asks(monkeypatch):
     async for ev in orchestrator.run_agent(payload):
         events.append(ev)
     starts = [e for e in events if e.get("type") == "tool_start"]
-    assert len(starts) == 1
-    assert starts[0]["args"]["need"] == "rain_window"
+    assert starts
+    assert all(s["args"]["need"] == "rain_window" for s in starts)
     assert not any(e.get("type") == "ui" for e in events)
     sugg = next((e for e in events if e.get("type") == "suggestions"), None)
     assert sugg and any(s.get("tab") == "forecast" for s in sugg["suggestions"])

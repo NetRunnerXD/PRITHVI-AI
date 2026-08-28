@@ -85,16 +85,24 @@ class DataLib:
         self.loc = loc
         self.speech = speech
         self.snap: Any = None
+        self._snaps: dict[tuple[float, float], Any] = {}
+
+    def _snap_key(self, loc: Location) -> tuple[float, float]:
+        return (round(float(loc.lat), 4), round(float(loc.lon), 4))
 
     async def _snap(self, loc: Location | None = None):
         target = loc or self.loc
-        if self.snap is not None and loc is None:
-            return self.snap
+        key = self._snap_key(target)
+        cached = self._snaps.get(key)
+        if cached is not None:
+            self.snap = cached
+            return cached
         from app.services.snapshot import build_snapshot
 
         snap = await build_snapshot(target)
+        self._snaps[key] = snap
+        self.snap = snap
         if loc is None:
-            self.snap = snap
             self.loc = snap.location
         return snap
 
