@@ -1,0 +1,9 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@rituchakra/client": ["../clients/js/src/index.ts"]
+    }
+  }
+}

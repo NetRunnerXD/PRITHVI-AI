@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Rituchakra",
+    "slug": "rituchakra",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#0d6e63"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Rituchakra uses your location to pin the nearest Indian district for live weather and farm advice."
+      },
+      "bundleIdentifier": "in.rituchakra.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0d6e63"
+      },
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "package": "in.rituchakra.app"
+    }
+  }
+}
