@@ -1,0 +1,40 @@
+# Same-origin public site: browsers hit HTTPS, /api is FastAPI, / is Next.
+# Replace example.com. Point A/AAAA at this host. Caddy issues TLS.
+#
+#   caddy run --config deploy/Caddyfile
+#
+# SSE chat needs buffering off (Caddy reverse_proxy already streams).
+
+example.com {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy api:8000 {
+			flush_interval -1
+		}
+	}
+
+	handle /docs* {
+		reverse_proxy api:8000
+	}
+
+	handle /openapi.json {
+		reverse_proxy api:8000
+	}
+
+	handle /redoc* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+# Split-origin API (React Native + CORS). Optional second site.
+api.example.com {
+	encode gzip
+	reverse_proxy api:8000 {
+		flush_interval -1
+	}
+}

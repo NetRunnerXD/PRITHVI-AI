@@ -1,0 +1,14 @@
+.git
+.grok
+**/.venv
+**/__pycache__
+**/.pytest_cache
+backend/.cache
+backend/.env
+frontend/node_modules
+frontend/.next
+frontend/out
+mobile/node_modules
+mobile/.expo
+**/*.pyc
+**/.DS_Store

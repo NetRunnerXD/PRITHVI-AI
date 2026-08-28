@@ -1,0 +1,65 @@
+# Rituchakra — API + dashboard + local Ollama.
+# Usage:
+#   copy backend/.env.example backend/.env
+#   docker compose up --build
+# API  http://localhost:8000/docs
+# Web  http://localhost:3000
+# Put TLS in front (see deploy/Caddyfile) for phones and public web.
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - backend/.env
+    environment:
+      HOST: "0.0.0.0"
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:8081,http://localhost:19006}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434/v1}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5}
+      CACHE_DIR: /app/.cache
+    volumes:
+      - api-cache:/app/.cache
+    ports:
+      - "8000:8000"
+    depends_on:
+      ollama:
+        condition: service_started
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/ollama"]
+    command: ["pull", "qwen2.5"]
+    restart: "no"
+
+volumes:
+  api-cache:
+  ollama:
