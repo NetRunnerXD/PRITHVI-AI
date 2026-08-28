@@ -1,16 +1,17 @@
 /** @type {import('next').NextConfig} */
 const apiBase = process.env.NEXT_PUBLIC_API_BASE;
+const internalApi = (process.env.API_INTERNAL_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 
 const nextConfig = {
+  output: "standalone",
   async rewrites() {
-    // Default: the browser calls FastAPI directly (CORS). Rewrite only if
-    // the web app is configured for same-origin `/api` (empty API base).
+    // Browser calls FastAPI directly when NEXT_PUBLIC_API_BASE is set (CORS).
+    // Empty base = same-origin `/api` proxied to the API process.
     if (apiBase === undefined || apiBase) return [];
     return [
-      {
-        source: "/api/:path*",
-        destination: "http://127.0.0.1:8000/api/:path*",
-      },
+      { source: "/api/:path*", destination: `${internalApi}/api/:path*` },
+      { source: "/docs", destination: `${internalApi}/docs` },
+      { source: "/openapi.json", destination: `${internalApi}/openapi.json` },
     ];
   },
 };
