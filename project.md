@@ -1,10 +1,12 @@
-# Rituchakra — agent handoff
+# PRITHVI-AI / Rituchakra — agent handoff
 
-India-first environmental intelligence. Live weather, flood, drought, heat, air, marine, seismic, tsunami, mandi prices, explainable risk, and a 0–6 h decision nowcast — then a chat Advisor that **only quotes Rituchakra `data()` packs**. It never invents millimetres, AQI, rupees, or risk scores.
+**Proposal title:** PRITHVI-AI: An Open-LLM Powered Multilingual Environmental Intelligence & Climate Resilience Platform for India.
 
-Use this file to continue work in a new session or a different tool. Prefer this over the shorter `README.md`.
+**Code / product name in this repo:** Rituchakra. Folder may still be `RainFall`. GitHub: `https://github.com/NetRunnerXD/Rituchakra.git` (`main`).
 
-Product name is **Rituchakra**. Repo folder may still be `RainFall`. GitHub: `https://github.com/NetRunnerXD/Rituchakra.git` (`main`).
+India-first environmental intelligence. Live weather, flood, drought, heat, air, marine, seismic, tsunami, mandi prices, explainable risk, 0–6 h decision nowcast, and a live convective storm map — then a chat Advisor that **only quotes Rituchakra `data()` packs**. It never invents millimetres, AQI, rupees, or risk scores.
+
+Use this file to continue engineering work in a new session. Prefer this over `README.md` for file-level rules. For the proposal narrative (problem, objectives, LLM use, impact, future scope) read **`full.md`**. For a public overview read **`README.md`**.
 
 ---
 
@@ -15,8 +17,10 @@ A monorepo. **The backend is the product.** It is a standalone JSON API (no web 
 | Path | Stack / role |
 |---|---|
 | `backend/` | FastAPI + Pydantic v2 + httpx + pytest. Publish independently (`/docs`, `/openapi.json`). |
-| `frontend/` | Optional Next.js 14 App Router dashboard (Tailwind, Zustand, Recharts, Leaflet). HTTP client of the API. |
+| `frontend/` | Optional Next.js 14 App Router dashboard (Tailwind, Zustand, Recharts, Leaflet). HTTP client of the API. PWA manifest + shell SW. |
 | `clients/` | Portable TypeScript client (`clients/js`) for a new web app or React Native. No React/Next/DOM. |
+| `mobile/` | Expo app using `clients/js` (search, GPS, map, Advisor SSE). |
+| `deploy/` | Caddyfile, privacy stub, compose notes. |
 
 **Product questions (four lenses)**
 
@@ -631,14 +635,14 @@ Only one listener on 8000. After a restart, `/api/health` should be 200 and `/` 
 ## 16. Suggested first reads in a new session
 
 1. This file
-2. `backend/app/services/snapshot.py`
-3. `backend/app/science/nowcast.py` + `science/live.py` + `science/sat_kalman.py` + `science/sat_phys.py`
-4. `backend/app/science/storm_map.py` + `thunder_predict.py` + `cv_nowcast.py` + `data/india_mask.py`
-5. `backend/app/science/__init__.py`
-6. `backend/app/agents/orchestrator.py` + `agents/dates.py` + `services/rain_window.py`
-7. Repo `main.py` launcher + `backend/app/main.py` (standalone API + CORS)
-8. `frontend/src/components/SquareMap.tsx` + `MapView.tsx` + `StormFeed.tsx`
-9. `frontend/src/components/NowcastLive.tsx` + `NowcastSat.tsx` + `frontend/src/lib/config.ts`
+2. `full.md` (proposal narrative, LLM use, impact, future scope)
+3. `README.md` (public overview)
+4. `backend/app/services/snapshot.py`
+5. `backend/app/science/nowcast.py` + `science/live.py` + `science/sat_kalman.py` + `science/sat_phys.py`
+6. `backend/app/science/storm_map.py` + `thunder_predict.py` + `cv_nowcast.py` + `data/india_mask.py`
+7. `backend/app/agents/orchestrator.py` + `agents/dates.py` + `services/rain_window.py`
+8. Repo `main.py` launcher + `backend/app/main.py` (standalone API + CORS)
+9. `frontend/src/components/SquareMap.tsx` + `MapView.tsx` + `StormFeed.tsx`
 10. `clients/js/src/index.ts`
 
 Then grep for the feature name (`compose_indic`, `humanize_cap_title`, `WB_LGEOM`, `get_nowcast`, `get_rain_window`, `in_india`, `storm-map`, `apiUrl`, `quietRefresh`, …).
