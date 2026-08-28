@@ -25,3 +25,4 @@ class ChatRequest(BaseModel):
     location: Location | None = None
     history: list[ChatMessage] = Field(default_factory=list)
     regenerate: bool = False
+    stream: bool = True
