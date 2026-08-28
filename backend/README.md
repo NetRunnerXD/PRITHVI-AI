@@ -19,6 +19,19 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Bind `0.0.0.0` if a phone or another machine will call the API. Set `CORS_ORIGINS` / `CORS_ORIGIN_REGEX` and, when publishing, `PUBLIC_BASE_URL`.
 
+Local clients (no frontend rebuild needed):
+
+```powershell
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+# GET  http://127.0.0.1:8000/api/health
+# GET  http://127.0.0.1:8000/api/bootstrap
+# GET  http://127.0.0.1:8000/api/alerts
+# GET  http://127.0.0.1:8000/api/market
+# POST http://127.0.0.1:8000/api/chat   JSON body {"message":"...","stream":false}
+```
+
+Android / Expo: `EXPO_PUBLIC_API_BASE=http://<LAN-IP>:8000`. Prefer `stream: false` on chat if SSE is unavailable.
+
 ## Tests
 
 ```powershell

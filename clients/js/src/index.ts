@@ -40,6 +40,7 @@ export function createClient(opts: ApiConfig) {
     url: (path: string) => joinApi(baseUrl, path),
 
     health: () => get<Health>("/health"),
+    bootstrap: () => get<Record<string, unknown>>("/bootstrap"),
     catalog: () => get<ServiceCard>("/api"),
     ready: () => get<{ ok: boolean }>("/ready"),
 
@@ -64,6 +65,8 @@ export function createClient(opts: ApiConfig) {
     risks: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/risks", locQuery(loc)),
     science: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/science", locQuery(loc)),
     insights: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/insights", locQuery(loc)),
+    alerts: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/alerts", locQuery(loc)),
+    market: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/market", locQuery(loc)),
 
     searchPlaces: async (q: string): Promise<Location[]> => {
       const data = await get<{ results?: Location[] }>("/geo/search", { q });
@@ -81,6 +84,25 @@ export function createClient(opts: ApiConfig) {
     states: () => get<{ states: string[] }>("/states"),
     districts: (state?: string) => get<Record<string, unknown>>("/districts", { state }),
     scan: (state: string, metric = "flood", limit = 30) => get<Record<string, unknown>>("/scan", { state, metric, limit }),
+
+    async chat(body: ChatRequest): Promise<{ ok: boolean; events: Record<string, unknown>[]; message: ChatMsg | null }> {
+      const r = await f(joinApi(baseUrl, "/chat"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          message: body.message,
+          locale_hint: body.locale_hint,
+          output_locale: body.output_locale,
+          conversation_id: body.conversation_id,
+          location: body.location,
+          history: (body.history || []).slice(-6),
+          regenerate: Boolean(body.regenerate),
+          stream: false,
+        }),
+      });
+      if (!r.ok) throw new Error(`chat ${r.status}`);
+      return r.json() as Promise<{ ok: boolean; events: Record<string, unknown>[]; message: ChatMsg | null }>;
+    },
 
     async streamChat(body: ChatRequest, onEvent: SseHandler): Promise<ChatMsg | null> {
       const r = await f(joinApi(baseUrl, "/chat"), {

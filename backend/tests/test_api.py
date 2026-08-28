@@ -86,3 +86,78 @@ def test_cors_allows_web_origin():
     )
     assert pre.status_code in {200, 204}
     assert pre.headers.get("access-control-allow-origin")
+    expo = client.get("/api/health", headers={"Origin": "http://localhost:8081"})
+    assert expo.status_code == 200
+    assert expo.headers.get("access-control-allow-origin") == "http://localhost:8081"
+
+
+def test_health_head():
+    r = client.head("/api/health")
+    assert r.status_code == 200
+    assert r.headers.get("x-api-version")
+
+
+def test_bootstrap():
+    r = client.get("/api/bootstrap")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert "en" in body["locales"]
+    assert "advisor" in body["tabs"]
+    assert body["capabilities"]["json_chat"] is True
+    assert body["default_location"]["place_name"] == "Haldia"
+    catalog = client.get("/api")
+    paths = {row["path"] for row in catalog.json()["routes"]}
+    assert "/api/bootstrap" in paths
+    assert "/api/alerts" in paths
+    assert "/api/market" in paths
+
+
+def test_alerts_and_market(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.api import dashboard as dash
+    from app.services.location_svc import resolve_location
+
+    loc = resolve_location()
+
+    async def fake_snap(location, locale="en"):
+        return SimpleNamespace(
+            location=location,
+            generated_at="2026-01-01T00:00:00+05:30",
+            prescriptive=SimpleNamespace(warnings=[], actions=[]),
+            live=SimpleNamespace(quakes=[], tsunami=[], air={}, flood={}),
+            ogd={"mandi": []},
+        )
+
+    monkeypatch.setattr(dash, "build_snapshot", fake_snap)
+    a = client.get("/api/alerts")
+    assert a.status_code == 200
+    assert a.json()["location"]["district"] == loc.district
+    assert "warnings" in a.json()
+    m = client.get("/api/market")
+    assert m.status_code == 200
+    assert "ogd" in m.json()
+
+
+def test_chat_json_mode(monkeypatch):
+    from app.api import chat as chat_mod
+
+    async def fake_run(payload):
+        yield {"type": "token", "text": "hold"}
+        yield {"type": "final", "message": {"id": "m1", "role": "assistant", "content": "hold pump"}}
+
+    monkeypatch.setattr(chat_mod, "run_agent", fake_run)
+    r = client.post("/api/chat", json={"message": "irrigate?", "stream": False})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["stream"] is False
+    assert body["message"]["content"] == "hold pump"
+    sse = client.post(
+        "/api/chat",
+        json={"message": "irrigate?"},
+        headers={"Accept": "text/event-stream"},
+    )
+    assert sse.status_code == 200
+    assert "text/event-stream" in sse.headers.get("content-type", "")

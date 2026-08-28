@@ -63,6 +63,7 @@ export type ChatRequest = {
   location?: Location | null;
   history?: ChatMsg[];
   regenerate?: boolean;
+  stream?: boolean;
 };
 
 export type Health = {
