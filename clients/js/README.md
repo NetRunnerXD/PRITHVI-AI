@@ -16,6 +16,7 @@ const api = createClient({
 const health = await api.health();
 const dash = await api.dashboard({ district: "Nadia", lat: 23.471, lon: 88.5565 });
 const places = await api.searchPlaces("Haldia");
+const storms = await api.stormMap("India");
 await api.streamChat({ message: "Should I irrigate?", locale_hint: "en" }, (ev) => {
   console.log(ev.type);
 });
@@ -26,7 +27,7 @@ On a phone, `baseUrl` must be the machine that runs FastAPI (for example `http:/
 ## New app folders (suggested)
 
 ```text
-mobile/          Expo or React Native — copy or npm-link this package
+mobile/          Expo app in this repo (imports this package via Metro)
 web/             Vite / Remix / etc. — same client
 frontend/        existing Next.js dashboard (already talks to the API)
 backend/         FastAPI — run this first

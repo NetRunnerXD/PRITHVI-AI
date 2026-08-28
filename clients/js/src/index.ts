@@ -48,6 +48,15 @@ export function createClient(opts: ApiConfig) {
     nowcastLive: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/nowcast/live", locQuery(loc)),
     nowcastSat: (loc?: LocQuery | Location | null, stride: 1 | 60 = 60) =>
       get<Record<string, unknown>>("/nowcast/sat", { ...locQuery(loc), stride }),
+    stormMap: (state: string) => get<Record<string, unknown>>("/nowcast/storm-map", { state }),
+    nowcastStormMap: (state: string) => get<Record<string, unknown>>("/nowcast-storm-map", { state }),
+    async brief(loc?: LocQuery | Location | null, locale = "en") {
+      const url = withQuery(joinApi(baseUrl, "/brief"), { ...locQuery(loc), locale });
+      const r = await f(url, { method: "POST" });
+      if (!r.ok) throw new Error(`/brief ${r.status}`);
+      return r.json() as Promise<Record<string, unknown>>;
+    },
+    agentTools: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/agent/tools", locQuery(loc)),
     forecast: (loc?: LocQuery | Location | null) => get<Record<string, unknown>>("/forecast", locQuery(loc)),
     predictions: (loc?: LocQuery | Location | null, source = "both") =>
       get<Record<string, unknown>>("/predictions", { ...locQuery(loc), source }),
