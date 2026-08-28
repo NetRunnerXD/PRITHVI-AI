@@ -35,16 +35,84 @@ def _daily(om: dict, key: str) -> list[float]:
     return out
 
 
+def _parse_hour(ts: str) -> datetime | None:
+    if not ts:
+        return None
+    try:
+        t = str(ts).replace("Z", "")
+        if "T" not in t:
+            if len(t) >= 10 and t[4:5] == "-":
+                t = t[:10] + "T00:00:00"
+            else:
+                return None
+        dt = datetime.fromisoformat(t[:19])
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=IST)
+        return dt
+    except ValueError:
+        return None
+
+
+def hourly_now_index(times: list, now: datetime | None = None) -> int:
+    """Last hourly slot at or before now (IST). 0 if times are not ISO (tests)."""
+    now = now or datetime.now(IST)
+    last = 0
+    found = False
+    for i, t in enumerate(times):
+        dt = _parse_hour(str(t))
+        if dt is None:
+            continue
+        if dt <= now:
+            last = i
+            found = True
+        elif found:
+            break
+    return last if found else 0
+
+
+def past_window(seq: list, now_i: int, n: int) -> list:
+    """n values ending at now_i. If now_i is 0 (fixtures / already-now), take seq[:n]."""
+    if not seq or n <= 0:
+        return []
+    i = int(now_i or 0)
+    if i <= 0:
+        return list(seq[:n])
+    a = max(0, i - n + 1)
+    return list(seq[a : i + 1])
+
+
+def from_now(seq: list, now_i: int, n: int) -> list:
+    """n values starting at now_i (inclusive)."""
+    if not seq or n <= 0:
+        return []
+    i = max(0, int(now_i or 0))
+    return list(seq[i : i + n])
+
+
+def value_at_now(seq: list, now_i: int, default: float = 0.0) -> float:
+    if not seq:
+        return default
+    i = int(now_i or 0)
+    if i < 0:
+        i = 0
+    if i >= len(seq):
+        i = len(seq) - 1
+    try:
+        v = seq[i]
+        return default if v is None else float(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def _hourly(om: dict, key: str) -> list[float]:
+    """Keep index alignment with hourly time. None → 0.0 (same as _daily)."""
     vals = (om.get("hourly") or {}).get(key) or []
     out = []
     for v in vals:
         try:
-            if v is None:
-                continue
-            out.append(float(v))
+            out.append(float(v) if v is not None else 0.0)
         except (TypeError, ValueError):
-            continue
+            out.append(0.0)
     return out
 
 
@@ -73,12 +141,27 @@ def extract(
     mcur = marine.get("current") or {}
     aq = aqi or {}
     aq_cur = aq.get("current") or {}
+    hourly_times = list((om.get("hourly") or {}).get("time") or [])
+    now_i = hourly_now_index(hourly_times)
+    aqi_times = list((aq.get("hourly") or {}).get("time") or [])
+    aqi_now_i = hourly_now_index(aqi_times) if aqi_times else 0
+    wave_times = list((marine.get("hourly") or {}).get("time") or [])
+    wave_now_i = hourly_now_index(wave_times) if wave_times else 0
 
     precip_3d = sum(precip[:3])
     precip_today = precip[0] if precip else 0.0
-    soil_now = soil[0] if soil else None
-    if soil_now is None:
-        soil_now = soil[-1] if soil else 0.30
+    n_h = len(hourly_times)
+    win_a = max(0, now_i - 24)
+    win_b = min(n_h, now_i + 1 + 48) if n_h else 0
+    if n_h and win_b <= win_a:
+        win_a, win_b = 0, min(n_h, 72)
+    now_i_w = max(0, now_i - win_a) if n_h else 0
+    hourly_times_w = hourly_times[win_a:win_b] if n_h else []
+
+    def hw(seq: list) -> list:
+        return list(seq[win_a:win_b]) if n_h else list(seq)
+
+    soil_now = value_at_now(soil, now_i, default=0.30) if soil else 0.30
 
     discharge = (flood.get("daily") or {}).get("river_discharge") or []
     dvals = [float(x) for x in discharge if x is not None]
@@ -100,7 +183,7 @@ def extract(
         z = (ratio - 1.0) * 1.5
 
     us_aqi = aq_cur.get("us_aqi")
-    wave_vals = _hourly(marine, "wave_height")[:72]
+    wave_vals = _hourly(marine, "wave_height")
     inland = bool(marine.get("inland")) or (mcur.get("wave_height") is None and not wave_vals)
 
     return {
@@ -136,27 +219,31 @@ def extract(
         "om_pm25": aq_cur.get("pm2_5"),
         "om_pm10": aq_cur.get("pm10"),
         "om_no2": aq_cur.get("nitrogen_dioxide"),
-        "hourly_precip": _hourly(om, "precipitation")[:72],
-        "hourly_soil": soil[:72],
-        "hourly_temp": _hourly(om, "temperature_2m")[:72],
-        "hourly_rh": _hourly(om, "relative_humidity_2m")[:72],
-        "hourly_dew": _hourly(om, "dew_point_2m")[:72],
-        "hourly_pressure": _hourly(om, "pressure_msl")[:72],
-        "hourly_wind": _hourly(om, "wind_speed_10m")[:72],
-        "hourly_wind_dir": _hourly(om, "wind_direction_10m")[:72],
-        "hourly_gust": _hourly(om, "wind_gusts_10m")[:72],
-        "hourly_cloud": _hourly(om, "cloud_cover")[:72],
-        "hourly_cloud_low": _hourly(om, "cloud_cover_low")[:72],
-        "hourly_cloud_mid": _hourly(om, "cloud_cover_mid")[:72],
-        "hourly_cloud_high": _hourly(om, "cloud_cover_high")[:72],
-        "hourly_weather_code": _hourly(om, "weather_code")[:72],
-        "hourly_cape": _hourly(om, "cape")[:72],
-        "hourly_vpd": _hourly(om, "vapour_pressure_deficit")[:72],
-        "hourly_prob": _hourly(om, "precipitation_probability")[:72],
-        "hourly_us_aqi": _hourly(aq, "us_aqi")[:72],
-        "hourly_eu_aqi": _hourly(aq, "european_aqi")[:72],
-        "hourly_aqi_times": (aq.get("hourly") or {}).get("time") or [],
-        "hourly_times": (om.get("hourly") or {}).get("time") or [],
+        "hourly_precip": hw(_hourly(om, "precipitation")),
+        "hourly_soil": hw(soil),
+        "hourly_temp": hw(_hourly(om, "temperature_2m")),
+        "hourly_rh": hw(_hourly(om, "relative_humidity_2m")),
+        "hourly_dew": hw(_hourly(om, "dew_point_2m")),
+        "hourly_pressure": hw(_hourly(om, "pressure_msl")),
+        "hourly_wind": hw(_hourly(om, "wind_speed_10m")),
+        "hourly_wind_dir": hw(_hourly(om, "wind_direction_10m")),
+        "hourly_gust": hw(_hourly(om, "wind_gusts_10m")),
+        "hourly_cloud": hw(_hourly(om, "cloud_cover")),
+        "hourly_cloud_low": hw(_hourly(om, "cloud_cover_low")),
+        "hourly_cloud_mid": hw(_hourly(om, "cloud_cover_mid")),
+        "hourly_cloud_high": hw(_hourly(om, "cloud_cover_high")),
+        "hourly_weather_code": hw(_hourly(om, "weather_code")),
+        "hourly_cape": hw(_hourly(om, "cape")),
+        "hourly_vpd": hw(_hourly(om, "vapour_pressure_deficit")),
+        "hourly_prob": hw(_hourly(om, "precipitation_probability")),
+        "hourly_us_aqi": _hourly(aq, "us_aqi"),
+        "hourly_eu_aqi": _hourly(aq, "european_aqi"),
+        "hourly_aqi_times": aqi_times,
+        "hourly_times": hourly_times_w,
+        "hourly_now_i": now_i_w,
+        "hourly_aqi_now_i": aqi_now_i,
+        "hourly_wave_now_i": wave_now_i,
+        "wind_now_ms": (float(current["wind_speed_10m"]) / 3.6) if current.get("wind_speed_10m") is not None else None,
         "daily_times": daily_times,
         "daily_wind_max": daily_wind_max,
         "daily_wind_dir": daily_wind_dir,
@@ -164,7 +251,7 @@ def extract(
         "wave_dir_deg": mcur.get("wave_direction"),
         "wave_period_s": mcur.get("wave_period"),
         "hourly_wave": wave_vals,
-        "hourly_wave_dir": _hourly(marine, "wave_direction")[:72],
-        "hourly_wave_times": (marine.get("hourly") or {}).get("time") or [],
+        "hourly_wave_dir": _hourly(marine, "wave_direction"),
+        "hourly_wave_times": wave_times,
         "marine_inland": inland,
     }

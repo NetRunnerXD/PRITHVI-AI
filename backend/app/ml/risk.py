@@ -244,6 +244,17 @@ def air_quality_risk(f: dict[str, Any]) -> RiskCard:
         )
     if aqi is None:
         aqi = max(pols.values())
+    if not pols and aqi is not None:
+        n = _clip01(float(aqi) / 400.0)
+        return _card(
+            "air_quality", "Air Quality Risk", AIR_WEIGHTS,
+            {"pm25": n, "pm10": 0.0, "no2": 0.0, "ozone": 0.0, "other": 0.0},
+            ["cpcb_naqi"],
+            ["cpcb_pollutants"],
+            ["data.gov.in / CPCB"],
+            70,
+            horizon=24,
+        )
     pm25 = float(pols.get("PM2.5") or pols.get("PM25") or 0)
     pm10 = float(pols.get("PM10") or 0)
     no2 = float(pols.get("NO2") or 0)

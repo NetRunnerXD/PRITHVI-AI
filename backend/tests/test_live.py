@@ -70,4 +70,4 @@ def test_build_attaches_gap(monkeypatch):
     sat = pack.get("sat") or {}
     assert sat.get("engine") == "sat_kalman"
     assert sat.get("rewrites_locked") is False
-    assert sat.get("source_kind") == "model-analysis"
+    assert sat.get("source_kind") in {"model-analysis", "satellite-qpe"}

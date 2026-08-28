@@ -56,7 +56,7 @@ async def recent_quakes(lat: float, lon: float, limit: int = 8) -> tuple[list[di
             return [], "error"
     feats = hit.get("features") or []
     out = []
-    for f in feats[:limit]:
+    for f in feats:
         props = f.get("properties") or {}
         coords = ((f.get("geometry") or {}).get("coordinates")) or [None, None, None]
         elon, elat, depth = (coords + [None, None, None])[:3]
@@ -85,7 +85,7 @@ async def recent_quakes(lat: float, lon: float, limit: int = 8) -> tuple[list[di
             }
         )
     out.sort(key=lambda x: (x.get("distance_km") is None, x.get("distance_km") or 1e9))
-    return out, "ok"
+    return out[:limit], "ok"
 
 
 def _threat(text: str) -> bool:

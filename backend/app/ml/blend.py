@@ -61,7 +61,9 @@ def build_dual_predictions(f: dict[str, Any]) -> dict[str, Any]:
     soil = float(f.get("soil_m3m3") or 0.28)
     clim = float(f.get("clim_daily_mm") or 6.0)
     z = float(f.get("precip_z") or 0.0)
-    hourly = [float(x) for x in (f.get("hourly_precip") or [])[:6]]
+    from app.ml.features import past_window
+
+    hourly = [float(x) for x in past_window(f.get("hourly_precip") or [], int(f.get("hourly_now_i") or 0), 6)]
     persist = mean(hourly) * 6 if hourly else 0.0
     from app.science.residual import atlas_lookup, monsoon_regime
 

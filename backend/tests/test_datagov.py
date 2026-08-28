@@ -45,3 +45,9 @@ def test_air_risk_xai_sums():
     assert card.id == "air_quality"
     assert sum(f.contribution_pct for f in card.factors) == card.score_pct
     assert "data.gov.in / CPCB" in card.sources
+
+
+def test_air_risk_uses_overall_naqi_when_pollutants_empty():
+    empty = air_quality_risk({"naqi": 300, "naqi_pollutants": {}})
+    assert empty.score_pct > 0
+    assert sum(f.contribution_pct for f in empty.factors) == empty.score_pct

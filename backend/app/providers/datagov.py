@@ -23,7 +23,7 @@ STATE_ALIASES = {
 CITY_ALIASES = {
     "haldia": ["Haldia"],
     "siliguri": ["Siliguri"],
-    "darjeeling": ["Siliguri"],
+    "darjeeling": ["Darjeeling"],
     "asansol": ["Asansol"],
     "durgapur": ["Durgapur"],
     "purba medinipur": ["Haldia"],
