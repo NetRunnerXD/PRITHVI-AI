@@ -10,9 +10,11 @@ def _clip(x: float, lo: float, hi: float) -> float:
 
 
 def initial_state(f: dict[str, Any]) -> dict[str, Any]:
+    from app.ml.features import past_window
+
     soil = float(f.get("soil_m3m3") or 0.28)
     today = float(f.get("precip_today_mm") or 0)
-    hourly = [float(x) for x in (f.get("hourly_precip") or [])[:24]]
+    hourly = [float(x) for x in past_window(f.get("hourly_precip") or [], int(f.get("hourly_now_i") or 0), 24)]
     pulse = sum(hourly)
     memory = _clip((soil - 0.16) / 0.28 + min(pulse, 25) / 80, 0.0, 1.0)
     limb = "wetting" if today >= 4 or pulse >= 6 or soil >= 0.32 else "drying"

@@ -24,9 +24,10 @@ def attribute(f: dict[str, Any], hy: dict[str, Any]) -> dict[str, Any]:
     }
     checksum = parts["precip_mm"] - parts["et0_mm"] - parts["runoff_mm"] - parts["delta_soil_mm"] - parts["deep_plus_unobserved_mm"]
     return {
-        "identity": "P - ET0 - runoff - Δsoil - deep/unobserved ≈ 0",
+        "identity": "P - ET0 - runoff - Δsoil = U (U is the residual, not a measured flux)",
         "parts": parts,
         "checksum_mm": round(checksum, 3),
         "soil_m3m3": soil0,
-        "method": "3-day water-balance identity v1",
+        "method": "3-day water-balance residual v1",
+        "note": "ΔS is a 0–7 cm proxy (infil×0.25 − ET0×0.35). U closes the arithmetic, not a soil column.",
     }

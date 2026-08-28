@@ -78,18 +78,23 @@ def split_hours(
 
 
 def state_vector(f: dict[str, Any]) -> dict[str, Any]:
-    clouds = [float(x) for x in (f.get("hourly_cloud") or [])[:6]]
-    winds = [float(x) for x in (f.get("hourly_wind_dir") or [])[:4]]
-    rhs = [float(x) for x in (f.get("hourly_rh") or [])[:6]]
+    from app.ml.features import past_window
+
+    i = int(f.get("hourly_now_i") or 0)
+    clouds = [float(x) for x in past_window(f.get("hourly_cloud") or [], i, 6)]
+    winds = [float(x) for x in past_window(f.get("hourly_wind_dir") or [], i, 4)]
+    rhs = [float(x) for x in past_window(f.get("hourly_rh") or [], i, 6)]
     vis = f.get("visibility_m")
     wind_shift = 0.0
     if len(winds) >= 2:
         d = abs(winds[0] - winds[-1]) % 360
         wind_shift = min(d, 360 - d)
+    cloud_jump = (clouds[-1] - clouds[-4]) if len(clouds) >= 4 else 0.0
+    rh_jump = (rhs[-1] - rhs[-4]) if len(rhs) >= 4 else 0.0
     return {
-        "cloud_jump": round((clouds[0] - clouds[3]) if len(clouds) >= 4 else 0.0, 1),
+        "cloud_jump": round(cloud_jump, 1),
         "wind_shift_deg": round(wind_shift, 1),
-        "rh_jump": round((rhs[0] - rhs[3]) if len(rhs) >= 4 else 0.0, 1),
+        "rh_jump": round(rh_jump, 1),
         "visibility_km": round(float(vis) / 1000.0, 2) if vis is not None else None,
         "weather_code": f.get("weather_code"),
         "note": "Open-Meteo hourly state, not radar.",
@@ -441,26 +446,32 @@ def tide_rain(
     wave_m: float | None,
     now: datetime | None = None,
     phys: dict[str, Any] | None = None,
+    lat: float | None = None,
 ) -> dict[str, Any]:
     now = now or _now()
     hugli = bool((phys or {}).get("show_tide") or (phys or {}).get("hugli"))
     coastal = hugli and coast_km is not None and float(coast_km) <= 40
     rain3 = sum(h["mm"] for h in hours[:3])
-    phase = (now.hour + now.minute / 60 + (float(lon or 88.5) / 15.0)) % 12.42
-    high = phase < 2.2 or phase > 10.2
+    from app.science.live import hugli_station, tide_height_m
+
+    station = hugli_station(lat, lon, None) if hugli else None
+    td = tide_height_m(now, station) if hugli and station else {}
+    high = bool(td.get("high_tide")) if coastal else False
     drain = bool(coastal and high and rain3 >= 4)
     swell = bool(coastal and wave_m is not None and float(wave_m) >= 1.8 and rain3 >= 2)
     return {
         "relevant": hugli,
         "coastal": coastal,
-        "high_tide": high if coastal else False,
-        "phase_h": round(phase, 2) if hugli else None,
+        "high_tide": high,
+        "phase_h": None,
+        "tide_m": td.get("tide_m") if hugli else None,
+        "tide_station": station if hugli else None,
         "rain_3h_mm": round(rain3, 2),
         "wave_height_m": wave_m,
         "drain_blocked": drain,
         "stay_off_ghat": bool(drain or swell),
         "method": "tide-rain compound v2 (Hugli only)",
-        "note": "Hugli harmonic prior only. Hidden off the estuary.",
+        "note": "Hugli harmonic prior only (same as playhead). Hidden off the estuary.",
     }
 
 
@@ -547,6 +558,11 @@ def labour_window(f: dict[str, Any], air: dict[str, Any]) -> dict[str, Any]:
         peak = f.get("naqi") or f.get("us_aqi") or 0
     peak = int(peak or 0)
     wind = f.get("wind_speed_ms") or f.get("wind_now_ms")
+    if wind is None and f.get("wind_now") is not None:
+        try:
+            wind = float(f["wind_now"]) / 3.6
+        except (TypeError, ValueError):
+            wind = None
     wb = estimate(float(tmax), rh, wind)
     closed = (wb["wbgt_c"] >= 28 and peak >= 151) or (float(tmax) >= 36 and rh >= 55 and peak >= 151)
     return {
@@ -899,7 +915,14 @@ def build(
     clock = onset_cessation(hours, pull=pull)
     pond = ponding(hours, hy, phys)
     budget = hourly_budget(hours, hy)
-    tide = tide_rain(hours, f.get("coast_km"), getattr(loc, "lon", None), f.get("wave_height_m"), phys=phys)
+    tide = tide_rain(
+        hours,
+        f.get("coast_km"),
+        getattr(loc, "lon", None),
+        f.get("wave_height_m"),
+        phys=phys,
+        lat=lat,
+    )
     split = pluvial_fluvial(pond, f, flood_score)
     pump = pump_regret(hours, plot_m2, hy, p_delta=float(speech_pack.get("p_interrupt_delta") or 0))
     cost = cost_loss(pump, hours, ph, plot_m2)

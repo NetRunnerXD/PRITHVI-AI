@@ -110,6 +110,7 @@ async def health():
             "imd_api_key": bool(settings.imd_api_key),
             "aikosh_api_key": bool(settings.aikosh_api_key),
             "data_gov_in_api_key": bool(settings.data_gov_in_api_key),
+            "weatherbit_api_key": bool(settings.weatherbit_api_key),
         },
         "notes": {
             "imd_rest": "api.imd.gov.in requires IP whitelist — CAP alerts are used until then.",

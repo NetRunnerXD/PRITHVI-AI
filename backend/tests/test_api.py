@@ -15,6 +15,11 @@ def test_health():
     assert body["default_location"]["district"] == "Purba Medinipur"
 
 
+def test_geo_reverse_rejects_outside_india():
+    r = client.get("/api/geo/reverse", params={"lat": 48.85, "lon": 2.35})
+    assert r.status_code == 400
+
+
 def test_geo_search_and_nearby():
     r = client.get("/api/geo/search", params={"q": "Pune"})
     assert r.status_code == 200

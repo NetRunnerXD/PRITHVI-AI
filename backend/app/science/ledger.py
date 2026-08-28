@@ -32,6 +32,7 @@ def week(f: dict[str, Any], hy: dict[str, Any], plot_m2: float) -> dict[str, Any
     return {
         "plot_m2": plot_m2,
         "days": rows,
-        "identity": "P - ET0 - Q - ΔS - U ≈ 0",
+        "identity": "P - ET0 - Q - ΔS = U (U is the residual)",
         "method": "plot ledger v1",
+        "note": "ΔS is a 0–7 cm proxy. U closes the arithmetic, not a measured term.",
     }

@@ -17,6 +17,7 @@ from app.science.regret import evaluate as evaluate_regret
 from app.ml.sky import compass, flow_compass, flow_deg, rose_bins, sky_label
 from app.services.location_svc import nearby as nearby_districts
 from app.data.india_coast import nearest_coast
+from app import cache
 from app.providers import aikosh, datagov, hazards, imd, nasa_power, open_meteo, openaq, port_signal, sachet
 from app.schemas.dashboard import (
     CurrentConditions,
@@ -324,8 +325,14 @@ def _build_live(loc: Location, f: dict, obs: dict, flood_score: int, generated_a
     hourly_t = f.get("hourly_times") or []
     wdirs = f.get("hourly_wind_dir") or []
     wspds = f.get("hourly_wind") or []
+    now_i = int(f.get("hourly_now_i") or 0)
+    if now_i <= 0:
+        wt, wd, ws = hourly_t[:24], wdirs[:24], wspds[:24]
+    else:
+        w0 = max(0, now_i - 23)
+        wt, wd, ws = hourly_t[w0 : now_i + 1], wdirs[w0 : now_i + 1], wspds[w0 : now_i + 1]
     wind_hourly = []
-    for t, d, s in zip(hourly_t[:24], wdirs[:24], wspds[:24]):
+    for t, d, s in zip(wt, wd, ws):
         wind_hourly.append(
             {
                 "t": t,
@@ -359,7 +366,7 @@ def _build_live(loc: Location, f: dict, obs: dict, flood_score: int, generated_a
             "flow_compass": flow_compass(f.get("wind_dir_now")),
             "flow_deg": flow_deg(f.get("wind_dir_now")),
             "hourly": wind_hourly,
-            "rose": rose_bins(wdirs[:24], wspds[:24]),
+            "rose": rose_bins(wd, ws),
         },
         marine={
             "inland": bool(f.get("marine_inland")) and f.get("wave_height_m") is None,
@@ -430,6 +437,15 @@ def _vegetation(f: dict) -> dict:
 
 
 async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot:
+    key = f"snap:{round(float(loc.lat), 3)}:{round(float(loc.lon), 3)}"
+
+    async def factory() -> DashboardSnapshot:
+        return await _assemble_snapshot(loc, locale)
+
+    return await cache.aget(key, factory, ttl_s=60, swr_s=300)
+
+
+async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot:
     obs = await gather_observations(loc)
     f = extract(obs["om"], obs["flood"], obs["nasa_precip"], obs["aqi"], obs.get("marine") or {})
     if obs.get("naqi"):
@@ -625,6 +641,9 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
 
     hourly_t = f.get("hourly_times") or []
     daily_t = f.get("daily_times") or []
+    i0 = int(f.get("hourly_now_i") or 0)
+    aqi_i0 = int(f.get("hourly_aqi_now_i") or 0)
+    wave_i0 = int(f.get("hourly_wave_now_i") or 0)
     outlook = build_outlook(f)
     dual = build_dual_predictions(f)
     sources = [k for k, v in obs["status"].items() if v == "ok"]
@@ -681,16 +700,16 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
         descriptive=Descriptive(
             current=current,
             series={
-                "precip_hourly": _series(hourly_t[:72], f.get("hourly_precip") or [], "mm", "open-meteo"),
-                "temp_hourly": _series(hourly_t[:72], f.get("hourly_temp") or [], "°C", "open-meteo"),
-                "soil_hourly": _series(hourly_t[:72], f.get("hourly_soil") or [], "m³/m³", "open-meteo"),
-                "rh_hourly": _series(hourly_t[:72], f.get("hourly_rh") or [], "%", "open-meteo"),
-                "wind_hourly": _series(hourly_t[:72], f.get("hourly_wind") or [], "km/h", "open-meteo"),
-                "wind_dir_hourly": _series(hourly_t[:72], f.get("hourly_wind_dir") or [], "deg", "open-meteo"),
-                "cloud_hourly": _series(hourly_t[:72], f.get("hourly_cloud") or [], "%", "open-meteo"),
+                "precip_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_precip") or [])[i0:i0 + 48], "mm", "open-meteo"),
+                "temp_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_temp") or [])[i0:i0 + 48], "°C", "open-meteo"),
+                "soil_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_soil") or [])[i0:i0 + 48], "m³/m³", "open-meteo"),
+                "rh_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_rh") or [])[i0:i0 + 48], "%", "open-meteo"),
+                "wind_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_wind") or [])[i0:i0 + 48], "km/h", "open-meteo"),
+                "wind_dir_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_wind_dir") or [])[i0:i0 + 48], "deg", "open-meteo"),
+                "cloud_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_cloud") or [])[i0:i0 + 48], "%", "open-meteo"),
                 "aqi_hourly": _series(
-                    (f.get("hourly_aqi_times") or [])[:72],
-                    f.get("hourly_us_aqi") or [],
+                    (f.get("hourly_aqi_times") or [])[aqi_i0:aqi_i0 + 48],
+                    (f.get("hourly_us_aqi") or [])[aqi_i0:aqi_i0 + 48],
                     "US AQI",
                     "open-meteo-air",
                 ),
@@ -701,8 +720,8 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
                     "openaq",
                 ),
                 "wave_hourly": _series(
-                    (f.get("hourly_wave_times") or [])[:72],
-                    f.get("hourly_wave") or [],
+                    (f.get("hourly_wave_times") or [])[wave_i0:wave_i0 + 48],
+                    (f.get("hourly_wave") or [])[wave_i0:wave_i0 + 48],
                     "m",
                     "open-meteo-marine",
                 ),

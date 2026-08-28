@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 
 import httpx
@@ -12,18 +12,34 @@ BHUVAN_IN = ",".join(
     [
         "gw_wfs:AN_LGEOM",
         "gw_wfs:AP_LGEOM",
+        "gw_wfs:AR_LGEOM",
         "gw_wfs:AS_LGEOM",
         "gw_wfs:BR_LGEOM",
+        "gw_wfs:CG_LGEOM",
+        "gw_wfs:CH_LGEOM",
+        "gw_wfs:DL_LGEOM",
         "gw_wfs:GA_LGEOM",
+        "gw_wfs:GJ_LGEOM",
+        "gw_wfs:HP_LGEOM",
+        "gw_wfs:HR_LGEOM",
         "gw_wfs:JH_LGEOM",
+        "gw_wfs:JK_LGEOM",
         "gw_wfs:KA_LGEOM",
         "gw_wfs:KL_LGEOM",
+        "gw_wfs:LD_LGEOM",
         "gw_wfs:MH_LGEOM",
+        "gw_wfs:ML_LGEOM",
+        "gw_wfs:MN_LGEOM",
         "gw_wfs:MP_LGEOM",
+        "gw_wfs:MZ_LGEOM",
+        "gw_wfs:NL_LGEOM",
         "gw_wfs:OR_LGEOM",
         "gw_wfs:PB_LGEOM",
+        "gw_wfs:PY_LGEOM",
         "gw_wfs:RJ_LGEOM",
+        "gw_wfs:SK_LGEOM",
         "gw_wfs:TN_LGEOM",
+        "gw_wfs:TR_LGEOM",
         "gw_wfs:TS_LGEOM",
         "gw_wfs:UK_LGEOM",
         "gw_wfs:UP_LGEOM",
@@ -42,6 +58,10 @@ async def geo_search(q: str = Query(min_length=1), limit: int = 8):
 
 @router.get("/geo/reverse")
 async def geo_reverse(lat: float, lon: float):
+    from app.data.india_mask import in_india
+
+    if not in_india(lat, lon):
+        raise HTTPException(status_code=400, detail="outside India")
     return resolve_location(lat=lat, lon=lon).model_dump()
 
 

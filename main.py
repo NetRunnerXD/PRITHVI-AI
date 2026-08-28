@@ -38,10 +38,26 @@ def _port_busy(host: str, port: int) -> bool:
 
 
 def _npm() -> str | None:
+    """Resolve npm without the broken Windows nested npm\\bin shim.
+
+    Some Node installs put ``...\\nodejs\\node_modules\\npm\\bin`` ahead of
+    ``...\\nodejs`` on PATH. That shim looks for
+    ``npm\\bin\\node_modules\\npm\\bin\\npm-cli.js`` and crashes.
+    """
     names = ("npm.cmd", "npm.exe", "npm") if os.name == "nt" else ("npm",)
+    nested = os.path.normcase(os.path.join("node_modules", "npm", "bin"))
+    node_dir = os.path.dirname(shutil.which("node") or "")
+    if node_dir:
+        for name in names:
+            candidate = os.path.join(node_dir, name)
+            if os.path.isfile(candidate):
+                return candidate
+        cli = os.path.join(node_dir, "node_modules", "npm", "bin", "npm-cli.js")
+        if os.path.isfile(cli):
+            return cli
     for name in names:
         found = shutil.which(name)
-        if found:
+        if found and nested not in os.path.normcase(found):
             return found
     return None
 
@@ -106,7 +122,12 @@ def main() -> int:
             elif not (FRONTEND / "node_modules").is_dir():
                 print("Frontend skipped: run  cd frontend ; npm install")
             else:
-                web = subprocess.Popen([npm, "run", "dev"], cwd=FRONTEND)
+                if npm.lower().endswith(".js"):
+                    node = shutil.which("node") or "node"
+                    npm_cmd = [node, npm, "run", "dev"]
+                else:
+                    npm_cmd = [npm, "run", "dev"]
+                web = subprocess.Popen(npm_cmd, cwd=FRONTEND)
                 children.append(web)
                 print("Dashboard  http://localhost:3000")
 

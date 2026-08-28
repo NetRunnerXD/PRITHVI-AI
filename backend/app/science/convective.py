@@ -21,26 +21,13 @@ def _level(score: int) -> str:
 
 
 def _env(f: dict[str, Any]) -> dict[str, float]:
-    cape = 0.0
-    gust = 0.0
-    wind = 0.0
-    rain1 = 0.0
-    try:
-        cape = float((f.get("hourly_cape") or [0])[0] or 0)
-    except (TypeError, ValueError, IndexError):
-        pass
-    try:
-        gust = float((f.get("hourly_gust") or [0])[0] or 0)
-    except (TypeError, ValueError, IndexError):
-        pass
-    try:
-        wind = float((f.get("hourly_wind") or [0])[0] or 0)
-    except (TypeError, ValueError, IndexError):
-        pass
-    try:
-        rain1 = float((f.get("hourly_precip") or [0])[0] or 0)
-    except (TypeError, ValueError, IndexError):
-        pass
+    from app.ml.features import value_at_now
+
+    i = int(f.get("hourly_now_i") or 0)
+    cape = value_at_now(f.get("hourly_cape") or [], i)
+    gust = value_at_now(f.get("hourly_gust") or [], i)
+    wind = value_at_now(f.get("hourly_wind") or [], i)
+    rain1 = value_at_now(f.get("hourly_precip") or [], i)
     return {"cape": cape, "gust": gust, "wind": wind, "rain1": rain1}
 
 
