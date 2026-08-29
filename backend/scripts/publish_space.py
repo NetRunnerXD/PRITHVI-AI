@@ -89,17 +89,29 @@ def main() -> int:
             token=token,
         )
     except Exception as exc:
-        msg = f"create_repo failed: {type(exc).__name__}: {exc}"
-        print(msg, file=sys.stderr)
-        print(f"::error::{msg}")
+        text = str(exc)
         resp = getattr(exc, "response", None)
+        body = ""
         if resp is not None:
             try:
-                print(resp.text[:800], file=sys.stderr)
+                body = resp.text[:800]
             except Exception:
-                pass
-        traceback.print_exc()
-        return 1
+                body = ""
+        if "402" in text or "Payment Required" in text:
+            print(
+                "create_repo returned 402. Create a public Docker Space once in the "
+                f"Hugging Face UI named {space}, then this job only uploads files. "
+                "https://huggingface.co/new-space",
+                file=sys.stderr,
+            )
+            print(body, file=sys.stderr)
+        else:
+            msg = f"create_repo failed: {type(exc).__name__}: {exc}"
+            print(msg, file=sys.stderr)
+            print(f"::error::{msg}")
+            print(body, file=sys.stderr)
+            traceback.print_exc()
+            return 1
 
     ignore = [
         ".env",
