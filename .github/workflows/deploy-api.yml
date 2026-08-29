@@ -1,13 +1,17 @@
-name: Deploy API (Fly.io)
+name: Deploy API (Hugging Face Space)
 
-# Push to main deploys the standalone FastAPI origin used by the website and Android app.
-# Requires repo secret FLY_API_TOKEN (fly tokens create).
+# Pushes to master/main that touch backend/ publish the FastAPI origin
+# used by the website and the Android/Expo app.
+# Requires repo secret HF_TOKEN (Hugging Face write token).
+# Optional: HF_SPACE (default NetRunnerXD/rituchakra-api).
 
 on:
   push:
-    branches: [main]
+    branches: [master, main]
     paths:
       - "backend/**"
+      - "deploy/space/**"
+      - "backend/scripts/publish_space.py"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
 
@@ -15,13 +19,17 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     concurrency:
-      group: fly-api
+      group: hf-space-api
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-      - name: Deploy
-        working-directory: backend
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install hub client
+        run: python -m pip install -q huggingface_hub
+      - name: Publish Space
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl deploy --remote-only --config fly.toml
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ secrets.HF_SPACE }}
+        run: python backend/scripts/publish_space.py

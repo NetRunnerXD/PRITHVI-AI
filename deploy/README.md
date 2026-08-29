@@ -28,6 +28,8 @@ Same-origin option: leave `NEXT_PUBLIC_API_BASE` empty and set `API_INTERNAL_URL
 
 See `mobile/README.md`. Production phones need HTTPS; Android blocks cleartext HTTP.
 
-## Fly.io (GitHub)
+## Hugging Face Space (GitHub, no credit card)
 
-Public HTTPS API for the website and Android: [`deploy/fly.md`](fly.md). Pushes to `main` that change `backend/` deploy via `.github/workflows/deploy-api.yml` when `FLY_API_TOKEN` is set.
+Public HTTPS API for the website and Android: [`deploy/huggingface.md`](huggingface.md). Pushes to `master` / `main` that change `backend/` run `.github/workflows/deploy-api.yml` when `HF_TOKEN` is set.
+
+Optional paid path: [`deploy/fly.md`](fly.md).

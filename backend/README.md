@@ -17,6 +17,17 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 - OpenAPI: [http://127.0.0.1:8000/openapi.json](http://127.0.0.1:8000/openapi.json)
 - Route catalog: [http://127.0.0.1:8000/api](http://127.0.0.1:8000/api)
 
+Surfaces (same handlers; local `/api` is unchanged):
+
+| Prefix | For |
+|---|---|
+| `/api` | Local dashboard, pytest, `clients/js` |
+| `/v1` | Published versioned API |
+| `/web/v1` | Website / other web frameworks |
+| `/app/v1` | Expo / React Native |
+
+Web origin (`localhost:3000`) and Expo (`localhost:8081`) may call this process at the same time. CORS lists both. Optional `X-Rituchakra-Client: web|app`.
+
 Bind `0.0.0.0` if a phone or another machine will call the API. Set `CORS_ORIGINS` / `CORS_ORIGIN_REGEX` and, when publishing, `PUBLIC_BASE_URL`.
 
 Local clients (no frontend rebuild needed):
@@ -51,3 +62,7 @@ Writes `openapi.json` next to this file.
 ## Clients
 
 Do not serve `../frontend` from this process. Point a new app at this origin using `../clients/js`.
+
+## Public host
+
+GitHub Action uploads this folder to a Hugging Face Docker Space. See `../deploy/huggingface.md`. Local `uvicorn` is unchanged. On the Space, set `OLLAMA_BASE_URL` to an OpenAI-compatible API (Groq, GitHub Models) if Advisor prose is needed.
