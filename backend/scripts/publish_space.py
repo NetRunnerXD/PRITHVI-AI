@@ -7,13 +7,11 @@ Optional HF_SPACE as owner/name. If unset, uses {whoami}/rituchakra-api.
 from __future__ import annotations
 
 import os
-import re
 import sys
 import traceback
 from pathlib import Path
 
 from huggingface_hub import HfApi, create_repo
-from huggingface_hub.utils import HfHubHTTPError
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
@@ -55,13 +53,13 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    if not re.match(r"^hf_[A-Za-z0-9]+$", token):
+    if not token.startswith("hf_"):
         print(
-            "HF_TOKEN does not look like a Hugging Face token (should start with hf_). "
-            f"Length={len(token)} prefix={token[:3]!r}",
+            f"Warning: token prefix {token[:4]!r} is not hf_. "
+            "Groq (gsk_) and GitHub PATs will not create a Space. "
+            "Use a Hugging Face write token from https://huggingface.co/settings/tokens",
             file=sys.stderr,
         )
-        return 1
 
     api = HfApi(token=token)
     try:
@@ -89,10 +87,15 @@ def main() -> int:
             private=False,
             token=token,
         )
-    except HfHubHTTPError as exc:
-        print(f"create_repo failed: {exc}", file=sys.stderr)
-        if getattr(exc, "response", None) is not None:
-            print(exc.response.text[:800], file=sys.stderr)
+    except Exception as exc:
+        print(f"create_repo failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        resp = getattr(exc, "response", None)
+        if resp is not None:
+            try:
+                print(resp.text[:800], file=sys.stderr)
+            except Exception:
+                pass
+        traceback.print_exc()
         return 1
 
     ignore = [
