@@ -186,6 +186,56 @@ def extract(
     wave_vals = _hourly(marine, "wave_height")
     inland = bool(marine.get("inland")) or (mcur.get("wave_height") is None and not wave_vals)
 
+    def d0(key: str):
+        vals = (om.get("daily") or {}).get(key) or []
+        if start < len(vals):
+            return vals[start]
+        return vals[0] if vals else None
+
+    def _last(vals: list, i: int, fallback=None):
+        if not vals:
+            return fallback
+        hi = len(vals) - 1
+        start_i = min(max(0, i), hi)
+        order = list(range(start_i, -1, -1)) + list(range(start_i + 1, len(vals)))
+        for j in order:
+            v = vals[j]
+            if v is None or v == "":
+                continue
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                continue
+        return fallback
+
+    def hraw(key: str, fallback=None):
+        vals = (om.get("hourly") or {}).get(key) or []
+        cur = current.get(key)
+        if cur is not None and cur != "":
+            try:
+                return float(cur)
+            except (TypeError, ValueError):
+                pass
+        return _last(list(vals), now_i, fallback)
+
+    def mraw(key: str, fallback=None):
+        if mcur.get(key) is not None:
+            try:
+                return float(mcur.get(key))
+            except (TypeError, ValueError):
+                pass
+        vals = (marine.get("hourly") or {}).get(key) or []
+        return _last(list(vals), wave_now_i, fallback)
+
+    def aq_n(key: str, fallback=None):
+        v = aq_cur.get(key)
+        if v is not None and v != "":
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                pass
+        return _last(list((aq.get("hourly") or {}).get(key) or []), aqi_now_i, fallback)
+
     return {
         "precip_today_mm": precip_today,
         "precip_yesterday_mm": precip_yesterday,
@@ -216,9 +266,81 @@ def extract(
         "precip_z": z,
         "us_aqi": us_aqi,
         "eu_aqi": aq_cur.get("european_aqi"),
-        "om_pm25": aq_cur.get("pm2_5"),
-        "om_pm10": aq_cur.get("pm10"),
-        "om_no2": aq_cur.get("nitrogen_dioxide"),
+        "om_pm25": aq_n("pm2_5"),
+        "om_pm10": aq_n("pm10"),
+        "om_no2": aq_n("nitrogen_dioxide"),
+        "om_so2": aq_n("sulphur_dioxide"),
+        "om_co": aq_n("carbon_monoxide"),
+        "om_co2": aq_n("carbon_dioxide"),
+        "om_o3": aq_n("ozone"),
+        "om_nh3": aq_n("ammonia"),
+        "om_ch4": aq_n("methane"),
+        "om_dust": aq_n("dust"),
+        "om_uv": aq_n("uv_index"),
+        "om_uv_clear": aq_n("uv_index_clear_sky"),
+        "pollen": {
+            "alder": aq_n("alder_pollen"),
+            "birch": aq_n("birch_pollen"),
+            "grass": aq_n("grass_pollen"),
+            "mugwort": aq_n("mugwort_pollen"),
+            "olive": aq_n("olive_pollen"),
+            "ragweed": aq_n("ragweed_pollen"),
+        },
+        "apparent_temp_c": current.get("apparent_temperature"),
+        "dew_point_c": current.get("dew_point_2m"),
+        "pressure_msl_hpa": current.get("pressure_msl"),
+        "surface_pressure_hpa": current.get("surface_pressure"),
+        "rain_now": current.get("rain"),
+        "showers_now": current.get("showers"),
+        "snowfall_now": current.get("snowfall"),
+        "wind_gusts_now": current.get("wind_gusts_10m"),
+        "sunrise": d0("sunrise"),
+        "sunset": d0("sunset"),
+        "daylight_s": d0("daylight_duration"),
+        "sunshine_s": d0("sunshine_duration"),
+        "shortwave_sum": d0("shortwave_radiation_sum"),
+        "uv_index_max": d0("uv_index_max"),
+        "uv_clear_max": d0("uv_index_clear_sky_max"),
+        "rh_max": d0("relative_humidity_2m_max"),
+        "rh_min": d0("relative_humidity_2m_min"),
+        "rh_mean": d0("relative_humidity_2m_mean"),
+        "dew_max": d0("dew_point_2m_max"),
+        "dew_min": d0("dew_point_2m_min"),
+        "dew_mean": d0("dew_point_2m_mean"),
+        "apparent_max": d0("apparent_temperature_max"),
+        "apparent_min": d0("apparent_temperature_min"),
+        "temp_mean": d0("temperature_2m_mean"),
+        "precip_prob_now": hraw("precipitation_probability"),
+        "snow_depth_m": hraw("snow_depth"),
+        "et_now": hraw("evapotranspiration"),
+        "vpd_now": hraw("vapour_pressure_deficit"),
+        "cloud_low": hraw("cloud_cover_low"),
+        "cloud_mid": hraw("cloud_cover_mid"),
+        "cloud_high": hraw("cloud_cover_high"),
+        "temp_80m": hraw("temperature_80m"),
+        "temp_120m": hraw("temperature_120m"),
+        "temp_180m": hraw("temperature_180m"),
+        "wind_80m": hraw("wind_speed_80m"),
+        "wind_120m": hraw("wind_speed_120m"),
+        "wind_180m": hraw("wind_speed_180m"),
+        "wind_dir_80m": hraw("wind_direction_80m"),
+        "wind_dir_120m": hraw("wind_direction_120m"),
+        "wind_dir_180m": hraw("wind_direction_180m"),
+        "wind_10m_max": d0("wind_speed_10m_max"),
+        "wind_10m_mean": d0("wind_speed_10m_mean"),
+        "soil_t_0": hraw("soil_temperature_0cm"),
+        "soil_t_6": hraw("soil_temperature_6cm"),
+        "soil_t_18": hraw("soil_temperature_18cm"),
+        "soil_t_54": hraw("soil_temperature_54cm"),
+        "soil_m_0_1": hraw("soil_moisture_0_to_1cm"),
+        "soil_m_1_3": hraw("soil_moisture_1_to_3cm"),
+        "soil_m_3_9": hraw("soil_moisture_3_to_9cm"),
+        "soil_m_9_27": hraw("soil_moisture_9_to_27cm"),
+        "soil_m_27_81": hraw("soil_moisture_27_to_81cm"),
+        "precip_hours": d0("precipitation_hours"),
+        "rain_sum": d0("rain_sum"),
+        "showers_sum": d0("showers_sum"),
+        "snowfall_sum": d0("snowfall_sum"),
         "hourly_precip": hw(_hourly(om, "precipitation")),
         "hourly_soil": hw(soil),
         "hourly_temp": hw(_hourly(om, "temperature_2m")),
@@ -250,8 +372,32 @@ def extract(
         "wave_height_m": mcur.get("wave_height"),
         "wave_dir_deg": mcur.get("wave_direction"),
         "wave_period_s": mcur.get("wave_period"),
+        "wave_peak_period_s": mcur.get("wave_peak_period"),
+        "wind_wave_height_m": mraw("wind_wave_height"),
+        "wind_wave_dir_deg": mraw("wind_wave_direction"),
+        "wind_wave_period_s": mraw("wind_wave_period"),
+        "wind_wave_peak_period_s": mraw("wind_wave_peak_period"),
+        "swell_height_m": mraw("swell_wave_height"),
+        "swell_dir_deg": mraw("swell_wave_direction"),
+        "swell_period_s": mraw("swell_wave_period"),
+        "swell_peak_period_s": mraw("swell_wave_peak_period"),
+        "swell2_height_m": mraw("secondary_swell_wave_height"),
+        "swell2_dir_deg": mraw("secondary_swell_wave_direction"),
+        "swell2_period_s": mraw("secondary_swell_wave_period"),
+        "swell3_height_m": mraw("tertiary_swell_wave_height"),
+        "swell3_dir_deg": mraw("tertiary_swell_wave_direction"),
+        "swell3_period_s": mraw("tertiary_swell_wave_period"),
+        "sea_level_m": mcur.get("sea_level_height_msl"),
+        "sst_c": mcur.get("sea_surface_temperature"),
+        "ocean_current_ms": mcur.get("ocean_current_velocity"),
+        "ocean_current_dir": mcur.get("ocean_current_direction"),
         "hourly_wave": wave_vals,
         "hourly_wave_dir": _hourly(marine, "wave_direction"),
+        "hourly_sst": _hourly(marine, "sea_surface_temperature"),
+        "hourly_swell": _hourly(marine, "swell_wave_height"),
         "hourly_wave_times": wave_times,
+        "hourly_uv": _hourly(aq, "uv_index"),
+        "hourly_dust": _hourly(aq, "dust"),
+        "hourly_pm10": _hourly(aq, "pm10"),
         "marine_inland": inland,
     }

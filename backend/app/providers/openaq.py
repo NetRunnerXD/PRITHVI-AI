@@ -21,7 +21,7 @@ async def history(lat: float, lon: float, hours: int = 72) -> tuple[list[dict[st
         "coordinates": f"{lat},{lon}",
         "radius": 45000,
         "limit": 80,
-        "parameter": "pm25",
+        "parameter": ["pm25", "pm10", "no2", "so2", "o3", "co", "nh3", "bc"],
         "date_from": since,
         "order_by": "datetime",
         "sort": "asc",

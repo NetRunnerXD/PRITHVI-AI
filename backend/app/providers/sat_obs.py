@@ -89,12 +89,19 @@ def from_imerg_rate(mm_h: float, t_iso: str | None = None) -> dict[str, Any]:
 def available_source() -> dict[str, Any]:
     s = get_settings()
     if s.mosdac_user and s.mosdac_pass:
+        from app.providers import mosdac as mosdac_mod
+
+        knot = mosdac_mod.hem_knot(0.0, 0.0)
         return {
-            "source": "insat-hem",
-            "source_kind": "satellite-qpe",
-            "ready": False,
+            "source": "insat-hem" if knot else "imd-insat-ir + gibs-imerg",
+            "source_kind": "satellite-qpe" if knot else "satellite-ir",
+            "ready": bool(knot),
             "native_step_s": 1800,
-            "note": "MOSDAC login present; HEM HDF not approved yet. Live path uses IMD INSAT IR JPEG + GIBS IMERG.",
+            "note": (
+                "MOSDAC HEM at pin"
+                if knot
+                else "MOSDAC login configured; no HEM file cached. Live path uses IMD INSAT IR JPEG + GIBS IMERG."
+            ),
         }
     return {
         "source": "imd-insat-ir + gibs-imerg",

@@ -40,22 +40,70 @@ def _load_good(kind: str, lat: float, lon: float) -> dict[str, Any] | None:
         return None
 
 
+_FC_CURRENT = (
+    "temperature_2m,relative_humidity_2m,apparent_temperature,dew_point_2m,"
+    "precipitation,rain,showers,snowfall,weather_code,wind_speed_10m,wind_direction_10m,"
+    "wind_gusts_10m,cloud_cover,is_day,visibility,pressure_msl,surface_pressure"
+)
+_FC_HOURLY = (
+    "temperature_2m,precipitation_probability,precipitation,rain,showers,snowfall,snow_depth,"
+    "soil_moisture_0_to_7cm,et0_fao_evapotranspiration,evapotranspiration,relative_humidity_2m,"
+    "dew_point_2m,apparent_temperature,pressure_msl,surface_pressure,"
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,cloud_cover_low,"
+    "cloud_cover_mid,cloud_cover_high,weather_code,visibility,cape,vapour_pressure_deficit"
+)
+_FC_HOURLY_EXTRA = (
+    "temperature_80m,temperature_120m,temperature_180m,"
+    "wind_speed_80m,wind_speed_120m,wind_speed_180m,"
+    "wind_direction_80m,wind_direction_120m,wind_direction_180m,"
+    "soil_temperature_0cm,soil_temperature_6cm,soil_temperature_18cm,soil_temperature_54cm,"
+    "soil_moisture_0_to_1cm,soil_moisture_1_to_3cm,soil_moisture_3_to_9cm,"
+    "soil_moisture_9_to_27cm,soil_moisture_27_to_81cm"
+)
+_FC_DAILY = (
+    "precipitation_sum,precipitation_probability_max,precipitation_hours,"
+    "rain_sum,showers_sum,snowfall_sum,"
+    "temperature_2m_max,temperature_2m_min,temperature_2m_mean,"
+    "apparent_temperature_max,apparent_temperature_min,"
+    "relative_humidity_2m_max,relative_humidity_2m_min,relative_humidity_2m_mean,"
+    "dew_point_2m_max,dew_point_2m_min,dew_point_2m_mean,"
+    "et0_fao_evapotranspiration,weather_code,"
+    "wind_speed_10m_max,wind_speed_10m_mean,wind_gusts_10m_max,wind_direction_10m_dominant,"
+    "sunrise,sunset,daylight_duration,sunshine_duration,shortwave_radiation_sum,"
+    "uv_index_max,uv_index_clear_sky_max"
+)
+
+
+def _merge_om(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+    out = dict(base)
+    for block in ("hourly", "daily", "current"):
+        a = dict(out.get(block) or {})
+        b = extra.get(block) or {}
+        if isinstance(b, dict):
+            a.update({k: v for k, v in b.items() if k not in a or a.get(k) in (None, [])})
+            out[block] = a
+    return out
+
+
 async def forecast(lat: float, lon: float) -> dict[str, Any]:
-    key = f"om:fc3:{round(lat, 3)}:{round(lon, 3)}"
+    key = f"om:fc4:{round(lat, 3)}:{round(lon, 3)}"
 
     async def factory() -> dict[str, Any]:
         params = {
             "latitude": lat,
             "longitude": lon,
-            "current": "temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,cloud_cover,is_day,visibility",
-            "hourly": (
-                "temperature_2m,precipitation_probability,precipitation,soil_moisture_0_to_7cm,"
-                "et0_fao_evapotranspiration,relative_humidity_2m,dew_point_2m,pressure_msl,"
-                "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,cloud_cover_low,"
-                "cloud_cover_mid,cloud_cover_high,weather_code,visibility,cape,vapour_pressure_deficit"
-            ),
+            "current": _FC_CURRENT,
+            "hourly": _FC_HOURLY,
             "past_days": 1,
-            "daily": "precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min,et0_fao_evapotranspiration,weather_code,wind_speed_10m_max,wind_direction_10m_dominant",
+            "daily": _FC_DAILY,
+            "forecast_days": 7,
+            "timezone": "Asia/Kolkata",
+        }
+        extra_params = {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": _FC_HOURLY_EXTRA,
+            "past_days": 1,
             "forecast_days": 7,
             "timezone": "Asia/Kolkata",
         }
@@ -71,6 +119,14 @@ async def forecast(lat: float, lon: float) -> dict[str, Any]:
             r.raise_for_status()
             data = r.json()
             if isinstance(data, dict) and not data.get("error"):
+                try:
+                    r2 = await client().get(FORECAST, params=extra_params)
+                    if r2.status_code < 400:
+                        extra = r2.json()
+                        if isinstance(extra, dict) and not extra.get("error"):
+                            data = _merge_om(data, extra)
+                except Exception:
+                    pass
                 _save_good("fc", lat, lon, data)
                 return data
             good = _load_good("fc", lat, lon)
@@ -146,32 +202,61 @@ async def _archive_fallback(lat: float, lon: float) -> dict[str, Any] | None:
         return None
 
 
-async def flood(lat: float, lon: float) -> dict[str, Any]:
-    key = f"om:fl:{round(lat, 3)}:{round(lon, 3)}"
+def _flood_has_discharge(data: dict[str, Any]) -> bool:
+    disc = ((data or {}).get("daily") or {}).get("river_discharge") or []
+    return any(x is not None for x in disc)
 
-    async def factory() -> dict[str, Any]:
-        params = {
-            "latitude": lat,
-            "longitude": lon,
-            "daily": "river_discharge,river_discharge_mean,river_discharge_max",
-            "forecast_days": 7,
-        }
-        r = await client().get(FLOOD, params=params)
+
+async def flood(lat: float, lon: float) -> dict[str, Any]:
+    key = f"om:fl2:{round(lat, 3)}:{round(lon, 3)}"
+
+    async def _pull(a: float, b: float) -> dict[str, Any]:
+        r = await client().get(
+            FLOOD,
+            params={
+                "latitude": a,
+                "longitude": b,
+                "daily": "river_discharge,river_discharge_mean,river_discharge_max",
+                "forecast_days": 7,
+            },
+        )
         r.raise_for_status()
         return r.json()
+
+    async def factory() -> dict[str, Any]:
+        data = await _pull(lat, lon)
+        if _flood_has_discharge(data):
+            return data
+        for dlat, dlon in ((0.6, -0.4), (0.8, 0.0), (-0.5, 0.3), (1.1, -0.7), (0.0, -0.8)):
+            try:
+                alt = await _pull(lat + dlat, lon + dlon)
+            except Exception:
+                continue
+            if _flood_has_discharge(alt):
+                alt["_snapped"] = True
+                alt["_snap_lat"] = lat + dlat
+                alt["_snap_lon"] = lon + dlon
+                return alt
+        return data
 
     return await cache.aget(key, factory, ttl_s=60 * 60, swr_s=3 * 3600)
 
 
 async def air_quality(lat: float, lon: float) -> dict[str, Any]:
-    key = f"om:aq:{round(lat, 3)}:{round(lon, 3)}"
+    key = f"om:aq2:{round(lat, 3)}:{round(lon, 3)}"
 
     async def factory() -> dict[str, Any]:
+        aq_vars = (
+            "pm10,pm2_5,carbon_monoxide,carbon_dioxide,nitrogen_dioxide,sulphur_dioxide,"
+            "ozone,ammonia,methane,dust,uv_index,uv_index_clear_sky,"
+            "alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,olive_pollen,ragweed_pollen,"
+            "us_aqi,european_aqi"
+        )
         params = {
             "latitude": lat,
             "longitude": lon,
-            "current": "pm10,pm2_5,carbon_monoxide,ozone,nitrogen_dioxide,us_aqi,european_aqi",
-            "hourly": "pm10,pm2_5,us_aqi,european_aqi",
+            "current": aq_vars,
+            "hourly": aq_vars,
             "forecast_days": 3,
             "past_days": 7,
             "timezone": "Asia/Kolkata",
@@ -184,14 +269,23 @@ async def air_quality(lat: float, lon: float) -> dict[str, Any]:
 
 
 async def marine(lat: float, lon: float) -> dict[str, Any]:
-    key = f"om:mr:{round(lat, 3)}:{round(lon, 3)}"
+    key = f"om:mr2:{round(lat, 3)}:{round(lon, 3)}"
 
     async def factory() -> dict[str, Any]:
+        marine_vars = (
+            "wave_height,wave_direction,wave_period,wave_peak_period,"
+            "wind_wave_height,wind_wave_direction,wind_wave_period,wind_wave_peak_period,"
+            "swell_wave_height,swell_wave_direction,swell_wave_period,swell_wave_peak_period,"
+            "secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period,"
+            "tertiary_swell_wave_height,tertiary_swell_wave_direction,tertiary_swell_wave_period,"
+            "sea_level_height_msl,sea_surface_temperature,"
+            "ocean_current_velocity,ocean_current_direction"
+        )
         params = {
             "latitude": lat,
             "longitude": lon,
-            "current": "wave_height,wave_direction,wave_period,wind_wave_height",
-            "hourly": "wave_height,wave_direction,wave_period",
+            "current": marine_vars,
+            "hourly": marine_vars,
             "forecast_days": 3,
             "timezone": "Asia/Kolkata",
         }
@@ -209,7 +303,7 @@ async def marine(lat: float, lon: float) -> dict[str, Any]:
 
 def _slice_forecast_daily(lat: float, lon: float, start: str, end: str) -> dict[str, Any] | None:
     """Reuse a warm Open-Meteo forecast pack instead of a second HTTP call."""
-    fc = cache.get(f"om:fc3:{round(lat, 3)}:{round(lon, 3)}") or cache.peek(f"om:fc3:{round(lat, 3)}:{round(lon, 3)}")
+    fc = cache.get(f"om:fc4:{round(lat, 3)}:{round(lon, 3)}") or cache.peek(f"om:fc4:{round(lat, 3)}:{round(lon, 3)}")
     if not isinstance(fc, dict):
         return None
     daily = fc.get("daily") or {}

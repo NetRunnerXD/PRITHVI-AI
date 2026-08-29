@@ -34,24 +34,132 @@ def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * atan2(sqrt(a), sqrt(max(0.0, 1 - a)))
 
 
+def _csv_num(v: Any) -> float | None:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if s == "":
+        return None
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_usgs_csv(text: str, lat: float, lon: float) -> list[dict[str, Any]]:
+    import csv
+    import io
+
+    out: list[dict[str, Any]] = []
+    reader = csv.DictReader(io.StringIO(text or ""))
+    for row in reader:
+        elat = _csv_num(row.get("latitude"))
+        elon = _csv_num(row.get("longitude"))
+        dist = None
+        if elat is not None and elon is not None:
+            dist = round(_km(lat, lon, elat, elon), 0)
+        out.append(
+            {
+                "id": (row.get("id") or "").strip() or None,
+                "mag": _csv_num(row.get("mag")),
+                "magType": (row.get("magType") or "").strip() or None,
+                "place": (row.get("place") or "").strip() or None,
+                "time_iso": (row.get("time") or "").strip() or None,
+                "updated_iso": (row.get("updated") or "").strip() or None,
+                "lat": elat,
+                "lon": elon,
+                "depth_km": _csv_num(row.get("depth")),
+                "distance_km": dist,
+                "nst": _csv_num(row.get("nst")),
+                "gap": _csv_num(row.get("gap")),
+                "dmin": _csv_num(row.get("dmin")),
+                "rms": _csv_num(row.get("rms")),
+                "net": (row.get("net") or "").strip() or None,
+                "type": (row.get("type") or "").strip() or None,
+                "locationSource": (row.get("locationSource") or "").strip() or None,
+                "magSource": (row.get("magSource") or "").strip() or None,
+                "horizontalError": _csv_num(row.get("horizontalError")),
+                "depthError": _csv_num(row.get("depthError")),
+                "magError": _csv_num(row.get("magError")),
+                "magNst": _csv_num(row.get("magNst")),
+                "status": (row.get("status") or "").strip() or None,
+                "source": "USGS FDSN CSV (India–Indian Ocean box; NCS has no public JSON)",
+                "tsunami_flag": False,
+            }
+        )
+    return out
+
+
 async def recent_quakes(lat: float, lon: float, limit: int = 8) -> tuple[list[dict[str, Any]], str]:
-    hit = cache.get("usgs:india")
+    hit = cache.get("usgs:india:csv")
     if hit is None:
         params = {
-            "format": "geojson",
+            "format": "csv",
             "minlatitude": 5,
             "maxlatitude": 38,
             "minlongitude": 60,
             "maxlongitude": 100,
             "orderby": "time",
             "limit": 20,
+            "starttime": (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%d"),
+        }
+        try:
+            r = await client().get(USGS, params=params, timeout=10.0)
+            r.raise_for_status()
+            hit = r.text
+            cache.set("usgs:india:csv", hit, 10 * 60)
+        except Exception:
+            return [], "error"
+    out = parse_usgs_csv(hit if isinstance(hit, str) else "", lat, lon)
+    out.sort(
+        key=lambda x: (
+            x.get("nst") in (None, 0),
+            x.get("gap") is None,
+            x.get("distance_km") is None,
+            x.get("distance_km") or 1e9,
+        )
+    )
+    emsc, _ = await emsc_quakes(lat, lon, limit=limit)
+    merged = _merge_quakes(out, emsc)
+    return merged[:limit], "ok" if merged else "empty"
+
+
+EMSC = "https://www.seismicportal.eu/fdsnws/event/1/query"
+
+
+def _merge_quakes(a: list[dict[str, Any]], b: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for row in a + b:
+        mag = row.get("mag")
+        t = row.get("time_iso") or row.get("time")
+        place = (row.get("place") or "")[:40]
+        key = f"{t}|{mag}|{place}"
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
+async def emsc_quakes(lat: float, lon: float, limit: int = 8) -> tuple[list[dict[str, Any]], str]:
+    hit = cache.get("emsc:india")
+    if hit is None:
+        params = {
+            "format": "json",
+            "minlat": 5,
+            "maxlat": 38,
+            "minlon": 60,
+            "maxlon": 100,
+            "orderby": "time",
+            "limit": 20,
             "starttime": (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d"),
         }
         try:
-            r = await client().get(USGS, params=params, timeout=8.0)
+            r = await client().get(EMSC, params=params, timeout=8.0)
             r.raise_for_status()
             hit = r.json()
-            cache.set("usgs:india", hit, 10 * 60)
+            cache.set("emsc:india", hit, 10 * 60)
         except Exception:
             return [], "error"
     feats = hit.get("features") or []
@@ -68,23 +176,27 @@ async def recent_quakes(lat: float, lon: float, limit: int = 8) -> tuple[list[di
         time_iso = None
         if isinstance(ms, (int, float)):
             time_iso = datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
+        elif isinstance(ms, str):
+            time_iso = ms
         out.append(
             {
-                "id": f.get("id"),
+                "id": f.get("id") or props.get("unid"),
                 "mag": mag,
-                "place": props.get("place"),
+                "magType": props.get("magtype") or props.get("magType"),
+                "place": props.get("flynn_region") or props.get("place"),
                 "time": ms,
                 "time_iso": time_iso,
-                "url": props.get("url"),
                 "lat": elat,
                 "lon": elon,
                 "depth_km": depth,
                 "distance_km": dist,
-                "source": "USGS FDSN (India–Indian Ocean box; NCS has no public JSON)",
-                "tsunami_flag": bool(props.get("tsunami")),
+                "net": props.get("auth") or "EMSC",
+                "type": props.get("type") or "earthquake",
+                "status": props.get("status"),
+                "source": "EMSC FDSN (India–Indian Ocean box; not NCS)",
+                "tsunami_flag": False,
             }
         )
-    out.sort(key=lambda x: (x.get("distance_km") is None, x.get("distance_km") or 1e9))
     return out[:limit], "ok"
 
 

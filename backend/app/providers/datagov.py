@@ -175,7 +175,7 @@ async def nearest_aqi(
 ) -> tuple[dict[str, Any] | None, str]:
     if not _key():
         return None, "missing_key"
-    cache_key = f"ogd:aqi:{round(lat, 2)}:{round(lon, 2)}:{(place or district or '').lower()}"
+    cache_key = f"ogd:aqi2:{round(lat, 2)}:{round(lon, 2)}:{(place or district or '').lower()}"
     hit = cache.get(cache_key)
     if hit is not None:
         return hit, "ok"
@@ -192,6 +192,36 @@ async def nearest_aqi(
         if not pid or avg is None:
             continue
         pollutants[pid] = avg
+    if "NH3" not in pollutants:
+        extra: list[dict[str, Any]] = []
+        for st in _states(state):
+            payload, stt = await resource(AQI_ID, limit=200, filters={"state": st, "pollutant_id": "NH3"})
+            if stt == "ok" and payload:
+                extra.extend(payload.get("records") or [])
+            if extra:
+                break
+        if not extra:
+            payload, stt = await resource(AQI_ID, limit=400, filters={"pollutant_id": "NH3"})
+            if stt == "ok" and payload:
+                extra.extend(payload.get("records") or [])
+        best_nh3 = None
+        best_d = 1e18
+        for rec in list(recs) + extra:
+            pid = (rec.get("pollutant_id") or "").upper().replace(".", "")
+            if pid != "NH3":
+                continue
+            avg = _num(rec.get("avg_value") or rec.get("pollutant_avg"))
+            rlat, rlon = _num(rec.get("latitude")), _num(rec.get("longitude"))
+            if avg is None:
+                continue
+            d = 0.0
+            if rlat is not None and rlon is not None:
+                d = _haversine_km(lat, lon, rlat, rlon)
+            if d < best_d:
+                best_d = d
+                best_nh3 = avg
+        if best_nh3 is not None:
+            pollutants["NH3"] = best_nh3
     if not pollutants:
         return None, "empty"
     value = max(pollutants.values())

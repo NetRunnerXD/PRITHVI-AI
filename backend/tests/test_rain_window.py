@@ -62,7 +62,7 @@ async def test_daily_window_uses_cached_forecast(monkeypatch):
 
     monkeypatch.setattr(open_meteo, "client", lambda: Boom())
     cache.set(
-        "om:fc3:22.07:88.07",
+        "om:fc4:22.07:88.07",
         {
             "current": {"temperature_2m": 30},
             "hourly": {"precipitation": [0]},
