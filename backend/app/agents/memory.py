@@ -19,6 +19,8 @@ class TurnState:
     asked: str | None = None
     catalog: bool = False
     pin: dict[str, Any] | None = None
+    plan_id: str | None = None
+    evidence_root: str | None = None
 
 
 _STORE: dict[str, TurnState] = {}

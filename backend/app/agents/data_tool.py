@@ -16,6 +16,7 @@ NEEDS = (
     "rain_window",
     "forecast",
     "aqi",
+    "quality",
     "mandi",
     "warnings",
     "compare",
@@ -57,7 +58,7 @@ SCHEMA = {
 
 HOLES = {
     "radar": "No radar ingest. Nowcast is a 0–6 h decision object on Open-Meteo hours.",
-    "insat": "INSAT-3D HEM HDF needs MOSDAC approval. Live nowcast uses IMD public INSAT IR JPEG + NASA GIBS IMERG.",
+    "insat": "INSAT-3D HEM HDF needs a cached MOSDAC file. Live nowcast uses IMD public INSAT IR JPEG + NASA GIBS IMERG unless HEM is ready.",
     "lightning": "Live strokes from Weatherbit when WEATHERBIT_API_KEY is set.",
     "ncs": "NCS has no public JSON. Seismic is USGS FDSN.",
     "imd_rest": "api.imd.gov.in returns 401. Official warnings are IMD CAP RSS.",
@@ -182,6 +183,23 @@ class DataLib:
                 "available": bool(st == "ok" and aqi and aqi.get("value") is not None) or om is not None,
                 "note": None if st == "ok" else st,
             }
+        if need == "quality":
+            snap = await self._snap(loc if place else None)
+            q = snap.quality or {}
+            air = q.get("air") or {}
+            return strip_forbidden(
+                {
+                    "need": "quality",
+                    "place": loc.place_name or loc.district,
+                    "air": air,
+                    "climate": q.get("climate"),
+                    "moon": q.get("moon"),
+                    "marine": q.get("marine"),
+                    "seismic": (q.get("seismic") or [])[:5],
+                    "gdacs": q.get("gdacs") or [],
+                    "mosdac": q.get("mosdac") or {},
+                }
+            )
         if need == "mandi":
             snap = await self._snap(loc if place else None)
             return {

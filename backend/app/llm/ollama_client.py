@@ -32,10 +32,15 @@ def _parse_message(msg: Any) -> dict[str, Any]:
     return {"content": (getattr(msg, "content", None) or "").strip(), "tool_calls": tool_calls}
 
 
-async def chat(messages: list[dict[str, Any]], tools: list[dict] | None = None) -> dict[str, Any]:
+async def chat(
+    messages: list[dict[str, Any]],
+    tools: list[dict] | None = None,
+    *,
+    model: str | None = None,
+) -> dict[str, Any]:
     s = get_settings()
     kwargs: dict[str, Any] = {
-        "model": s.ollama_model,
+        "model": model or s.ollama_model,
         "messages": messages,
         "temperature": 0.2,
     }

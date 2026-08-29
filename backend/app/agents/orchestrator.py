@@ -8,6 +8,13 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from app.agents.binder import looks_like_dump
+from app.agents.counterfactual import detect_scale, scale_forecast
+from app.agents.graph import route as graph_route
+from app.agents.ledger import ledger_for
+from app.agents.post import BEYOND_SKILL, hedge, severity
+from app.agents.resolved import as_dict as resolved_dict
+from app.agents.resolved import build as build_resolved
+from app.agents.triage import classify as triage_classify
 from app.agents.claims import check_claims
 from app.agents.data_tool import (
     SCHEMA as DATA_SCHEMA,
@@ -162,6 +169,34 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
 
     prior = mem_load(payload.conversation_id)
     plan = interpret(message_en)
+    tri = triage_classify(message_en, plan)
+    if tri.kind == "emergency":
+        yield {
+            "type": "meta",
+            "locale": locale,
+            "output_locale": out_locale,
+            "location": loc.model_dump(),
+            "question_en": message_en,
+            "triage": "emergency",
+            "needed": [],
+            "gate": "emergency",
+        }
+        yield {
+            "type": "final",
+            "message": {
+                "id": uuid.uuid4().hex[:12],
+                "role": "assistant",
+                "content": tri.message,
+                "content_en": tri.message,
+                "locale": out_locale,
+                "blocks": [],
+                "suggestions": [],
+                "tool_trace": [],
+                "citations": [],
+                "triage": "emergency",
+            },
+        }
+        return
     place = plan.asked or mentioned_place(message_en) or mentioned_place(original)
     resolved = resolve_named_place(place) if place else None
     prior_pin = None
@@ -278,6 +313,24 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             gate.needs = ["rank"]
             gate.states = more_states
             needed = ["rank"]
+    needed, graph_peak = graph_route(message_en, needed)
+    if gate.mode == "data" and graph_peak < 0.45 and not needed:
+        needed = ["capability"]
+        gate.needs = ["capability"]
+    beyond = False
+    if window_hint and window_hint.get("end"):
+        from datetime import date, timedelta
+
+        from app.agents.dates import today_ist
+
+        try:
+            end_d = date.fromisoformat(str(window_hint["end"])[:10])
+            beyond = end_d > today_ist() + timedelta(days=16)
+        except ValueError:
+            beyond = False
+    if beyond and "rain_window" in needed:
+        needed = [n for n in needed if n != "rain_window"]
+        gate.needs = list(needed)
     if gate.mode == "refuse" and gate.refuse:
         mem_save(
             payload.conversation_id,
@@ -326,6 +379,13 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         }
         return
 
+    rq = build_resolved(
+        message_en,
+        loc,
+        window=window_hint,
+        inherited_place=bool(inherit),
+        new_place=bool(resolved),
+    )
     yield {
         "type": "meta",
         "locale": locale,
@@ -334,6 +394,8 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         "question_en": message_en,
         "window": window_hint,
         "needed": needed,
+        "triage": tri.kind,
+        "resolved": resolved_dict(rq),
         "translation": {"inbound": incoming.as_dict()},
     }
     if incoming.engine not in {"identity", "disabled"} and incoming.ok:
@@ -433,12 +495,18 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             hint_bits = []
             if window_hint:
                 hint_bits.append(f"Named dates (use only if you call rain_window): {window_hint['start']} to {window_hint['end']}.")
-            hint_bits.append(
-                f"Answer only for {loc.label} "
-                f"(focus {loc.place_name or loc.district}, district {loc.district}). "
-                "Do not substitute Haldia or any other district unless the user named it in this question. "
-                "Do not say you could not find data if figures are provided below."
-            )
+            if needed or tri.kind == "data":
+                hint_bits.append(
+                    f"Answer only for {loc.label} "
+                    f"(focus {loc.place_name or loc.district}, district {loc.district}). "
+                    "Do not substitute Haldia or any other district unless the user named it in this question. "
+                    "Do not say you could not find data if figures are provided below."
+                )
+            else:
+                hint_bits.append(
+                    "This is chit-chat. Do not fetch weather. Do not mention a town unless the user named one. "
+                    "Greet briefly and say you can look up Indian weather, flood, AQI, mandi, and nowcast when asked."
+                )
             if place:
                 hint_bits.append(f"The user named {place}.")
             pre_quote = quote_facts(collected)
@@ -456,8 +524,12 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             )
             rounds = 0
             nudged = False
+            use_tools = bool(needed) or tri.kind == "data"
             while rounds < 5:
-                resp = await ollama_client.chat(messages, tools=[DATA_SCHEMA])
+                resp = await ollama_client.chat(
+                    messages,
+                    tools=[DATA_SCHEMA] if use_tools else None,
+                )
                 if resp.get("tools_stripped"):
                     yield {"type": "notice", "message": "Ollama rejected tool schemas; reading a text data: line if present."}
                     line = parse_text_call(resp.get("content") or "")
@@ -569,9 +641,11 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     else:
         yield {
             "type": "notice",
-            "message": f"Ollama not reachable ({ollama_msg}). Start `ollama serve` with qwen2.5.",
+            "message": f"Ollama not reachable ({ollama_msg}). Start `ollama serve` (qwen2.5:3b on 6 GB GPU).",
         }
 
+    if tri.kind == "chat" and not needed and parse_text_call(english_llm or ""):
+        english_llm = ""
     if looks_like_dump(english_llm):
         english_llm = ""
         if ollama_ok:
@@ -625,6 +699,16 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         yield pack["start"]
         yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
 
+    cf_scale = detect_scale(message_en)
+    if cf_scale and "forecast" in collected and isinstance(collected["forecast"], dict):
+        collected["forecast"] = scale_forecast(collected["forecast"], cf_scale)
+        collected["counterfactual"] = {
+            "need": "counterfactual",
+            "scale": cf_scale,
+            "precip_next_3d_mm": collected["forecast"].get("precip_next_3d_mm"),
+            "note": collected["forecast"].get("note"),
+        }
+
     payloads = list(collected.values())
     content_en, rejected = check_claims(english_llm, payloads)
     asked_name = place or (prior.asked if prior and inherit else None) or loc.place_name or loc.district
@@ -654,6 +738,23 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                 "and field decisions — and I can look up real figures when you need them. "
                 "What would you like to know?"
             )
+    if beyond:
+        content_en = f"{content_en}\n\n{BEYOND_SKILL}".strip() if content_en else BEYOND_SKILL
+    if needed:
+        try:
+            from app.rag.store import retrieve as rag_retrieve
+
+            topic = (needed or ["forecast"])[0]
+            guide = rag_retrieve(topic, "en")
+            snippet = (guide.get("text") or "").strip().split("\n")[0]
+            if snippet and not snippet.startswith("#") and len(snippet) < 220 and snippet not in (content_en or ""):
+                content_en = f"{content_en}\n\n{snippet}".strip()
+        except Exception:
+            pass
+    content_en = hedge(content_en, collected)
+    content_en = severity(content_en, collected)
+    led = ledger_for(collected)
+    plan_id = f"{payload.conversation_id or 'anon'}:{uuid.uuid4().hex[:8]}"
 
     if rejected and rejected != ["dump"]:
         yield {"type": "notice", "message": f"Ungrounded figures replaced: {rejected[:8]}"}
@@ -713,6 +814,8 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             ),
             catalog=bool(plan.catalog or (prior.catalog if prior and inherit else False)),
             pin=pin_now.model_dump(),
+            plan_id=plan_id,
+            evidence_root=led.get("root"),
         ),
     )
 
@@ -727,6 +830,9 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         "suggestions": suggestions,
         "tool_trace": traces,
         "citations": [{"tool": k, "field": "need", "value": (v or {}).get("need") if isinstance(v, dict) else k} for k, v in collected.items()],
+        "evidence_root": led.get("root"),
+        "plan_id": plan_id,
+        "triage": tri.kind,
         "translation": {
             "engine": engine,
             "src": "en",
