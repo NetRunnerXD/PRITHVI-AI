@@ -37,7 +37,7 @@ Default focus: **Haldia, Purba Medinipur, West Bengal** (`22.0667, 88.0698`). Na
 
 - **India-only UX.** Gazetteer + geocoding are India. Do not add global city search as default.
 - **LLM never invents numbers.** Forecasts, risk %, liters, AQI, mandi rupees, nowcast mm, and **date-window daily mm** come from providers/ML/tools. The LLM orchestrates tools and writes prose. For “rain in Haldia 23–28 August” the answer is `get_rain_window` rows (or the deterministic table built from them), never free-form millimetres.
-- **Local Ollama only** (`qwen2.5` via OpenAI-compatible API). Do **not** pull Mixtral / Llama 3.1.
+- **Local Ollama.** Default main model `qwen2.5:3b` (fits RTX 3060 6 GB with KV headroom). Optional CPU triage `qwen2.5:0.5b`. Advisor is a zero-trust kernel: LLM narrates; `data()` + `check_claims` own millimetres.
 - **No IMD REST without IP whitelist.** `api.imd.gov.in` returns 401. Use **IMD CAP RSS** for official warnings.
 - **Do not commit API keys.** `DATA_GOV_IN_API_KEY` and others live in `backend/.env` (gitignored).
 - **Open-Meteo has no earthquake or tsunami products.** Seismic = USGS FDSN. Tsunami = INCOIS ITEWS. Label sources honestly.
@@ -87,7 +87,7 @@ Ollama (optional; needed for Advisor prose):
 
 ```
 ollama serve
-# model already expected: qwen2.5
+# ollama pull qwen2.5:3b   (and qwen2.5:0.5b for triage)
 ```
 
 - The Next app calls `NEXT_PUBLIC_API_BASE` (default `http://127.0.0.1:8000`) over CORS. Empty base uses same-origin `/api` plus an optional Next rewrite.
@@ -106,10 +106,14 @@ ollama serve
 ```
 Any client (frontend/ or a new web / React Native folder using clients/js)
     └─ HTTP + CORS → FastAPI (:8000)   JSON only, no web assets
-                          ├─ /                 service card
-                          ├─ /docs             Swagger
+                          ├─ /                 service card (lists surfaces)
+                          ├─ /docs             Swagger (canonical /api contract)
                           ├─ /openapi.json     contract
-                          ├─ /api              route catalog
+                          ├─ /api              route catalog (also /v1, /web/v1, /app/v1)
+                          ├─ /api/*            canonical — local Next.js, pytest, clients/js
+                          ├─ /v1/*             same handlers, public version prefix
+                          ├─ /web/v1/*         same handlers for a website
+                          ├─ /app/v1/*         same handlers for Expo / native
                           ├─ /api/health
                           ├─ /api/dashboard    snapshot
                           ├─ /api/nowcast           locked 0–6 h object
@@ -125,6 +129,8 @@ Any client (frontend/ or a new web / React Native folder using clients/js)
                           ├─ /api/chat         SSE ← agents.orchestrator.run_agent
                           └─ providers + ml + science + cache (in-memory TTL)
 ```
+
+One process serves web and app together. Do not change frontend URLs: they stay on `/api`. App clients may use `/app/v1` (or keep `/api`). Optional header `X-Rituchakra-Client: web|app|local|v1` is echoed as `X-Client-Surface`.
 
 **Snapshot is the core object.** Almost every dashboard widget and most tools read a `DashboardSnapshot`.
 
@@ -169,12 +175,15 @@ Location
 | `services/scan.py` | Rank districts **in that state only**. A town name is `unknown_state` (empty), never all-India. |
 | `services/locality.py` | Keep a bulletin on the pin: drop Sachet/CAP rows that name another state; Hooghly port only on the Hooghly belt |
 | `services/compare.py` | Two-district snapshot delta |
-| `providers/open_meteo.py` | forecast (TTL 90s, `past_days=1` for hourly history, extra CAPE/dew/gust/cloud layers), flood, air (`past_days=7`), marine, geocode, **`daily_window`** (forecast + archive by `start_date`/`end_date`) |
+| `providers/open_meteo.py` | forecast (TTL 90s, quality-variable hourly/daily including soil layers + upper winds), flood, air (CAMS AQI/PM/gases/dust/UV/pollen), marine (swell/SST/currents), geocode, **`daily_window`** |
 | `providers/imd.py` | CAP RSS + humanize_cap_title + official REST (usually 401) |
 | `providers/datagov.py` | CPCB NAQI + Agmarknet |
 | `providers/nasa_power.py` | Daily climatology |
-| `providers/hazards.py` | USGS FDSN + INCOIS ITEWS JSON catalog |
-| `providers/openaq.py` | Historical PM2.5 |
+| `providers/hazards.py` | USGS FDSN (full GeoJSON fields) + EMSC FDSN + INCOIS ITEWS |
+| `providers/gdacs.py` | GDACS India-box EQ/FL/TC/TS events |
+| `providers/mosdac.py` | Login probe; HEM millimetres only if a file is cached (never invented) |
+| `providers/openaq.py` | Historical PM2.5/PM10/NO2/SO2/O3/CO |
+| `science/astro.py` | Local moon phase + rise/set |
 | `providers/aikosh.py` | Dataset search if key present |
 | `providers/cwc.py` | Nearest CWC gauge lookup (static table, not a live hydrograph) |
 | `providers/sachet.py` | NDMA Sachet CAP RSS (state + India) |
@@ -527,7 +536,7 @@ When changing `extract`, `all_risks`, `compose_indic`, CAP titles, nowcast milli
 | Variable | Purpose |
 |---|---|
 | `OLLAMA_BASE_URL` | default `http://127.0.0.1:11434/v1` |
-| `OLLAMA_MODEL` | `qwen2.5` |
+| `OLLAMA_MODEL` | `qwen2.5:3b` (6 GB GPU). `OLLAMA_TRIAGE_MODEL=qwen2.5:0.5b` optional |
 | `TRANSLATE_ENABLED` | default true; Google gtx + MyMemory, no key |
 | `DATA_GOV_IN_API_KEY` | CPCB + Agmarknet |
 | `WEATHERBIT_API_KEY` | Current / historical lightning |
