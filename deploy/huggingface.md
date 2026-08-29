@@ -10,11 +10,11 @@ Public URL after first build:
 
 ## One-time
 
-1. Hugging Face account → [token](https://huggingface.co/settings/tokens) with **write**.
-2. GitHub repo **Settings → Secrets and variables → Actions**:
+1. Hugging Face account → [token](https://huggingface.co/settings/tokens): **classic write**, or fine-grained with **Repositories write** and **Spaces write**. The value starts with `hf_`.
+2. GitHub repo **Settings → Secrets and variables → Actions → Repository secrets** (not an Environment, not Hugging Face Space secrets):
    - `HF_TOKEN` — that token
-   - optional `HF_SPACE` — default `NetRunnerXD/rituchakra-api`
-3. Create the Space on first Action run (`create_repo` exist_ok).
+   - optional `HF_SPACE` — `your-hf-username/rituchakra-api` (defaults to whoever `whoami` returns)
+3. Actions → **Deploy API (Hugging Face Space)** → Run workflow. The job prints `huggingface user=...` and the Space URL.
 4. Space **Settings → Variables and secrets** (Advisor + CORS):
 
 ```
