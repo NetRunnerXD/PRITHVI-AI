@@ -2,13 +2,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
 
-from app.api import chat, dashboard, geo
+from app.api.meta import service_card
+from app.api.surfaces import infer_surface, mount_surfaces
 from app.config import get_settings
-from app.llm import ollama_client
 from app.providers.http import aclose
-from app.services.location_svc import resolve_location
 
 
 @asynccontextmanager
@@ -24,8 +22,10 @@ app = FastAPI(
     version=settings.api_version,
     description=(
         "India-first environmental intelligence HTTP API. "
-        "JSON only — no web assets. Any browser, Next.js, or React Native client "
-        "can call these routes. The Advisor LLM never invents millimetres, litres, "
+        "JSON only — no web assets. Canonical routes live under /api "
+        "(local dashboard and tests). The same handlers are also served at "
+        "/v1, /web/v1, and /app/v1 so a website and a phone app can call this "
+        "process together. The Advisor LLM never invents millimetres, litres, "
         "AQI, or rupees; those come from providers and models."
     ),
     lifespan=lifespan,
@@ -38,7 +38,7 @@ app = FastAPI(
 _cors_kwargs: dict = {
     "allow_methods": ["*"],
     "allow_headers": ["*"],
-    "expose_headers": ["X-API-Version"],
+    "expose_headers": ["X-API-Version", "X-Client-Surface"],
 }
 if settings.cors_allow_all:
     _cors_kwargs["allow_origins"] = ["*"]
@@ -50,125 +50,46 @@ else:
         _cors_kwargs["allow_origin_regex"] = settings.cors_origin_regex
 app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
-app.include_router(dashboard.router, prefix="/api", tags=["snapshot"])
-app.include_router(geo.router, prefix="/api", tags=["geo"])
-app.include_router(chat.router, prefix="/api", tags=["advisor"])
+mount_surfaces(app)
 
 
 @app.middleware("http")
 async def stamp_version(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-API-Version"] = settings.api_version
+    response.headers["X-Client-Surface"] = infer_surface(
+        request.url.path,
+        request.headers.get("x-rituchakra-client"),
+    )
     return response
 
 
-def _service_card() -> dict:
-    return {
-        "name": "Rituchakra",
-        "service": "rituchakra-api",
-        "version": settings.api_version,
-        "ok": True,
-        "docs": "/docs",
-        "redoc": "/redoc",
-        "openapi": "/openapi.json",
-        "health": "/api/health",
-        "bootstrap": "/api/bootstrap",
-        "catalog": "/api",
-        "note": "Standalone JSON API. No frontend assets. Point a web or mobile client at this origin.",
-    }
-
-
-@app.get("/", tags=["meta"], summary="Service card")
-async def root():
-    return _service_card()
-
-
-@app.get("/api", tags=["meta"], summary="Published route catalog")
-async def api_catalog():
+def _catalog_body() -> dict:
     routes: list[dict] = []
     for route in app.routes:
         methods = getattr(route, "methods", None)
         path = getattr(route, "path", None)
-        if not methods or not path or not str(path).startswith("/api"):
+        if not methods or not path:
+            continue
+        p = str(path)
+        if not (p.startswith("/api") or p.startswith("/v1") or p.startswith("/web/") or p.startswith("/app/")):
             continue
         verb = sorted(m for m in methods if m not in {"HEAD", "OPTIONS"})
         if not verb:
             continue
-        routes.append({"methods": verb, "path": path})
+        routes.append({"methods": verb, "path": p})
     routes.sort(key=lambda r: (r["path"], r["methods"]))
-    return {**_service_card(), "routes": routes}
+    return {**service_card(), "routes": routes}
 
 
-@app.head("/api/health", tags=["meta"], summary="Liveness probe")
-async def health_head():
-    return Response(status_code=200)
+@app.get("/", tags=["meta"], summary="Service card")
+async def root():
+    return service_card()
 
 
-@app.get("/api/bootstrap", tags=["meta"], summary="Client boot pack")
-async def bootstrap():
-    """First request for web or Android: pin, locales, flags, and route map."""
-    ollama_ok, ollama_msg = await ollama_client.ping()
-    loc = resolve_location()
-    return {
-        **_service_card(),
-        "default_location": loc.model_dump(),
-        "locales": ["en", "hi", "bn"],
-        "tabs": [
-            "overview",
-            "nowcast",
-            "alerts",
-            "map",
-            "forecast",
-            "predicted",
-            "risks",
-            "market",
-            "advisor",
-            "settings",
-        ],
-        "public_base_url": settings.public_base_url or None,
-        "ollama": {"ok": ollama_ok, "detail": ollama_msg, "model": settings.ollama_model},
-        "keys": {
-            "imd_api_key": bool(settings.imd_api_key),
-            "aikosh_api_key": bool(settings.aikosh_api_key),
-            "data_gov_in_api_key": bool(settings.data_gov_in_api_key),
-            "weatherbit_api_key": bool(settings.weatherbit_api_key),
-        },
-        "capabilities": {
-            "sse_chat": True,
-            "json_chat": True,
-            "storm_map": True,
-            "nowcast_live": True,
-            "geo_india_only": True,
-        },
-        "chat": {
-            "sse": "POST /api/chat with Accept: text/event-stream",
-            "json": "POST /api/chat with {\"stream\": false} or Accept: application/json",
-        },
-    }
-
-
-@app.get("/api/health", tags=["meta"], summary="Liveness")
-async def health():
-    ollama_ok, ollama_msg = await ollama_client.ping()
-    loc = resolve_location()
-    return {
-        **_service_card(),
-        "default_location": loc.model_dump(),
-        "ollama": {"ok": ollama_ok, "detail": ollama_msg, "model": settings.ollama_model},
-        "keys": {
-            "imd_api_key": bool(settings.imd_api_key),
-            "aikosh_api_key": bool(settings.aikosh_api_key),
-            "data_gov_in_api_key": bool(settings.data_gov_in_api_key),
-            "weatherbit_api_key": bool(settings.weatherbit_api_key),
-        },
-        "notes": {
-            "imd_rest": "api.imd.gov.in requires IP whitelist — CAP alerts are used until then.",
-            "inject_keys": "See backend/.env.example",
-            "clients": "Any origin allowed by CORS_ORIGINS / CORS_ORIGIN_REGEX. No Next.js rewrite required.",
-        },
-    }
-
-
-@app.get("/api/ready", tags=["meta"], summary="Readiness")
-async def ready():
-    return JSONResponse({"ok": True, "service": "rituchakra-api", "version": settings.api_version})
+@app.get("/api", tags=["meta"], summary="Published route catalog")
+@app.get("/v1", tags=["meta"], summary="Versioned route catalog", include_in_schema=False)
+@app.get("/web/v1", tags=["meta"], summary="Web surface catalog", include_in_schema=False)
+@app.get("/app/v1", tags=["meta"], summary="App surface catalog", include_in_schema=False)
+async def api_catalog():
+    return _catalog_body()

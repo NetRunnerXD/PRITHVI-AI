@@ -57,6 +57,8 @@ def test_standalone_service_card_and_openapi():
     assert body["service"] == "rituchakra-api"
     assert body["docs"] == "/docs"
     assert body["openapi"] == "/openapi.json"
+    assert body["surfaces"]["local"]["prefix"] == "/api"
+    assert body["surfaces"]["app"]["prefix"] == "/app/v1"
     catalog = client.get("/api")
     assert catalog.status_code == 200
     paths = {row["path"] for row in catalog.json()["routes"]}
