@@ -45,6 +45,12 @@ class CurrentConditions(BaseModel):
     om_us_aqi: int | None = None
     om_eu_aqi: int | None = None
     om_pm25: float | None = None
+    apparent_temp_c: float | None = None
+    dew_point_c: float | None = None
+    pressure_msl_hpa: float | None = None
+    uv_index: float | None = None
+    sst_c: float | None = None
+    swell_height_m: float | None = None
 
 
 class Anomaly(BaseModel):
@@ -102,7 +108,7 @@ class MapState(BaseModel):
 
 class LiveWatch(BaseModel):
     generated_at: str = ""
-    refresh_s: int = 60
+    refresh_s: int = 300
     sky: dict = {}
     wind: dict = {}
     marine: dict = {}
@@ -129,3 +135,4 @@ class DashboardSnapshot(BaseModel):
     predictions: dict = {}
     live: LiveWatch = Field(default_factory=LiveWatch)
     science: dict = {}
+    quality: dict = {}

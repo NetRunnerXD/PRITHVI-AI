@@ -14,7 +14,8 @@ class Settings(BaseSettings):
     )
 
     ollama_base_url: str = "http://127.0.0.1:11434/v1"
-    ollama_model: str = "qwen2.5"
+    ollama_model: str = "qwen2.5:3b"
+    ollama_triage_model: str = "qwen2.5:0.5b"
     ollama_api_key: str = "ollama"
 
     imd_api_key: str | None = None
@@ -30,6 +31,7 @@ class Settings(BaseSettings):
     nasa_earthdata_user: str | None = None
     nasa_earthdata_pass: str | None = None
     openweather_api_key: str | None = None
+    waqi_token: str | None = None
     weatherbit_api_key: str | None = None
     eumetsat_token: str | None = None
     lightning_feed_url: str | None = None
@@ -47,7 +49,7 @@ class Settings(BaseSettings):
     cache_dir: str = str(ROOT / ".cache")
     # Empty = derive from the incoming request. Set when publishing behind a public host.
     public_base_url: str = ""
-    api_version: str = "0.3.0"
+    api_version: str = "0.4.0"
     # Comma list, or * for any browser / React Native origin.
     cors_origins: str = (
         "http://localhost:3000,http://127.0.0.1:3000,"
@@ -61,7 +63,7 @@ class Settings(BaseSettings):
         r"172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?"
     )
 
-    user_agent: str = "Rituchakra/0.3 (India environmental intelligence; local-dev)"
+    user_agent: str = "Rituchakra/0.4 (India environmental intelligence; local-dev)"
 
     @property
     def cors_origin_list(self) -> list[str]:

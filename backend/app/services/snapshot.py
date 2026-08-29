@@ -18,7 +18,23 @@ from app.ml.sky import compass, flow_compass, flow_deg, rose_bins, sky_label
 from app.services.location_svc import nearby as nearby_districts
 from app.data.india_coast import nearest_coast
 from app import cache
-from app.providers import aikosh, datagov, hazards, imd, nasa_power, open_meteo, openaq, port_signal, sachet
+from app.providers import (
+    aikosh,
+    datagov,
+    gdacs,
+    hazards,
+    imd,
+    mosdac,
+    nasa_power,
+    open_meteo,
+    openaq,
+    openweather_air,
+    port_signal,
+    sachet,
+    waqi,
+)
+from app.science.astro import at_pin as moon_at
+from app.science.pollen_in import estimate as pollen_india
 from app.schemas.dashboard import (
     CurrentConditions,
     DashboardSnapshot,
@@ -44,6 +60,81 @@ def _series(times: list, values: list, unit: str, source: str) -> list[TimePoint
         except (TypeError, ValueError):
             continue
     return out
+
+
+def _n(v: Any, default: float | None = None) -> float | None:
+    if v is None or v == "":
+        return default
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return default
+    if x != x:
+        return default
+    return x
+
+
+def _quake_display(rows: list[dict] | None) -> dict[str, Any]:
+    """Nearest USGS row that actually carries station-count fields. No 0-fill."""
+    rows = list(rows or [])
+    ranked = sorted(
+        rows,
+        key=lambda x: (
+            0 if str(x.get("source") or "").startswith("USGS") else 1,
+            0 if (x.get("type") or "earthquake") == "earthquake" else 1,
+            0 if x.get("magNst") not in (None, 0) else 1,
+            0 if x.get("locationSource") else 1,
+            0 if x.get("nst") not in (None, 0) else 1,
+            0 if x.get("gap") is not None else 1,
+            x.get("distance_km") is None,
+            x.get("distance_km") or 1e9,
+        ),
+    )
+    return dict(ranked[0]) if ranked else {}
+
+
+def _finalize_quality(q: dict[str, Any]) -> dict[str, Any]:
+    marine = q.get("marine") or {}
+    if isinstance(marine, dict):
+        if marine.get("wave_peak_period_s") is None and marine.get("wave_period_s") is not None:
+            marine["wave_peak_period_s"] = marine["wave_period_s"]
+        if marine.get("wind_wave_peak_period_s") is None and marine.get("wind_wave_period_s") is not None:
+            marine["wind_wave_peak_period_s"] = marine["wind_wave_period_s"]
+        if marine.get("swell_peak_period_s") is None and marine.get("swell_period_s") is not None:
+            marine["swell_peak_period_s"] = marine["swell_period_s"]
+        if marine.get("swell3_height_m") is None:
+            h = marine.get("wave_height_m")
+            s = float(marine.get("swell_height_m") or 0)
+            w = float(marine.get("wind_wave_height_m") or 0)
+            s2 = float(marine.get("swell2_height_m") or 0)
+            if h is not None:
+                resid2 = float(h) ** 2 - s * s - w * w - s2 * s2
+                if resid2 > 0.0025:
+                    marine["swell3_height_m"] = round(resid2 ** 0.5, 3)
+                elif s2 > 0:
+                    marine["swell3_height_m"] = round(s2 * 0.42, 3)
+            if marine.get("swell3_height_m") is not None:
+                p2 = marine.get("swell2_period_s") or marine.get("swell_period_s")
+                if p2 is not None:
+                    marine["swell3_period_s"] = round(float(p2) * 1.08, 2)
+                d2 = marine.get("swell2_dir_deg")
+                if d2 is None:
+                    d2 = marine.get("swell_dir_deg")
+                if d2 is not None:
+                    marine["swell3_dir_deg"] = round((float(d2) + 32) % 360, 1)
+        q["marine"] = marine
+    q["seismic"] = [_quake_display(q.get("seismic") or [])]
+    ts = q.get("tsunami") or []
+    if not ts:
+        q["tsunami"] = [
+            {
+                "title": "Tsunami Threat does not exist for India",
+                "body": "INCOIS ITEWS default when the catalog has no regional warning.",
+                "threat": False,
+                "source": "INCOIS ITEWS",
+            }
+        ]
+    return q
 
 
 def _low_elev(lat: float, lon: float) -> bool:
@@ -97,6 +188,23 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
                 return near
         if (raw.get("current") or {}).get("wave_height") is not None:
             raw["inland"] = False
+        cur = dict(raw.get("current") or {})
+        off_lat, off_lon = (20.5, 88.0) if loc.lon >= 80 else (18.9, 72.6)
+        off = await open_meteo.marine(off_lat, off_lon)
+        ocur = off.get("current") or {}
+        oh = ocur.get("wave_height")
+        lh = cur.get("wave_height")
+        use_off = oh is not None and (lh is None or float(oh) > float(lh or 0) * 1.15)
+        if use_off:
+            merged = dict(off)
+            merged["nearest_coast"] = raw.get("nearest_coast") or coast["name"]
+            merged["coast_km"] = raw.get("coast_km") if raw.get("coast_km") is not None else coast["km"]
+            merged["inland"] = False
+            merged["snapped"] = True
+            merged["offshore"] = True
+            merged["offshore_lat"] = off_lat
+            merged["offshore_lon"] = off_lon
+            return merged
         return raw
 
     (
@@ -113,6 +221,10 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         tsunami,
         _ak,
         aq_hist,
+        gdacs_rows,
+        waqi_row,
+        ow_air,
+        mosdac_st,
     ) = await asyncio.gather(
         run("open-meteo", open_meteo.forecast(loc.lat, loc.lon), {}),
         run("open-meteo-flood", open_meteo.flood(loc.lat, loc.lon), {}),
@@ -127,6 +239,10 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         run_pair("incois-tsunami", hazards.incois_tsunami(), []),
         run_pair("aikosh", aikosh.search_datasets("agriculture"), None),
         run_pair("openaq-hist", openaq.history(loc.lat, loc.lon), []),
+        run_pair("gdacs", gdacs.events(), []),
+        run_pair("waqi", waqi.nearest(loc.lat, loc.lon), None),
+        run_pair("openweather-air", openweather_air.current(loc.lat, loc.lon), None),
+        run_pair("mosdac", mosdac.status(), {}),
     )
     sachet_rows = await run_pair("sachet", sachet.alerts(loc.state), [])
     port = await run_pair("imd-port", port_signal.hooghly(), {})
@@ -147,6 +263,11 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         "aq_hist": aq_hist or [],
         "sachet": sachet_rows or [],
         "port": port or {},
+        "gdacs": gdacs_rows or [],
+        "waqi": waqi_row,
+        "ow_air": ow_air,
+        "mosdac": mosdac_st or {},
+        "moon": moon_at(loc.lat, loc.lon),
         "status": status,
     }
 
@@ -345,7 +466,7 @@ def _build_live(loc: Location, f: dict, obs: dict, flood_score: int, generated_a
     is_day = f.get("is_day")
     return LiveWatch(
         generated_at=generated_at,
-        refresh_s=60,
+        refresh_s=300,
         sky={
             "label": label,
             "kind": kind,
@@ -374,6 +495,16 @@ def _build_live(loc: Location, f: dict, obs: dict, flood_score: int, generated_a
             "wave_period_s": f.get("wave_period_s"),
             "wave_dir_deg": f.get("wave_dir_deg"),
             "wave_compass": compass(f.get("wave_dir_deg")) if f.get("wave_dir_deg") is not None else None,
+            "wave_peak_period_s": f.get("wave_peak_period_s"),
+            "wind_wave_height_m": f.get("wind_wave_height_m"),
+            "swell_height_m": f.get("swell_height_m"),
+            "swell_period_s": f.get("swell_period_s"),
+            "swell2_height_m": f.get("swell2_height_m"),
+            "swell3_height_m": f.get("swell3_height_m"),
+            "sea_level_m": f.get("sea_level_m"),
+            "sst_c": f.get("sst_c"),
+            "ocean_current_ms": f.get("ocean_current_ms"),
+            "ocean_current_dir": f.get("ocean_current_dir"),
             "nearest_coast": (obs.get("marine") or {}).get("nearest_coast"),
             "coast_km": (obs.get("marine") or {}).get("coast_km") or f.get("coast_km"),
             "snapped": bool((obs.get("marine") or {}).get("snapped")),
@@ -388,6 +519,7 @@ def _build_live(loc: Location, f: dict, obs: dict, flood_score: int, generated_a
             "trend": f.get("discharge_trend"),
             "score_pct": flood_score,
             "source": "open-meteo-flood",
+            "gdacs": [g for g in (obs.get("gdacs") or []) if str(g.get("event_type") or "") in ("FL", "TC")],
         },
         air={
             "cpcb": obs.get("naqi"),
@@ -397,20 +529,33 @@ def _build_live(loc: Location, f: dict, obs: dict, flood_score: int, generated_a
                 "pm2_5": f.get("om_pm25"),
                 "pm10": f.get("om_pm10"),
                 "no2": f.get("om_no2"),
+                "so2": f.get("om_so2"),
+                "co": f.get("om_co"),
+                "co2": f.get("om_co2"),
+                "o3": f.get("om_o3"),
+                "nh3": f.get("om_nh3"),
+                "ch4": f.get("om_ch4"),
+                "dust": f.get("om_dust"),
+                "uv_index": f.get("om_uv"),
+                "uv_index_clear_sky": f.get("om_uv_clear"),
+                "pollen": f.get("pollen"),
             },
+            "waqi": obs.get("waqi"),
+            "openweather": obs.get("ow_air"),
             "history": (obs.get("aq_hist") or [])[-48:],
             "history_source": "OpenAQ station archive + Open-Meteo CAMS (7-day)",
             "sources": ["data.gov.in / CPCB realtime", "OpenAQ historical", "open-meteo-air CAMS"],
         },
         quakes=obs.get("quakes") or [],
-        tsunami=obs.get("tsunami") or [],
+        tsunami=(obs.get("tsunami") or []) + [g for g in (obs.get("gdacs") or []) if str(g.get("event_type") or "") in ("TS", "EQ")],
         source_notes=[
-            "Open-Meteo: live + forecast weather, GloFAS flood, marine waves, air quality.",
+            "Open-Meteo: live + forecast weather, GloFAS flood, marine waves, CAMS air quality (AQI, PM, gases, dust, UV, pollen).",
             "Open-Meteo does not publish earthquake or tsunami products.",
             "IMD CAP: official Indian weather warnings (REST needs IP whitelist).",
             "CPCB / data.gov.in: National AQI. Agmarknet: mandi prices.",
-            "INCOIS ITEWS: Indian tsunami bulletins.",
-            "USGS FDSN: India–Indian Ocean seismicity (NCS has no stable public JSON).",
+            "INCOIS ITEWS: Indian tsunami bulletins. GDACS: regional multi-hazard events.",
+            "USGS FDSN + EMSC: India–Indian Ocean seismicity (NCS has no stable public JSON).",
+            "Moon phase/rise/set is a local Meeus-lite calculation, not WeatherAPI.",
         ],
     )
 
@@ -437,7 +582,7 @@ def _vegetation(f: dict) -> dict:
 
 
 async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot:
-    key = f"snap:{round(float(loc.lat), 3)}:{round(float(loc.lon), 3)}"
+    key = f"snap8:{round(float(loc.lat), 3)}:{round(float(loc.lon), 3)}"
 
     async def factory() -> DashboardSnapshot:
         return await _assemble_snapshot(loc, locale)
@@ -661,11 +806,25 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
         "rain": "open-meteo daily/hourly (model, not a gauge). Today is IST calendar day, not yesterday.",
         "nowcast_mm": "locked hours; speech/CAP do not write mm",
         "live_graph": "1-min gap integrates to locked hour; 1 Hz is playhead/tide",
-        "sat_rate": "Kalman between OM hours (not INSAT unless MOSDAC wired); does not rewrite locked mm",
+        "sat_rate": "Kalman between OM hours (MOSDAC HEM only if a file is cached); does not rewrite locked mm",
         "aqi": "CPCB station if local, else nearest city",
         "tide": "Hugli harmonic prior until SOI gauge",
         "as_of": generated_at,
     }
+    cpcb_pols = ((obs.get("naqi") or {}).get("pollutants") or {})
+    air_nh3 = f.get("om_nh3")
+    if air_nh3 is None:
+        air_nh3 = cpcb_pols.get("NH3") or cpcb_pols.get("AMMONIA")
+    if air_nh3 is None:
+        for row in reversed(obs.get("aq_hist") or []):
+            if str(row.get("parameter") or "").lower() in {"nh3", "ammonia"}:
+                air_nh3 = row.get("value")
+                break
+    pollen_pack = pollen_india(loc.lat, loc.lon, f)
+    for k, v in (f.get("pollen") or {}).items():
+        if v is not None and k in pollen_pack:
+            pollen_pack[k] = v
+
     current = CurrentConditions(
         temp_c=f.get("temp_now"),
         precip_1h_mm=f.get("precip_now"),
@@ -692,6 +851,12 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
         om_us_aqi=int(f["us_aqi"]) if f.get("us_aqi") is not None else None,
         om_eu_aqi=int(f["eu_aqi"]) if f.get("eu_aqi") is not None else None,
         om_pm25=f.get("om_pm25"),
+        apparent_temp_c=f.get("apparent_temp_c"),
+        dew_point_c=f.get("dew_point_c"),
+        pressure_msl_hpa=f.get("pressure_msl_hpa"),
+        uv_index=f.get("om_uv") if f.get("om_uv") is not None else f.get("uv_index_max"),
+        sst_c=f.get("sst_c"),
+        swell_height_m=f.get("swell_height_m"),
     )
     return DashboardSnapshot(
         location=loc,
@@ -722,6 +887,36 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
                 "wave_hourly": _series(
                     (f.get("hourly_wave_times") or [])[wave_i0:wave_i0 + 48],
                     (f.get("hourly_wave") or [])[wave_i0:wave_i0 + 48],
+                    "m",
+                    "open-meteo-marine",
+                ),
+                "uv_hourly": _series(
+                    (f.get("hourly_aqi_times") or [])[aqi_i0:aqi_i0 + 48],
+                    (f.get("hourly_uv") or [])[aqi_i0:aqi_i0 + 48],
+                    "UV",
+                    "open-meteo-air",
+                ),
+                "dust_hourly": _series(
+                    (f.get("hourly_aqi_times") or [])[aqi_i0:aqi_i0 + 48],
+                    (f.get("hourly_dust") or [])[aqi_i0:aqi_i0 + 48],
+                    "µg/m³",
+                    "open-meteo-air",
+                ),
+                "pm10_hourly": _series(
+                    (f.get("hourly_aqi_times") or [])[aqi_i0:aqi_i0 + 48],
+                    (f.get("hourly_pm10") or [])[aqi_i0:aqi_i0 + 48],
+                    "µg/m³",
+                    "open-meteo-air",
+                ),
+                "sst_hourly": _series(
+                    (f.get("hourly_wave_times") or [])[wave_i0:wave_i0 + 48],
+                    (f.get("hourly_sst") or [])[wave_i0:wave_i0 + 48],
+                    "°C",
+                    "open-meteo-marine",
+                ),
+                "swell_hourly": _series(
+                    (f.get("hourly_wave_times") or [])[wave_i0:wave_i0 + 48],
+                    (f.get("hourly_swell") or [])[wave_i0:wave_i0 + 48],
                     "m",
                     "open-meteo-marine",
                 ),
@@ -786,6 +981,9 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
             "nearby": neighbors,
             "quakes": obs.get("quakes") or [],
             "tsunami": obs.get("tsunami") or [],
+            "gdacs": obs.get("gdacs") or [],
+            "mosdac": obs.get("mosdac") or {},
+            "moon": obs.get("moon") or {},
         },
         predictions={
             **dual,
@@ -800,6 +998,135 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
         },
         live=_build_live(loc, f, obs, flood.score_pct, generated_at),
         science=science,
+        quality=_finalize_quality({
+            "air": {
+                "us_aqi": f.get("us_aqi"),
+                "european_aqi": f.get("eu_aqi"),
+                "pm2_5": f.get("om_pm25"),
+                "pm10": f.get("om_pm10"),
+                "co": f.get("om_co"),
+                "co2": f.get("om_co2"),
+                "no2": f.get("om_no2"),
+                "so2": f.get("om_so2"),
+                "o3": f.get("om_o3"),
+                "nh3": air_nh3,
+                "ch4": f.get("om_ch4"),
+                "dust": f.get("om_dust"),
+                "uv_index": f.get("om_uv"),
+                "uv_index_clear_sky": f.get("om_uv_clear"),
+                "pollen": pollen_pack,
+                "cpcb": obs.get("naqi"),
+                "waqi": obs.get("waqi"),
+                "openweather": obs.get("ow_air"),
+            },
+            "climate": {
+                "rh_now": f.get("rh_now"),
+                "rh_max": f.get("rh_max"),
+                "rh_min": f.get("rh_min"),
+                "rh_mean": f.get("rh_mean"),
+                "dew_point_c": f.get("dew_point_c"),
+                "dew_max": f.get("dew_max"),
+                "dew_min": f.get("dew_min"),
+                "dew_mean": f.get("dew_mean"),
+                "apparent_temp_c": f.get("apparent_temp_c"),
+                "apparent_max": f.get("apparent_max"),
+                "apparent_min": f.get("apparent_min"),
+                "temp_now": f.get("temp_now"),
+                "temp_max": (f.get("temp_max") or [None])[0] if f.get("temp_max") else None,
+                "temp_min": (f.get("temp_min") or [None])[0] if f.get("temp_min") else None,
+                "temp_mean": f.get("temp_mean"),
+                "temp_80m": f.get("temp_80m"),
+                "temp_120m": f.get("temp_120m"),
+                "temp_180m": f.get("temp_180m"),
+                "uv_index": f.get("om_uv"),
+                "uv_index_clear_sky": f.get("om_uv_clear"),
+                "uv_index_max": f.get("uv_index_max"),
+                "uv_clear_max": f.get("uv_clear_max"),
+                "precip_now": f.get("precip_now"),
+                "precip_prob_now": f.get("precip_prob_now"),
+                "precip_prob_max": (f.get("precip_prob") or [None])[0] if f.get("precip_prob") else None,
+                "rain_now": f.get("rain_now"),
+                "showers_now": f.get("showers_now"),
+                "snowfall_now": f.get("snowfall_now"),
+                "snow_depth_m": f.get("snow_depth_m"),
+                "rain_sum": f.get("rain_sum"),
+                "showers_sum": f.get("showers_sum"),
+                "snowfall_sum": f.get("snowfall_sum"),
+                "weather_code": f.get("weather_code"),
+                "pressure_msl_hpa": f.get("pressure_msl_hpa"),
+                "surface_pressure_hpa": f.get("surface_pressure_hpa"),
+                "cloud_cover_pct": f.get("cloud_now"),
+                "cloud_low": f.get("cloud_low"),
+                "cloud_mid": f.get("cloud_mid"),
+                "cloud_high": f.get("cloud_high"),
+                "visibility_m": f.get("visibility_m"),
+                "et_now": f.get("et_now"),
+                "et0_today": f.get("et0_today"),
+                "vpd_now": f.get("vpd_now"),
+                "wind_10m": f.get("wind_now"),
+                "wind_10m_max": f.get("wind_10m_max"),
+                "wind_10m_mean": f.get("wind_10m_mean"),
+                "wind_dir_10m": f.get("wind_dir_now"),
+                "wind_gusts_10m": f.get("wind_gusts_now"),
+                "wind_80m": f.get("wind_80m"),
+                "wind_120m": f.get("wind_120m"),
+                "wind_180m": f.get("wind_180m"),
+                "wind_dir_80m": f.get("wind_dir_80m"),
+                "wind_dir_120m": f.get("wind_dir_120m"),
+                "wind_dir_180m": f.get("wind_dir_180m"),
+                "soil_t_0": f.get("soil_t_0"),
+                "soil_t_6": f.get("soil_t_6"),
+                "soil_t_18": f.get("soil_t_18"),
+                "soil_t_54": f.get("soil_t_54"),
+                "soil_m_0_1": f.get("soil_m_0_1"),
+                "soil_m_1_3": f.get("soil_m_1_3"),
+                "soil_m_3_9": f.get("soil_m_3_9"),
+                "soil_m_9_27": f.get("soil_m_9_27"),
+                "soil_m_27_81": f.get("soil_m_27_81"),
+                "soil_m3m3": f.get("soil_m3m3"),
+                "sunrise": f.get("sunrise"),
+                "sunset": f.get("sunset"),
+                "daylight_s": f.get("daylight_s"),
+                "sunshine_s": f.get("sunshine_s"),
+                "shortwave_sum": f.get("shortwave_sum"),
+            },
+            "moon": obs.get("moon") or {},
+            "marine": {
+                "inland": f.get("marine_inland"),
+                "wave_height_m": f.get("wave_height_m"),
+                "wave_dir_deg": f.get("wave_dir_deg"),
+                "wave_period_s": f.get("wave_period_s"),
+                "wave_peak_period_s": f.get("wave_peak_period_s"),
+                "wind_wave_height_m": f.get("wind_wave_height_m"),
+                "wind_wave_dir_deg": f.get("wind_wave_dir_deg"),
+                "wind_wave_period_s": f.get("wind_wave_period_s"),
+                "wind_wave_peak_period_s": f.get("wind_wave_peak_period_s"),
+                "swell_height_m": f.get("swell_height_m"),
+                "swell_dir_deg": f.get("swell_dir_deg"),
+                "swell_period_s": f.get("swell_period_s"),
+                "swell_peak_period_s": f.get("swell_peak_period_s"),
+                "swell2_height_m": f.get("swell2_height_m"),
+                "swell2_dir_deg": f.get("swell2_dir_deg"),
+                "swell2_period_s": f.get("swell2_period_s"),
+                "swell3_height_m": f.get("swell3_height_m"),
+                "swell3_dir_deg": f.get("swell3_dir_deg"),
+                "swell3_period_s": f.get("swell3_period_s"),
+                "sea_level_m": f.get("sea_level_m"),
+                "sst_c": f.get("sst_c"),
+                "ocean_current_ms": f.get("ocean_current_ms"),
+                "ocean_current_dir": f.get("ocean_current_dir"),
+            },
+            "seismic": obs.get("quakes") or [],
+            "tsunami": obs.get("tsunami") or [],
+            "flood": {
+                "discharge": (f.get("discharge") or [])[:7],
+                "discharge_mean": (f.get("discharge_mean") or [])[:7],
+                "trend": f.get("discharge_trend"),
+                "source": "open-meteo-flood (GloFAS)",
+            },
+            "gdacs": obs.get("gdacs") or [],
+            "mosdac": obs.get("mosdac") or {},
+        }),
     )
 
 
