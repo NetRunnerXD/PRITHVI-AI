@@ -91,6 +91,7 @@ ollama serve
 ```
 
 - The Next app calls `NEXT_PUBLIC_API_BASE` (default `http://127.0.0.1:8000`) over CORS. Empty base uses same-origin `/api` plus an optional Next rewrite.
+- **Client API guide (web + app):** [`docs/api.md`](docs/api.md). Swagger remains `/docs`.
 - Health: `GET http://127.0.0.1:8000/api/health`
 - Service card: `GET http://127.0.0.1:8000/`
 - Swagger: `http://127.0.0.1:8000/docs` — OpenAPI: `/openapi.json` — route list: `/api`

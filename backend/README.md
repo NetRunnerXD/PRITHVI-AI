@@ -61,7 +61,7 @@ Writes `openapi.json` next to this file.
 
 ## Clients
 
-Do not serve `../frontend` from this process. Point a new app at this origin using `../clients/js`.
+Do not serve `../frontend` from this process. Point a new app at this origin using `../clients/js`. Implementation guide: [`../docs/api.md`](../docs/api.md).
 
 ## Public host
 

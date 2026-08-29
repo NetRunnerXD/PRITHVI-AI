@@ -16,3 +16,5 @@ To migrate to another web stack or React Native:
 4. Do not rewrite `/api` through a web framework unless you want to. CORS is enabled on the API.
 
 Swagger: `http://127.0.0.1:8000/docs`
+
+Implementation guide for a new website or mobile app: [`../docs/api.md`](../docs/api.md).
