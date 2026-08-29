@@ -65,12 +65,13 @@ def main() -> int:
     try:
         me = api.whoami(token=token)
     except Exception as exc:
-        print(f"Token rejected by Hugging Face whoami: {exc}", file=sys.stderr)
-        print(
-            "Use a classic write token, or a fine-grained token with Repositories "
-            "write + Spaces write, from https://huggingface.co/settings/tokens",
-            file=sys.stderr,
+        msg = (
+            f"Hugging Face rejected HF_TOKEN ({type(exc).__name__}: {exc}). "
+            "The GitHub secret must be a Hugging Face write token starting with hf_ "
+            "(https://huggingface.co/settings/tokens). Groq keys and GitHub PATs fail here."
         )
+        print(msg, file=sys.stderr)
+        print(f"::error::{msg}")
         return 1
 
     user = me.get("name") or me.get("email") or ""
@@ -88,7 +89,9 @@ def main() -> int:
             token=token,
         )
     except Exception as exc:
-        print(f"create_repo failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        msg = f"create_repo failed: {type(exc).__name__}: {exc}"
+        print(msg, file=sys.stderr)
+        print(f"::error::{msg}")
         resp = getattr(exc, "response", None)
         if resp is not None:
             try:
