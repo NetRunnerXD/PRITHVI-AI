@@ -1,8 +1,8 @@
 name: Deploy API (Render)
 
-# Native Python web service (not Docker). Connect the GitHub repo in Render once.
-# After that, Render auto-deploys on push. This job also pokes the deploy hook
-# when RENDER_DEPLOY_HOOK is set (Dashboard → service → Settings → Deploy Hook).
+# Native Python (not Docker). After you create the Free web service from
+# render.yaml (New → Blueprint), Render auto-deploys on push to main/master.
+# Optional: RENDER_DEPLOY_HOOK retriggers a deploy from this job.
 
 on:
   push:
@@ -23,14 +23,25 @@ jobs:
       group: render-api
       cancel-in-progress: false
     steps:
-      - name: Trigger Render
+      - name: Trigger Render (optional hook)
         env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK || vars.RENDER_DEPLOY_HOOK }}
         run: |
-          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
-            echo "::error::Add GitHub repository secret RENDER_DEPLOY_HOOK. Create a Free Python web service on Render (not Docker): New → Blueprint, or New → Web Service, rootDir backend, start uvicorn app.main:app --host 0.0.0.0 --port \$PORT. Then copy Settings → Deploy Hook."
-            echo "Docs: https://github.com/NetRunnerXD/Rituchakra/blob/main/deploy/render.md"
-            exit 1
+          hook="${RENDER_DEPLOY_HOOK//$'\r'/}"
+          hook="${hook#"${hook%%[![:space:]]*}"}"
+          hook="${hook%"${hook##*[![:space:]]}"}"
+          hook="${hook%\"}"
+          hook="${hook#\"}"
+          if [ -z "$hook" ]; then
+            echo "No RENDER_DEPLOY_HOOK. That is OK if the repo is already a Render Blueprint/Web Service — Render deploys on git push by itself."
+            echo "To also fire from Actions: Render → your service → Settings → Deploy Hook → GitHub repo secret RENDER_DEPLOY_HOOK."
+            echo "First-time: https://dashboard.render.com/select-repo?type=blueprint"
+            exit 0
           fi
-          curl -fsS -X POST "$RENDER_DEPLOY_HOOK"
-          echo "Render deploy requested."
+          code=$(curl -sS -o /tmp/render-hook.out -w "%{http_code}" -X POST "$hook")
+          echo "hook HTTP $code"
+          cat /tmp/render-hook.out || true
+          case "$code" in
+            2*) echo "Render deploy requested." ;;
+            *) echo "::error::Deploy hook returned HTTP $code. Recreate the hook URL in Render Settings." ; exit 1 ;;
+          esac

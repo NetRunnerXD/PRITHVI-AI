@@ -15,8 +15,9 @@ URL after the first deploy: `https://rituchakra-api.onrender.com` (Render may ad
    - Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 75`
    - Instance: **Free**
    - Health: `/api/ready`
-3. GitHub → **Settings → Secrets → Actions**: `RENDER_DEPLOY_HOOK` = the URL from Render → service → **Settings → Deploy Hook**.
-4. Optional env on the service (Advisor):
+3. Render deploys on every push that changes `backend/` (`autoDeploy: true`). You do **not** need a GitHub secret for that.
+4. Optional: copy **Settings → Deploy Hook** to GitHub secret `RENDER_DEPLOY_HOOK` so Actions can poke a deploy. Skip this if you only use Blueprint auto-deploy.
+5. Optional env on the service (Advisor):
    - `OLLAMA_BASE_URL=https://api.groq.com/openai/v1`
    - `OLLAMA_API_KEY=`
    - `OLLAMA_MODEL=llama-3.1-8b-instant`
