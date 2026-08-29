@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -14,6 +15,15 @@ AIR = "https://air-quality-api.open-meteo.com/v1/air-quality"
 MARINE = "https://marine-api.open-meteo.com/v1/marine"
 ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 GEO = "https://geocoding-api.open-meteo.com/v1/search"
+
+# Deterministic Open-Meteo members for hybrid blending (no local GPU).
+BLEND_MODELS: tuple[tuple[str, str], ...] = (
+    ("ifs025", "ecmwf_ifs025"),
+    ("aifs025", "ecmwf_aifs025"),
+    ("gfs", "gfs_global"),
+    ("graphcast", "gfs_graphcast025"),
+    ("icon", "icon_global"),
+)
 
 
 def _good_path(kind: str, lat: float, lon: float):
@@ -89,6 +99,44 @@ async def forecast(lat: float, lon: float) -> dict[str, Any]:
             cache.set(key, good, 180)
             return good
         raise
+
+
+async def forecast_models(lat: float, lon: float) -> dict[str, Any]:
+    """Fetch daily fields for each blend member. Failures are skipped (429-safe)."""
+
+    async def one(sid: str, models: str) -> tuple[str, dict[str, Any] | None]:
+        key = f"om:blend:{sid}:{round(lat, 3)}:{round(lon, 3)}"
+        hit = cache.get(key)
+        if isinstance(hit, dict) and (hit.get("daily") or hit.get("hourly")):
+            return sid, hit
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "daily": (
+                "precipitation_sum,precipitation_probability_max,"
+                "temperature_2m_max,temperature_2m_min,wind_speed_10m_max"
+            ),
+            "forecast_days": 7,
+            "timezone": "Asia/Kolkata",
+            "models": models,
+        }
+        try:
+            r = await client().get(FORECAST, params=params)
+            if r.status_code == 429:
+                await asyncio.sleep(0.4)
+                r = await client().get(FORECAST, params=params)
+            if r.status_code >= 400:
+                return sid, None
+            data = r.json()
+            if isinstance(data, dict) and not data.get("error") and data.get("daily"):
+                cache.set(key, data, 900)
+                return sid, data
+            return sid, None
+        except Exception:
+            return sid, None
+
+    rows = await asyncio.gather(*[one(sid, m) for sid, m in BLEND_MODELS])
+    return {sid: payload for sid, payload in rows if payload}
 
 
 async def _archive_fallback(lat: float, lon: float) -> dict[str, Any] | None:

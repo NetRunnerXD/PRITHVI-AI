@@ -43,7 +43,35 @@ def _npm() -> str | None:
         found = shutil.which(name)
         if found:
             return found
+    if os.name == "nt":
+        for extra in (
+            Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "nodejs",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "nodejs",
+        ):
+            for name in ("npm.cmd", "npm.exe"):
+                candidate = extra / name
+                if candidate.is_file():
+                    return str(candidate)
     return None
+
+
+def _web_env(npm: str) -> dict[str, str]:
+    """Ensure node.exe is on PATH for npm.cmd and frontend/node_modules/.bin shims."""
+    env = os.environ.copy()
+    node_dirs: list[str] = []
+    npm_dir = str(Path(npm).resolve().parent)
+    if (Path(npm_dir) / "node.exe").is_file() or (Path(npm_dir) / "node").is_file():
+        node_dirs.append(npm_dir)
+    node_bin = shutil.which("node") or shutil.which("node.exe")
+    if node_bin:
+        node_dirs.append(str(Path(node_bin).resolve().parent))
+    if not node_dirs:
+        return env
+    path_key = "Path" if "Path" in env and "PATH" not in env else "PATH"
+    current = env.get(path_key, "")
+    prefix = os.pathsep.join(dict.fromkeys(node_dirs))
+    env[path_key] = prefix + os.pathsep + current if current else prefix
+    return env
 
 
 def main() -> int:
@@ -106,7 +134,11 @@ def main() -> int:
             elif not (FRONTEND / "node_modules").is_dir():
                 print("Frontend skipped: run  cd frontend ; npm install")
             else:
-                web = subprocess.Popen([npm, "run", "dev"], cwd=FRONTEND)
+                web = subprocess.Popen(
+                    [npm, "run", "dev"],
+                    cwd=FRONTEND,
+                    env=_web_env(npm),
+                )
                 children.append(web)
                 print("Dashboard  http://localhost:3000")
 

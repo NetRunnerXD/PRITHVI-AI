@@ -155,7 +155,7 @@ export const COPY: Record<Locale, Record<string, string>> = {
     tabPredicted: "Models",
     ours: "Local",
     trusted: "Reference",
-    predHint: "",
+    predHint: "Local = hybrid AI–NWP blend (CDF q50). Reference = Open-Meteo best-match. Heavy-rain flags are guidance only.",
     replyIn: "Reply in",
     presets: "Preset question",
     clear: "Clear chat",

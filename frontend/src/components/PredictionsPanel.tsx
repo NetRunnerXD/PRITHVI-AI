@@ -70,6 +70,27 @@ export function PredictionsPanel({ dash, locale }: { dash: DashboardSnapshot; lo
         </div>
       </section>
 
+      {dash.predictions?.hybrid?.weights && Object.keys(dash.predictions.hybrid.weights).length > 0 ? (
+        <section className="neo p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Model weights</p>
+          <p className="text-[11px] text-neo-muted">{dash.predictions.hybrid.attribution}</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-5">
+            {Object.entries(dash.predictions.hybrid.weights).map(([k, v]) => (
+              <div key={k} className="neo-in p-3">
+                <p className="text-[10px] uppercase tracking-widest text-neo-muted">{k}</p>
+                <p className="font-mono text-lg font-bold text-neo-accent">{Math.round(v * 100)}%</p>
+              </div>
+            ))}
+          </div>
+          {dash.predictions.hybrid.hazards?.heavy_rain ? (
+            <p className="mt-3 text-xs text-neo-muted">
+              P(≥ {dash.predictions.hybrid.hazards.heavy_rain.threshold_mm} mm) ={" "}
+              {dash.predictions.hybrid.hazards.heavy_rain.p ?? "—"} · guidance only
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       {dash.predictions?.hazards ? (
         <section className="neo p-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.hazardOutlook}</p>

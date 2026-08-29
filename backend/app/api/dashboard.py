@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 
+router = APIRouter()
+
 from app.api.deps import loc_from_query
 from app.schemas.location import Location
 from app.services.compare import compare
@@ -7,8 +9,6 @@ from app.services.location_svc import list_districts, list_states
 from app.services.scan import rank_districts
 from app.services.snapshot import build_snapshot
 from app.tools import build_registry
-
-router = APIRouter()
 
 
 @router.get("/dashboard")
@@ -25,6 +25,38 @@ async def forecast(loc: Location = Depends(loc_from_query)):
         "predictive": snap.predictive.model_dump(),
         "descriptive": snap.descriptive.model_dump(),
         "sources": snap.sources,
+    }
+
+
+@router.get("/blend")
+@router.get("/blend/weights")
+async def blend_weights(loc: Location = Depends(loc_from_query)):
+    snap = await build_snapshot(loc)
+    hybrid = (snap.predictions or {}).get("hybrid") or {}
+    from app.providers.mosdac import status as mosdac_status
+
+    return {
+        "location": snap.location.model_dump(),
+        "weights": hybrid.get("weights") or {},
+        "members": hybrid.get("members") or [],
+        "method": hybrid.get("method"),
+        "attribution": hybrid.get("attribution"),
+        "guidance_only": True,
+        "mosdac": mosdac_status(),
+        "days": hybrid.get("days") or [],
+        "hazards": hybrid.get("hazards") or {},
+    }
+
+
+@router.get("/blend/hazards")
+async def blend_hazards(loc: Location = Depends(loc_from_query)):
+    snap = await build_snapshot(loc)
+    hybrid = (snap.predictions or {}).get("hybrid") or {}
+    return {
+        "location": snap.location.model_dump(),
+        "guidance_only": True,
+        "hazards": hybrid.get("hazards") or {},
+        "days": hybrid.get("days") or [],
     }
 
 

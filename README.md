@@ -1,32 +1,35 @@
-# Rituchakra
+# Advanced Rituchakra
 
-India-first environmental intelligence for districts, towns, and farms.
+**India-first environmental intelligence for districts, towns, and farms.**
 
-Rituchakra is a live dashboard and advisor for weather, flood, drought, heat, air quality, marine state, seismic activity, tsunami watches, and mandi prices. It answers four questions from published data and local models — what is happening, why it is happening, what is likely next, and what to do now — then explains those numbers in English, Hindi, or Bengali.
+Advanced Rituchakra is a live dashboard and advisor for weather, flood, drought, heat, air quality, marine state, seismic activity, tsunami watches, satellite-informed nowcast, and mandi prices. It answers four questions from published data and local models — **what is happening**, **why it is happening**, **what is likely next**, and **what to do now** — then explains those numbers in English, Hindi, or Bengali.
 
-The Advisor LLM never invents rainfall, risk scores, liters, AQI, or rupees. Forecasts and quantities come from providers and models. Chat calls one `data()` library and quotes those packs. Bare names (`Puruliya`, `Delhi`) resolve through the India gazetteer (fuzzy + state capitals) or Open-Meteo India geocode. Follow-ups (`yes`, `all of them`) stay on the last town. Map chips move the pin only when clicked.
+The Advisor LLM never invents rainfall, risk scores, liters, AQI, or rupees. Forecasts and quantities come from providers and models. Chat calls a `data()` library and quotes those packs. Bare names (`Puruliya`, `Delhi`) resolve through the India gazetteer (fuzzy + state capitals) or Open-Meteo India geocode. Follow-ups (`yes`, `all of them`) stay on the last town. Map chips move the pin only when clicked.
 
-Default focus: **Haldia, Purba Medinipur, West Bengal**. Search covers Indian cities, towns, and districts (for example Haldia, Purulia, Cherrapunji, Wardha). Nadia remains available.
+**Default focus:** Haldia, Purba Medinipur, West Bengal. Search covers Indian cities, towns, and districts (for example Haldia, Purulia, Cherrapunji, Wardha). Nadia remains available.
+
+**GitHub:** [github.com/sdeep2519/Advanced-Rituchakra](https://github.com/sdeep2519/Advanced-Rituchakra)
 
 ---
 
 ## Overview
 
-Rituchakra is a monorepo. **The backend is a standalone HTTP API** (no web assets). Any client can sit in its own folder.
+This is a monorepo. **The backend is a standalone HTTP API** (no web assets). Any client can live in its own folder.
 
 | Path | Role |
 | --- | --- |
-| `backend/` | FastAPI API — publish this independently (`/docs`, `/openapi.json`) |
-| `frontend/` | Optional Next.js dashboard. Talks to the API over HTTP + CORS. |
+| `backend/` | FastAPI API — publish independently (`/docs`, `/openapi.json`) |
+| `frontend/` | Optional Next.js dashboard. Talks to the API over HTTP + CORS |
 | `clients/` | Portable TypeScript client for a new web app or React Native |
+| `main.py` | Dev launcher: API + optional Next.js from the repo root |
 
-The browser (or a phone) calls FastAPI directly. A snapshot object is built for the selected place and drives widgets and Advisor tools.
+The browser (or a phone) calls FastAPI directly. A **snapshot** object is built for the selected place and drives widgets and Advisor tools.
 
 ### Four lenses
 
 1. **What is happening** — sky, rain this hour and today, wind rose, soil moisture, ET₀, CPCB / Open-Meteo AQI, nearest-coast marine state, flood discharge, recent quakes, tsunami bulletins.
 2. **Why it is happening** — NASA POWER climatology anomalies and short diagnostic stories (not free-form speculation).
-3. **What is likely next** — dual 7-day forecast (trusted Open-Meteo vs residual-blend), soil / water-balance outlook, multi-hazard flood / seismic / tsunami scores.
+3. **What is likely next** — dual 7-day forecast (trusted Open-Meteo vs residual / hybrid blend), 0–6 h nowcast, soil / water-balance outlook, multi-hazard flood / seismic / tsunami scores.
 4. **What we should do** — rule-engine prescriptions with quantities (irrigation hold vs apply, flood / heat / AQI / seismic actions).
 
 ### Product surface
@@ -36,12 +39,25 @@ The browser (or a phone) calls FastAPI directly. A snapshot object is built for 
 | **Overview** | Multi-hazard watch, sky and today’s rain, wind profile, why / do cards, collapsible live plots |
 | **Map** | India place search, nearby districts, basemaps, Bhuvan geomorphology overlay via a WMS proxy |
 | **Forecast** | Charts, 7-day outlook table, district compare |
-| **Predicted** | Side-by-side trusted Open-Meteo vs Rituchakra residual-blend |
+| **Predicted** | Side-by-side trusted Open-Meteo vs Rituchakra residual / hybrid blend |
 | **XAI Risks** | Explainable cards (flood, drought, heat, irrigation, air, seismic, tsunami) with factor contributions |
 | **Market** | Agmarknet mandi prices (data.gov.in) |
 | **Advisor** | Tool-using chat. Presets in English, Hindi, and Bengali. Reply-in language control |
 
 The UI language (EN / HI / BN) also sets the Advisor reply language. You can override reply language independently. The dashboard refreshes quietly every 60 seconds.
+
+---
+
+## Key capabilities
+
+- **India-only search and gazetteer** (towns, districts, state capitals, Open-Meteo `countryCode=IN`).
+- **Locked numbers in chat** — millimetres, AQI, rupees, risk %, and date-window rain come from tools, not the LLM.
+- **Hybrid residual blend** — Open-Meteo as the trusted backbone, local residual / MOSDAC-aware blend for the Predicted tab.
+- **0–6 h nowcast** with 1-minute live playhead and Kalman rate between scenes (model-analysis knots; MOSDAC / IMERG remain optional stubs until a legal download is wired).
+- **Multi-hazard board** — flood discharge (GloFAS), USGS earthquakes, INCOIS tsunami bulletins, IMD CAP warnings, Sachet / CWC where available.
+- **Explainable risk (XAI)** — factor contributions for flood, drought, heat, irrigation, air, seismic, tsunami.
+- **Indic Advisor** — inbound MT → English tools → English draft → outbound MT with number/source lock; structured Hindi/Bengali fallback if MT is down.
+- **Optional local LLM** — OpenAI-compatible Ollama (default `qwen2.5`). Templates still answer from the snapshot if Ollama is down.
 
 ---
 
@@ -58,9 +74,7 @@ Ask in any language. The translation layer:
 
 If online translation is unavailable, Hindi and Bengali fall back to structured Indic composition. English is shown if that is not possible. Turn on **English source** in the dock to read the model draft.
 
-The Advisor can rank districts (for example West Bengal flood risk), compare two places, pull mandi prices, list every Rituchakra metric at a named town, and narrate irrigation / rain / AQI / hazard watches. Place names in the question (Haldia, Puruliya, Delhi, …) retarget **chat**. The dashboard pin moves when the user clicks a suggestion (map / forecast / nowcast).
-
-A local OpenAI-compatible LLM (default **Ollama** `qwen2.5`) is optional. If it is down, templates and structured Indic still answer from the snapshot.
+The Advisor can rank districts (for example West Bengal flood risk), compare two places, pull mandi prices, list every Rituchakra metric at a named town, and narrate irrigation / rain / AQI / hazard watches. Place names in the question retarget **chat**. The dashboard pin moves when the user clicks a suggestion (map / forecast / nowcast).
 
 ---
 
@@ -79,7 +93,8 @@ Called on a normal dashboard load (no paid keys required for the core path):
 | INCOIS ITEWS | Tsunami / quake bulletins |
 | OpenAQ | Historical PM2.5 |
 | Bhuvan WMS | NRSC geomorphology overlay |
-| NASA GIBS | Optional true-color tiles |
+| NASA GIBS | Optional true-color / IR tiles |
+| MOSDAC | Optional satellite / HEM path (credentials only until download is wired) |
 
 Honest source labels:
 
@@ -87,10 +102,11 @@ Honest source labels:
 - IMD REST (`api.imd.gov.in`) needs an IP whitelist; until then CAP is the official warning feed.
 - NCS has no stable public JSON API.
 - Inland marine views snap to the nearest Indian coast instead of showing an empty grid.
+- Kalman scenes are **model-analysis** by default, not INSAT millimetres.
 
-Optional keys (see `backend/.env.example`): `DATA_GOV_IN_API_KEY`, `IMD_API_KEY`, `AIKOSH_API_KEY`, MOSDAC / NASA Earthdata / OpenWeather.
+Optional keys (see `backend/.env.example`): `DATA_GOV_IN_API_KEY`, `IMD_API_KEY`, `AIKOSH_API_KEY`, MOSDAC / NASA Earthdata / OpenWeather / Weatherbit.
 
-Do not commit secrets. `backend/.env` is gitignored.
+**Do not commit secrets.** `backend/.env` is gitignored.
 
 ---
 
@@ -111,11 +127,26 @@ Any client (Next / other web / React Native)
                           └─ providers + ML + in-memory TTL cache
 ```
 
+**Backend layout (selected)**
+
+| Area | Path |
+| --- | --- |
+| HTTP routes | `backend/app/api/` |
+| Snapshot assembly | `backend/app/services/snapshot.py` |
+| Providers | `backend/app/providers/` |
+| Residual / hybrid blend | `backend/app/ml/blend.py`, `hybrid_blend.py` |
+| Risk, outlook, prescribe | `backend/app/ml/` |
+| Nowcast / satellite science | `backend/app/science/` |
+| Advisor orchestration | `backend/app/agents/` |
+| India gazetteer | `backend/app/data/` |
+| Indic MT + number lock | `backend/app/i18n/` |
+
 **Hard rules**
 
 - India-only search and gazetteer by default.
 - The LLM does not compute forecasts, risk %, liters, or mandi rupees.
 - Indic replies are never built by splicing English fragments into Hindi or Bengali.
+- The API serves **no** frontend static files. Clients call HTTP + CORS.
 
 ---
 
@@ -130,24 +161,36 @@ Any client (Next / other web / React Native)
 ## Quick start
 
 ```powershell
+# From repo root: API + dashboard
+python main.py
+# API  http://127.0.0.1:8000/docs
+# UI   http://localhost:3000
+# python main.py --api-only
+# python main.py --host 0.0.0.0
+```
+
+Or run each process yourself:
+
+```powershell
 # Backend
 cd backend
 python -m pip install -r requirements.txt
 copy .env.example .env
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-# Frontend is optional (second terminal)
+# Frontend (second terminal)
 cd frontend
 copy .env.example .env.local
 npm install
 npm run dev
 ```
 
-API (no UI required): [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-
-Dashboard: [http://localhost:3000](http://localhost:3000) — calls `NEXT_PUBLIC_API_BASE` (default `http://127.0.0.1:8000`).
-
-Health: `GET http://127.0.0.1:8000/api/health`
+| Surface | URL |
+| --- | --- |
+| Swagger | [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) |
+| OpenAPI | [http://127.0.0.1:8000/openapi.json](http://127.0.0.1:8000/openapi.json) |
+| Dashboard | [http://localhost:3000](http://localhost:3000) (`NEXT_PUBLIC_API_BASE`, default `http://127.0.0.1:8000`) |
+| Health | `GET http://127.0.0.1:8000/api/health` |
 
 Ollama (optional):
 
@@ -156,7 +199,7 @@ ollama serve
 ollama pull qwen2.5
 ```
 
-The web app does not embed the API. Restart uvicorn after backend edits unless you pass `--reload`. Bind `--host 0.0.0.0` for a phone on the LAN. See `backend/README.md` and `clients/README.md`.
+Restart uvicorn after backend edits unless you pass `--reload`. Bind `--host 0.0.0.0` for a phone on the LAN. See `backend/README.md` and `clients/README.md`.
 
 ---
 
@@ -172,7 +215,8 @@ Copy `backend/.env.example` to `backend/.env`.
 | `DATA_GOV_IN_API_KEY` | CPCB NAQI + Agmarknet |
 | `IMD_API_KEY` | Official IMD REST after whitelist |
 | `AIKOSH_API_KEY` | AIKosh dataset search |
-| `DEFAULT_LAT` / `DEFAULT_LON` / `DEFAULT_STATE` / `DEFAULT_DISTRICT` | Startup location |
+| `MOSDAC_USER` / `MOSDAC_PASS` | Optional MOSDAC credentials |
+| `DEFAULT_LAT` / `DEFAULT_LON` / `DEFAULT_STATE` / `DEFAULT_DISTRICT` / `DEFAULT_PLACE` | Startup location |
 | `CORS_ORIGINS` | Allowed browser / app origins (`*` = any) |
 | `CORS_ORIGIN_REGEX` | Extra origins (LAN / Expo) |
 | `PUBLIC_BASE_URL` | Absolute API origin in responses (WMS links) |
@@ -189,12 +233,12 @@ Copy `backend/.env.example` to `backend/.env`.
 | `GET` | `/api/health` | Process + Ollama ping |
 | `GET` | `/api/dashboard` | Full snapshot (`district`, `place`, `lat`, `lon`) |
 | `GET` | `/api/nowcast` | Locked 0–6 h nowcast |
-| `GET` | `/api/nowcast/live` | 1-min gap series + playhead (Haldia clock) |
+| `GET` | `/api/nowcast/live` | 1-min gap series + playhead |
 | `GET` | `/api/nowcast/sat` | Kalman rain-rate between scenes (`stride=1` or `60`) |
 | `GET` | `/api/forecast`, `/predictions`, `/outlook`, `/risks` | Slice endpoints |
 | `GET` | `/api/scan`, `/compare`, `/states`, `/districts`, `/brief` | Rank, compare, gazetteer, text brief |
 | `GET` | `/api/geo/search`, `/geo/reverse`, `/geo/nearby` | India places |
-| `GET` | `/api/map/layers`, `/api/map/wms` | Basemap list + Bhuvan proxy (absolute WMS URL) |
+| `GET` | `/api/map/layers`, `/api/map/wms` | Basemap list + Bhuvan proxy |
 | `POST` | `/api/chat` | SSE Advisor (`message`, `locale_hint`, `output_locale`, `location`, `history`) |
 
 ---
@@ -207,6 +251,8 @@ Run from `backend/` (`pythonpath = .` in `pytest.ini`):
 cd backend
 python -m pytest -q
 ```
+
+Coverage includes API snapshots, blend / hybrid blend, place resolution, Indic translation, risk XAI, nowcast, and tab isolation tests.
 
 ---
 
@@ -228,6 +274,17 @@ The dashboard follows the place in the question. Irrigation advice quotes model 
 
 ---
 
+## Tech stack
+
+| Layer | Stack |
+| --- | --- |
+| API | Python 3.11+, FastAPI, Pydantic v2, httpx |
+| Dashboard | Next.js 14 (App Router), TypeScript, Tailwind, Zustand, Recharts, Leaflet |
+| LLM | Optional local Ollama (`qwen2.5`, OpenAI-compatible `/v1`) |
+| Tests | pytest |
+
+---
+
 ## License
 
-Use and extend for India-focused environmental decision support. Attribute upstream data providers (IMD, Open-Meteo, NASA, CPCB, Agmarknet, USGS, INCOIS, NRSC Bhuvan) in any public deployment.
+Use and extend for India-focused environmental decision support. Attribute upstream data providers (IMD, Open-Meteo, NASA, CPCB, Agmarknet, USGS, INCOIS, NRSC Bhuvan, MOSDAC) in any public deployment.

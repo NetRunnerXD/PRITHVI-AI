@@ -60,6 +60,8 @@ def test_standalone_service_card_and_openapi():
     assert "/api/chat" in paths
     assert "/api/nowcast/live" in paths
     assert "/api/nowcast/sat" in paths
+    assert "/api/blend" in paths
+    assert "/api/blend/hazards" in paths
     spec = client.get("/openapi.json")
     assert spec.status_code == 200
     assert spec.json()["info"]["title"] == "Rituchakra API"

@@ -399,7 +399,7 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
                  "additionalProperties": True,
              },
              get_weather_forecast, "predictive"),
-        Tool("get_dual_predictions", "Both RainFall residual-blend and trusted Open-Meteo 7-day forecasts.",
+        Tool("get_dual_predictions", "Trusted Open-Meteo vs hybrid AI–NWP Vincentize blend (q50 rain, model weights, IMD heavy-rain probability).",
              {"type": "object", "properties": {}},
              get_dual_predictions, "predicted"),
         Tool("get_7day_outlook", "Day-by-day 7-day outlook with irrigate/flood flags and soil bucket. Optional place.",

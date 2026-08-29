@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import chat, dashboard, geo
+from app.api import dashboard, geo, chat
 from app.config import get_settings
 from app.llm import ollama_client
 from app.providers.http import aclose
@@ -82,18 +82,33 @@ async def root():
     return _service_card()
 
 
-@app.get("/api", tags=["meta"], summary="Published route catalog")
-async def api_catalog():
-    routes: list[dict] = []
-    for route in app.routes:
+def _iter_api_routes(routes, prefix: str = "") -> list[dict]:
+    """Walk Starlette/FastAPI routes including _IncludedRouter wrappers."""
+    out: list[dict] = []
+    for route in routes:
+        nested = getattr(route, "original_router", None)
+        ctx = getattr(route, "include_context", None)
+        if nested is not None:
+            child_prefix = prefix + (getattr(ctx, "prefix", None) or "")
+            out.extend(_iter_api_routes(nested.routes, child_prefix))
+            continue
         methods = getattr(route, "methods", None)
         path = getattr(route, "path", None)
-        if not methods or not path or not str(path).startswith("/api"):
+        if not methods or not path:
+            continue
+        full = f"{prefix}{path}"
+        if not str(full).startswith("/api"):
             continue
         verb = sorted(m for m in methods if m not in {"HEAD", "OPTIONS"})
         if not verb:
             continue
-        routes.append({"methods": verb, "path": path})
+        out.append({"methods": verb, "path": full})
+    return out
+
+
+@app.get("/api", tags=["meta"], summary="Published route catalog")
+async def api_catalog():
+    routes = _iter_api_routes(app.routes)
     routes.sort(key=lambda r: (r["path"], r["methods"]))
     return {**_service_card(), "routes": routes}
 
@@ -110,6 +125,7 @@ async def health():
             "imd_api_key": bool(settings.imd_api_key),
             "aikosh_api_key": bool(settings.aikosh_api_key),
             "data_gov_in_api_key": bool(settings.data_gov_in_api_key),
+            "mosdac_user": bool(settings.mosdac_user),
         },
         "notes": {
             "imd_rest": "api.imd.gov.in requires IP whitelist — CAP alerts are used until then.",

@@ -7,6 +7,7 @@ from typing import Any
 from app.ml.anomaly import compute as compute_anomalies
 from app.ml.features import extract
 from app.ml.blend import build_dual_predictions
+from app.ml.hybrid_blend import member_daily_from_om
 from app.ml.outlook import build_outlook
 from app.ml.prescribe import recommend
 from app.ml.risk import all_risks
@@ -129,6 +130,7 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
     )
     sachet_rows = await run_pair("sachet", sachet.alerts(loc.state), [])
     port = await run_pair("imd-port", port_signal.hooghly(), {})
+    om_models = await run("open-meteo-models", open_meteo.forecast_models(loc.lat, loc.lon), {})
     dg_ok = {status.get("data.gov.in-aqi"), status.get("data.gov.in-mandi")}
     status["data.gov.in"] = "ok" if "ok" in dg_ok else (status.get("data.gov.in-aqi") or "error")
     return {
@@ -146,6 +148,7 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         "aq_hist": aq_hist or [],
         "sachet": sachet_rows or [],
         "port": port or {},
+        "om_models": om_models if isinstance(om_models, dict) else {},
         "status": status,
     }
 
@@ -432,6 +435,16 @@ def _vegetation(f: dict) -> dict:
 async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot:
     obs = await gather_observations(loc)
     f = extract(obs["om"], obs["flood"], obs["nasa_precip"], obs["aqi"], obs.get("marine") or {})
+    raw_models = dict(obs.get("om_models") or {})
+    if not raw_models and isinstance(obs.get("om"), dict) and (obs["om"].get("daily") or obs["om"].get("hourly")):
+        # Open-Meteo member quota often 429s; still blend on the cached best-match series.
+        raw_models = {"best_match": obs["om"]}
+        obs.setdefault("status", {})["open-meteo-models"] = "fallback-best-match"
+    f["members"] = {
+        sid: member_daily_from_om(raw)
+        for sid, raw in raw_models.items()
+        if isinstance(raw, dict) and (raw.get("daily") or raw.get("hourly"))
+    }
     if obs.get("naqi"):
         f["naqi"] = obs["naqi"].get("value")
         f["naqi_category"] = obs["naqi"].get("category")
@@ -639,7 +652,7 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
     is_day = f.get("is_day")
     generated_at = datetime.now(timezone.utc).isoformat()
     science["provenance"] = {
-        "rain": "open-meteo daily/hourly (model, not a gauge). Today is IST calendar day, not yesterday.",
+        "rain": "open-meteo multi-model daily (IFS/AIFS/GFS/GraphCast/ICON) Vincentized q50; not a gauge.",
         "nowcast_mm": "locked hours; speech/CAP do not write mm",
         "live_graph": "1-min gap integrates to locked hour; 1 Hz is playhead/tide",
         "sat_rate": "Kalman between OM hours (not INSAT unless MOSDAC wired); does not rewrite locked mm",
@@ -732,7 +745,7 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
             irrigate_dates=list(outlook.get("irrigate_dates") or []),
             flood_watch_dates=list(outlook.get("flood_watch_dates") or []),
             outlook_days=list((dual.get("ours") or {}).get("days") or outlook.get("days") or []),
-            model="open-meteo trusted + Rituchakra residual-blend v4",
+            model="open-meteo members + Rituchakra hybrid Vincentize q50",
         ),
         prescriptive=Prescriptive(warnings=warnings, actions=actions),
         risks=risks,

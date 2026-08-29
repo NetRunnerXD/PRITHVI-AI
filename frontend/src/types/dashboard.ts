@@ -238,7 +238,21 @@ export type DashboardSnapshot = {
     trusted?: PredictionPack;
     ours?: PredictionPack;
     adjustments?: string[];
-    inputs?: Record<string, number>;
+    inputs?: Record<string, number | string>;
+    hybrid?: {
+      method?: string;
+      guidance_only?: boolean;
+      members?: string[];
+      weights?: Record<string, number>;
+      attribution?: string;
+      hazards?: {
+        guidance_only?: boolean;
+        heavy_rain?: { p?: number | null; threshold_mm?: number; cdf?: string };
+        very_heavy_rain?: { p?: number | null; threshold_mm?: number };
+        extreme_rain?: { p?: number | null; threshold_mm?: number };
+      };
+      days?: { date?: string; q10?: number | null; q50?: number | null; q90?: number | null; p_heavy?: number | null }[];
+    };
     hazards?: {
       flood?: { score_pct?: number; level?: string; days?: string[]; drivers?: string[]; method?: string; source?: string };
       tsunami?: { score_pct?: number; level?: string; threat?: boolean; latest_title?: string; coast_km?: number; method?: string };
