@@ -90,6 +90,14 @@ export type LiveWatch = {
     coast_km?: number | null;
     snapped?: boolean;
     source?: string;
+    wave_peak_period_s?: number | null;
+    wind_wave_height_m?: number | null;
+    swell_height_m?: number | null;
+    swell_period_s?: number | null;
+    sst_c?: number | null;
+    sea_level_m?: number | null;
+    ocean_current_ms?: number | null;
+    ocean_current_dir?: number | null;
   };
   flood: {
     discharge?: number[];
@@ -110,7 +118,19 @@ export type LiveWatch = {
       pm2_5?: number | null;
       pm10?: number | null;
       no2?: number | null;
+      so2?: number | null;
+      co?: number | null;
+      co2?: number | null;
+      o3?: number | null;
+      nh3?: number | null;
+      ch4?: number | null;
+      dust?: number | null;
+      uv_index?: number | null;
+      uv_index_clear_sky?: number | null;
+      pollen?: Record<string, number | null>;
     };
+    waqi?: Record<string, unknown> | null;
+    openweather?: Record<string, unknown> | null;
     sources?: string[];
     history?: { t?: string; value?: number }[];
     history_source?: string;
@@ -184,6 +204,12 @@ export type DashboardSnapshot = {
       wave_height_m?: number | null;
       om_us_aqi?: number | null;
       om_pm25?: number | null;
+      apparent_temp_c?: number | null;
+      dew_point_c?: number | null;
+      pressure_msl_hpa?: number | null;
+      uv_index?: number | null;
+      sst_c?: number | null;
+      swell_height_m?: number | null;
     };
     series: Record<string, TimePoint[]>;
   };
@@ -233,6 +259,22 @@ export type DashboardSnapshot = {
       unit?: string;
     }[];
     nearby?: Location[];
+    quakes?: Record<string, unknown>[];
+    tsunami?: Record<string, unknown>[];
+    gdacs?: Record<string, unknown>[];
+    mosdac?: Record<string, unknown>;
+    moon?: Record<string, unknown>;
+  };
+  quality?: {
+    air?: Record<string, unknown>;
+    climate?: Record<string, unknown>;
+    moon?: Record<string, unknown>;
+    marine?: Record<string, unknown>;
+    seismic?: Record<string, unknown>[];
+    tsunami?: Record<string, unknown>[];
+    flood?: Record<string, unknown>;
+    gdacs?: Record<string, unknown>[];
+    mosdac?: Record<string, unknown>;
   };
   predictions?: {
     trusted?: PredictionPack;

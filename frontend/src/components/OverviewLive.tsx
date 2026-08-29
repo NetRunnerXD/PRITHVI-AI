@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import type { DashboardSnapshot } from "@/types/dashboard";
+import { QualityCatalog } from "@/components/QualityCatalog";
 import { COPY, type Locale } from "@/i18n/copy";
 import { useApp } from "@/lib/store";
 import { todayStory } from "@/lib/plain";
@@ -314,6 +315,8 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
           </div>
         </section>
       </div>
+
+      <QualityCatalog dash={dash} />
     </div>
   );
 }
@@ -342,6 +345,18 @@ export function OverviewPlots({ dash, locale }: { dash: DashboardSnapshot; local
       <Spark title={t.omAqi} data={aqi} color="var(--accent2)" unit="US AQI" />
       <Spark title={t.histAqi} data={aqiHist.length ? aqiHist : aqi} color="var(--accent2)" unit={aqiHist.length ? "µg/m³" : "US AQI"} />
       <Spark title={t.waves} data={wave} color="var(--rain)" unit={units === "imperial" ? "ft" : "m"} />
+      <Spark
+        title="UV"
+        data={(series.uv_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }))}
+        color="var(--gold)"
+        unit="UV"
+      />
+      <Spark
+        title="PM10"
+        data={(series.pm10_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }))}
+        color="var(--accent2)"
+        unit="µg/m³"
+      />
     </div>
   );
 }

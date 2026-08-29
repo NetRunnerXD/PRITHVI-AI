@@ -25,7 +25,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   density: "comfortable",
   reduceMotion: false,
   fontScale: 100,
-  refreshSec: 60,
+  refreshSec: 300,
   defaultTab: "overview",
   showHints: false,
   locale: "en",
