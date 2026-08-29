@@ -1,0 +1,28 @@
+# Render Blueprint — native Python, not Docker.
+# Dashboard: New → Blueprint → this repo. Instance: Free.
+services:
+  - type: web
+    name: rituchakra-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: python -m pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 75
+    healthCheckPath: /api/ready
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: CACHE_DIR
+        value: /tmp/rituchakra-cache
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: OLLAMA_BASE_URL
+        sync: false
+      - key: OLLAMA_API_KEY
+        sync: false
+      - key: OLLAMA_MODEL
+        sync: false

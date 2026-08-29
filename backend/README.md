@@ -65,4 +65,4 @@ Do not serve `../frontend` from this process. Point a new app at this origin usi
 
 ## Public host
 
-GitHub Action uploads this folder to a Hugging Face Docker Space. See `../deploy/huggingface.md`. Local `uvicorn` is unchanged. On the Space, set `OLLAMA_BASE_URL` to an OpenAI-compatible API (Groq, GitHub Models) if Advisor prose is needed.
+GitHub deploys this folder to a **Render Free Python** web service (not Docker). See `../deploy/render.md`. Local `uvicorn` is unchanged. On Render, set `OLLAMA_BASE_URL` to Groq or GitHub Models if Advisor prose is needed.

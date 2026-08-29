@@ -1,4 +1,8 @@
-# Hugging Face Space (public API)
+# Hugging Face Space (retired for this repo)
+
+Docker Spaces return **402 Payment Required** on create. Use **Render** instead: [`render.md`](render.md).
+
+The notes below are only if you already have a paid Docker Space.
 
 Free Docker Space. No credit card. GitHub Action on `master` / `main` uploads `backend/` when `HF_TOKEN` is set.
 

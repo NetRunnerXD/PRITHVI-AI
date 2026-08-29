@@ -28,8 +28,8 @@ Same-origin option: leave `NEXT_PUBLIC_API_BASE` empty and set `API_INTERNAL_URL
 
 See `mobile/README.md`. Production phones need HTTPS; Android blocks cleartext HTTP.
 
-## Hugging Face Space (GitHub, no credit card)
+## Render (GitHub, native Python, no Docker)
 
-Public HTTPS API for the website and Android: [`deploy/huggingface.md`](huggingface.md). Pushes to `master` / `main` that change `backend/` run `.github/workflows/deploy-api.yml` when `HF_TOKEN` is set.
+Public HTTPS API: [`deploy/render.md`](render.md). Hugging Face Docker Spaces are paid; this path is a Free Render web service. Pushes that change `backend/` redeploy when the repo is connected and `RENDER_DEPLOY_HOOK` is set.
 
-Optional paid path: [`deploy/fly.md`](fly.md).
+Optional paid path: [`deploy/fly.md`](fly.md). Hugging Face Docker notes: [`huggingface.md`](huggingface.md).
