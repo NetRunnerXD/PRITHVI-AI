@@ -59,6 +59,19 @@ def test_chat_request_accepts_llm_field():
     assert req.llm == "gemini"
 
 
+def test_chat_request_aliases_and_loose_location():
+    a = ChatRequest.model_validate({"prompt": "Rain in Haldia?", "stream": "false"})
+    assert a.message == "Rain in Haldia?"
+    assert a.stream is False
+    b = ChatRequest.model_validate({"query": "AQI?", "location": "Pune"})
+    assert b.message == "AQI?"
+    assert b.place == "Pune"
+    assert b.location is None
+    c = ChatRequest.model_validate({"text": "hi", "history": [{"role": "user", "content": "yo"}]})
+    assert c.history[0].id
+    assert c.history[0].content == "yo"
+
+
 def test_fallback_skips_empty_keys():
     s = _s(llm_fallback="groq,gemini", groq_api_key=None, gemini_api_key="k")
     assert registry.fallback_ids(s) == ["gemini"]
