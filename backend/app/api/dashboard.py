@@ -1,4 +1,7 @@
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
+
+router = APIRouter()
 
 from app.api.deps import loc_from_query
 from app.schemas.location import Location
@@ -8,7 +11,20 @@ from app.services.scan import rank_districts
 from app.services.snapshot import build_snapshot
 from app.tools import build_registry
 
-router = APIRouter()
+
+@router.get("/sat/imd-asia")
+async def imd_asia_jpeg():
+    """Same-origin INSAT Asia-sector JPEG so Leaflet ImageOverlay is not blocked by CORS."""
+    from app.providers.imd_insat import fetch_jpeg
+
+    body, _url, status = await fetch_jpeg()
+    if not body:
+        return Response(status_code=502, content=f"imd jpeg {status}".encode())
+    return Response(
+        content=body,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=120", "Access-Control-Allow-Origin": "*"},
+    )
 
 
 @router.get("/dashboard")
@@ -46,6 +62,38 @@ async def forecast_hourly(
         "n": len(hours),
         "source": "open-meteo hourly",
         "note": "Model forecast, not a gauge. Hours are Asia/Kolkata.",
+    }
+
+
+@router.get("/blend")
+@router.get("/blend/weights")
+async def blend_weights(loc: Location = Depends(loc_from_query)):
+    snap = await build_snapshot(loc)
+    hybrid = (snap.predictions or {}).get("hybrid") or {}
+    from app.providers.mosdac import status as mosdac_status
+
+    return {
+        "location": snap.location.model_dump(),
+        "weights": hybrid.get("weights") or {},
+        "members": hybrid.get("members") or [],
+        "method": hybrid.get("method"),
+        "attribution": hybrid.get("attribution"),
+        "guidance_only": True,
+        "mosdac": mosdac_status(),
+        "days": hybrid.get("days") or [],
+        "hazards": hybrid.get("hazards") or {},
+    }
+
+
+@router.get("/blend/hazards")
+async def blend_hazards(loc: Location = Depends(loc_from_query)):
+    snap = await build_snapshot(loc)
+    hybrid = (snap.predictions or {}).get("hybrid") or {}
+    return {
+        "location": snap.location.model_dump(),
+        "guidance_only": True,
+        "hazards": hybrid.get("hazards") or {},
+        "days": hybrid.get("days") or [],
     }
 
 

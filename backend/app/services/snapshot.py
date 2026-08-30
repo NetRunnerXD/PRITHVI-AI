@@ -7,6 +7,7 @@ from typing import Any
 from app.ml.anomaly import compute as compute_anomalies
 from app.ml.features import extract
 from app.ml.blend import build_dual_predictions
+from app.ml.hybrid_blend import member_daily_from_om
 from app.ml.outlook import build_hourly_7d, build_outlook
 from app.ml.prescribe import recommend
 from app.ml.risk import all_risks
@@ -22,6 +23,7 @@ from app.providers import (
     aikosh,
     datagov,
     gdacs,
+    gpm_imerg,
     hazards,
     imd,
     mosdac,
@@ -242,10 +244,17 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         run_pair("gdacs", gdacs.events(), []),
         run_pair("waqi", waqi.nearest(loc.lat, loc.lon), None),
         run_pair("openweather-air", openweather_air.current(loc.lat, loc.lon), None),
-        run_pair("mosdac", mosdac.status(), {}),
+        run("mosdac", mosdac.fetch_live(), {}),
     )
     sachet_rows = await run_pair("sachet", sachet.alerts(loc.state), [])
     port = await run_pair("imd-port", port_signal.hooghly(), {})
+    om_models = await run("open-meteo-models", open_meteo.forecast_models(loc.lat, loc.lon), {})
+    nasa_clim, era5, imerg_live = await asyncio.gather(
+        run("nasa-power-clim", nasa_power.daily_years(loc.lat, loc.lon, 8), {}),
+        run("era5", open_meteo.era5_context(loc.lat, loc.lon), {}),
+        run("gpm-imerg", gpm_imerg.fetch_pin(loc.lat, loc.lon), {}),
+    )
+    mosdac_live = mosdac_st
     dg_ok = {status.get("data.gov.in-aqi"), status.get("data.gov.in-mandi")}
     status["data.gov.in"] = "ok" if "ok" in dg_ok else (status.get("data.gov.in-aqi") or "error")
     return {
@@ -266,8 +275,12 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         "gdacs": gdacs_rows or [],
         "waqi": waqi_row,
         "ow_air": ow_air,
-        "mosdac": mosdac_st or {},
         "moon": moon_at(loc.lat, loc.lon),
+        "om_models": om_models if isinstance(om_models, dict) else {},
+        "nasa_clim": nasa_clim if isinstance(nasa_clim, dict) else {},
+        "era5": era5 if isinstance(era5, dict) else {},
+        "imerg": imerg_live if isinstance(imerg_live, dict) else {},
+        "mosdac": (mosdac_live if isinstance(mosdac_live, dict) and mosdac_live else mosdac_st) or {},
         "status": status,
     }
 
@@ -581,6 +594,12 @@ def _vegetation(f: dict) -> dict:
     }
 
 
+def _vera_pack(f: dict[str, Any], loc: Location, live_sat: dict[str, Any] | None) -> dict[str, Any]:
+    from app.ml.vera import build_vera
+
+    return build_vera(f, loc, live_sat, f.get("members") if isinstance(f.get("members"), dict) else {})
+
+
 async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot:
     key = f"snap8:{round(float(loc.lat), 3)}:{round(float(loc.lon), 3)}"
 
@@ -593,6 +612,16 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
 async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot:
     obs = await gather_observations(loc)
     f = extract(obs["om"], obs["flood"], obs["nasa_precip"], obs["aqi"], obs.get("marine") or {})
+    raw_models = dict(obs.get("om_models") or {})
+    if not raw_models and isinstance(obs.get("om"), dict) and (obs["om"].get("daily") or obs["om"].get("hourly")):
+        # Open-Meteo member quota often 429s; still blend on the cached best-match series.
+        raw_models = {"best_match": obs["om"]}
+        obs.setdefault("status", {})["open-meteo-models"] = "fallback-best-match"
+    f["members"] = {
+        sid: member_daily_from_om(raw)
+        for sid, raw in raw_models.items()
+        if isinstance(raw, dict) and (raw.get("daily") or raw.get("hourly"))
+    }
     if obs.get("naqi"):
         f["naqi"] = obs["naqi"].get("value")
         f["naqi_category"] = obs["naqi"].get("category")
@@ -790,6 +819,16 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
     aqi_i0 = int(f.get("hourly_aqi_now_i") or 0)
     wave_i0 = int(f.get("hourly_wave_now_i") or 0)
     outlook = build_outlook(f)
+    try:
+        f["hist_rows"] = nasa_power.dated_precip(obs.get("nasa_clim") or {})
+    except Exception:
+        f["hist_rows"] = []
+    f["era5"] = obs.get("era5") or {}
+    f["mosdac"] = obs.get("mosdac") or {}
+    if isinstance(live_sat, dict) and obs.get("imerg"):
+        live_sat = {**live_sat, "imerg": obs.get("imerg")}
+    vera = _vera_pack(f, loc, live_sat)
+    f["vera_gate_weights"] = (vera.get("gate") or {}).get("weights") or {}
     dual = build_dual_predictions(f)
     sources = [k for k, v in obs["status"].items() if v == "ok"]
     sources.append("local-ml-v2")
@@ -803,7 +842,7 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
     is_day = f.get("is_day")
     generated_at = datetime.now(timezone.utc).isoformat()
     science["provenance"] = {
-        "rain": "open-meteo daily/hourly (model, not a gauge). Today is IST calendar day, not yesterday.",
+        "rain": "open-meteo multi-model daily (IFS/AIFS/GFS/GraphCast/ICON) Vincentized q50; not a gauge.",
         "nowcast_mm": "locked hours; speech/CAP do not write mm",
         "live_graph": "1-min gap integrates to locked hour; 1 Hz is playhead/tide",
         "sat_rate": "Kalman between OM hours (MOSDAC HEM only if a file is cached); does not rewrite locked mm",
@@ -947,7 +986,7 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
             flood_watch_dates=list(outlook.get("flood_watch_dates") or []),
             outlook_days=list((dual.get("ours") or {}).get("days") or outlook.get("days") or []),
             hourly=build_hourly_7d(f),
-            model="open-meteo trusted + Rituchakra residual-blend v4",
+            model="open-meteo members + Rituchakra hybrid Vincentize q50",
         ),
         prescriptive=Prescriptive(warnings=warnings, actions=actions),
         risks=risks,
@@ -996,6 +1035,7 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
                 coast_km=f.get("coast_km"),
                 cap_hit=cap_hit,
             ),
+            "vera": vera,
         },
         live=_build_live(loc, f, obs, flood.score_pct, generated_at),
         science=science,

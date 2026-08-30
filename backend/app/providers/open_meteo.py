@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -14,6 +15,18 @@ AIR = "https://air-quality-api.open-meteo.com/v1/air-quality"
 MARINE = "https://marine-api.open-meteo.com/v1/marine"
 ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 GEO = "https://geocoding-api.open-meteo.com/v1/search"
+
+# Deterministic Open-Meteo members for hybrid blending (no local GPU).
+BLEND_MODELS: tuple[tuple[str, str], ...] = (
+    ("ifs025", "ecmwf_ifs025"),
+    ("aifs025", "ecmwf_aifs025"),
+    ("gfs", "gfs_global"),
+    ("graphcast", "gfs_graphcast025"),
+    ("icon", "icon_global"),
+    ("pangu", "ecmwf_aifs025"),
+    ("fourcastnet", "icon_seamless"),
+    ("wrf_ncum", "ukmo_global_deterministic_10km"),
+)
 
 
 def _good_path(kind: str, lat: float, lon: float):
@@ -145,6 +158,45 @@ async def forecast(lat: float, lon: float) -> dict[str, Any]:
     return await cache.aget(key, factory, ttl_s=90, swr_s=600)
 
 
+async def forecast_models(lat: float, lon: float) -> dict[str, Any]:
+    """Fetch daily fields for each blend member. Failures are skipped (429-safe)."""
+
+    async def one(sid: str, models: str) -> tuple[str, dict[str, Any] | None]:
+        key = f"om:blend:{sid}:{round(lat, 3)}:{round(lon, 3)}"
+        hit = cache.get(key)
+        if isinstance(hit, dict) and (hit.get("daily") or hit.get("hourly")):
+            return sid, hit
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": "precipitation,temperature_2m,wind_speed_10m",
+            "daily": (
+                "precipitation_sum,precipitation_probability_max,"
+                "temperature_2m_max,temperature_2m_min,wind_speed_10m_max"
+            ),
+            "forecast_days": 7,
+            "timezone": "Asia/Kolkata",
+            "models": models,
+        }
+        try:
+            r = await client().get(FORECAST, params=params)
+            if r.status_code == 429:
+                await asyncio.sleep(0.4)
+                r = await client().get(FORECAST, params=params)
+            if r.status_code >= 400:
+                return sid, None
+            data = r.json()
+            if isinstance(data, dict) and not data.get("error") and data.get("daily"):
+                cache.set(key, data, 900)
+                return sid, data
+            return sid, None
+        except Exception:
+            return sid, None
+
+    rows = await asyncio.gather(*[one(sid, m) for sid, m in BLEND_MODELS])
+    return {sid: payload for sid, payload in rows if payload}
+
+
 async def _archive_fallback(lat: float, lon: float) -> dict[str, Any] | None:
     """ERA5 archive when the live forecast quota is gone. Not a gauge."""
     from datetime import date, timedelta
@@ -205,6 +257,52 @@ async def _archive_fallback(lat: float, lon: float) -> dict[str, Any] | None:
 def _flood_has_discharge(data: dict[str, Any]) -> bool:
     disc = ((data or {}).get("daily") or {}).get("river_discharge") or []
     return any(x is not None for x in disc)
+
+
+async def era5_context(lat: float, lon: float) -> dict[str, Any]:
+    """ERA5-Land / IFS archive: precip + 500 hPa geopotential when the model exposes it."""
+    from datetime import date, timedelta
+
+    key = f"om:era5:{round(lat, 2)}:{round(lon, 2)}"
+    hit = cache.get(key)
+    if isinstance(hit, dict):
+        return hit
+    today = date.today()
+    start = (today - timedelta(days=16)).isoformat()
+    end = (today - timedelta(days=1)).isoformat()
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": start,
+        "end_date": end,
+        "hourly": "precipitation,temperature_2m,geopotential_height_500hPa,pressure_msl",
+        "daily": "precipitation_sum",
+        "timezone": "Asia/Kolkata",
+        "models": "era5_seamless",
+    }
+    try:
+        r = await client().get(ARCHIVE, params=params)
+        if r.status_code >= 400:
+            params.pop("models", None)
+            r = await client().get(ARCHIVE, params=params)
+        if r.status_code >= 400:
+            return {"ok": False, "status": f"http_{r.status_code}"}
+        data = r.json()
+        hourly = data.get("hourly") or {}
+        z = [float(x) for x in (hourly.get("geopotential_height_500hPa") or []) if x is not None]
+        p = [float(x) for x in ((data.get("daily") or {}).get("precipitation_sum") or []) if x is not None]
+        out = {
+            "ok": True,
+            "source": "open-meteo-era5-archive",
+            "z500_m": round(sum(z) / len(z), 1) if z else None,
+            "z500_std": round((sum((x - sum(z) / len(z)) ** 2 for x in z) / len(z)) ** 0.5, 2) if len(z) > 2 else None,
+            "precip_days": p[-16:],
+            "n_hours": len(hourly.get("time") or []),
+        }
+        cache.set(key, out, 6 * 3600)
+        return out
+    except Exception as e:
+        return {"ok": False, "status": "error", "error": str(e)[:160]}
 
 
 async def flood(lat: float, lon: float) -> dict[str, Any]:

@@ -42,6 +42,11 @@ def test_states_and_districts():
     assert d.json()["count"] >= 20
 
 
+def test_imd_asia_proxy_route():
+    r = client.get("/api/sat/imd-asia")
+    assert r.status_code in (200, 502)
+
+
 def test_map_layers():
     r = client.get("/api/map/layers")
     assert r.status_code == 200
@@ -70,6 +75,8 @@ def test_standalone_service_card_and_openapi():
     assert "/api/chat" in paths
     assert "/api/nowcast/live" in paths
     assert "/api/nowcast/sat" in paths
+    assert "/api/blend" in paths
+    assert "/api/blend/hazards" in paths
     spec = client.get("/openapi.json")
     assert spec.status_code == 200
     assert spec.json()["info"]["title"] == "Rituchakra API"

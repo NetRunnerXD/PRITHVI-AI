@@ -1,4 +1,5 @@
 from app.ml.blend import _nudge_precip, build_dual_predictions
+from app.ml.hybrid_blend import p_exceed, vincentize
 
 
 def test_wet_soil_increases_near_term_rain():
@@ -30,3 +31,39 @@ def test_dual_predictions_diverge_and_keep_dates():
     assert abs(o3 - t3) / t3 < 0.2
     assert len(dual["ours"]["days"]) == 7
     assert dual["ours"]["days"][0]["precip_mm"] >= dual["trusted"]["days"][0]["precip_mm"]
+
+
+def test_vincentize_keeps_tail_when_mean_is_below_imd_heavy():
+    q = vincentize([0.0, 0.0, 0.0, 200.0])
+    assert q["mean"] == 50.0
+    assert q["q50"] == 0.0
+    assert q["q90"] >= 64.5
+    assert p_exceed([0.0, 0.0, 0.0, 200.0], 64.5) == 0.25
+
+
+def test_hybrid_members_use_q50_not_mean():
+    f = {
+        "precip_days": [10.0, 0.0],
+        "precip_prob": [50, 10],
+        "temp_max": [31, 32],
+        "temp_min": [24, 24],
+        "et0_days": [3, 3],
+        "daily_times": ["2026-08-29", "2026-08-30"],
+        "soil_m3m3": 0.28,
+        "clim_daily_mm": 6.0,
+        "precip_z": 0.0,
+        "members": {
+            "ifs025": {"precip_days": [0.0, 1.0]},
+            "gfs": {"precip_days": [0.0, 1.0]},
+            "icon": {"precip_days": [0.0, 1.0]},
+            "graphcast": {"precip_days": [200.0, 1.0]},
+        },
+    }
+    dual = build_dual_predictions(f)
+    assert dual["hybrid"]["method"] == "vera_moe_vincentize"
+    assert dual["hybrid"]["hazards"]["guidance_only"] is True
+    assert dual["ours"]["days"][0]["precip_q50_mm"] == 0.0
+    assert dual["ours"]["days"][0]["precip_q90_mm"] >= 64.5
+    assert dual["hybrid"]["hazards"]["heavy_rain"]["p"] == 0.25
+    # residual sits on q50 (0), not on the 50 mm mean
+    assert dual["ours"]["days"][0]["precip_mm"] < 20

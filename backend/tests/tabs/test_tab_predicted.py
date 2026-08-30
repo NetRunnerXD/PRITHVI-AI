@@ -24,6 +24,32 @@ def test_outlook_days_stay_numeric_for_the_pin():
     assert home.state == "West Bengal"
 
 
+def test_vera_pack_on_models_tab():
+    from app.ml.vera import build_vera
+
+    home = loc("Howrah")
+    pack = build_vera(
+        {
+            "precip_days": [4.2],
+            "precip_3d_mm": 4.2,
+            "clim_daily_mm": 6.0,
+            "members": {"best_match": {"precip_days": [4.2]}},
+            "daily_times": ["2026-08-19"],
+        },
+        home,
+        {"ok": True, "insat": {"url": "https://mausam.imd.gov.in/Satellite/3Dasiasec_ir1.jpg"}},
+        {"best_match": {"precip_days": [4.2]}},
+    )
+    assert pack["cv"]["frames"] is not None or pack["cv"]["insat_url"]
+    assert "Chhattisgarh" not in str(pack)
+    assert pack["graph"]["nodes"][0]["id"] == "data"
+    assert pack["cv"]["map"]["asia"]["west"] == 40.0
+    assert pack["cv"]["map"]["asia"]["east"] == 110.0
+    assert pack["cv"]["map"]["asia"]["south"] == -10.0
+    assert pack["cv"]["map"]["asia"]["url"] == "/api/sat/imd-asia"
+    assert pack["cv"]["map"]["imerg_layer"] == "IMERG_Precipitation_Rate"
+
+
 def test_contradiction_different_rain_does_not_copy():
     wet = build_outlook(
         {

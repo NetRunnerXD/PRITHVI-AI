@@ -10,6 +10,16 @@ from __future__ import annotations
 from statistics import mean
 from typing import Any
 
+from app.ml.hybrid_blend import (
+    RAIN_EXTREME_MM,
+    RAIN_HEAVY_MM,
+    RAIN_VERY_HEAVY_MM,
+    day_members,
+    equal_weights,
+    p_exceed,
+    vincentize,
+)
+
 
 def _clip(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
@@ -58,6 +68,14 @@ def build_dual_predictions(f: dict[str, Any]) -> dict[str, Any]:
     et0 = [float(x) for x in (f.get("et0_days") or [])][:7]
     times = [str(x) for x in (f.get("daily_times") or [])][:7]
     n = min(7, max(len(precip), len(times)))
+    members = f.get("members") if isinstance(f.get("members"), dict) else {}
+    member_ids = [k for k, v in members.items() if isinstance(v, dict)]
+    wmap = equal_weights(member_ids) if member_ids else {}
+    vera_w = f.get("vera_gate_weights")
+    if isinstance(vera_w, dict) and member_ids:
+        merged = {sid: float(vera_w.get(sid, wmap.get(sid, 0))) for sid in member_ids}
+        s = sum(merged.values()) or 1.0
+        wmap = {k: round(v / s, 4) for k, v in merged.items()}
     soil = float(f.get("soil_m3m3") or 0.28)
     clim = float(f.get("clim_daily_mm") or 6.0)
     z = float(f.get("precip_z") or 0.0)
@@ -83,9 +101,19 @@ def build_dual_predictions(f: dict[str, Any]) -> dict[str, Any]:
         tx = tmax[i] if i < len(tmax) else None
         tn = tmin[i] if i < len(tmin) else None
         date = times[i] if i < len(times) else f"d+{i}"
+        q = None
+        p_backbone = p
+        ids_i, vals_i = day_members(members, i) if members else ([], [])
+        if vals_i:
+            ww = [wmap.get(s, 1.0 / len(vals_i)) for s in ids_i]
+            q = vincentize(vals_i, ww)
+            p_backbone = float(q["q50"])
         soil_t = _clip(soil_t + p * 0.0035 - e * 0.0075, 0.12, 0.45)
         hit = atlas_lookup(lat, lon, regime, i)
-        p_hat, why = _nudge_precip(p, i, soil, clim, z, atlas_frac=float(hit.get("frac") or 0))
+        p_hat, why = _nudge_precip(p_backbone, i, soil, clim, z, atlas_frac=float(hit.get("frac") or 0))
+        if q is not None:
+            why = (why + "; " if why else "") + f"hybrid CDF q50 (not mean {q['mean']:.1f} mm)"
+            pr = int(_clip(q["pop"] * 100, 5, 99))
         if i == 0 and persist >= 6:
             extra = min(2.0, persist * 0.08)
             p_hat = round(p_hat + extra, 1)
@@ -124,6 +152,10 @@ def build_dual_predictions(f: dict[str, Any]) -> dict[str, Any]:
                 "flood_watch": p_hat >= 22,
                 "confidence_pct": conf_o,
                 "adjustment": why,
+                "precip_q10_mm": round(q["q10"], 1) if q else None,
+                "precip_q50_mm": round(q["q50"], 1) if q else None,
+                "precip_q90_mm": round(q["q90"], 1) if q else None,
+                "p_heavy": round(p_exceed(vals_i, RAIN_HEAVY_MM, [wmap[s] for s in ids_i]), 3) if vals_i else None,
             }
         )
 
@@ -150,8 +182,8 @@ def build_dual_predictions(f: dict[str, Any]) -> dict[str, Any]:
         ),
         "ours": pack(
             ours_days,
-            "Rituchakra residual-blend v4",
-            "Trusted Open-Meteo backbone + ±12% residual (soil / anomaly / India atlas)",
+            "Rituchakra hybrid AI–NWP blend v5",
+            "Vincentized multi-model CDF q50 + ±12% residual (soil / anomaly / India atlas). Rain field is q50, not mean mm.",
         ),
         "adjustments": notes,
         "inputs": {
@@ -161,4 +193,51 @@ def build_dual_predictions(f: dict[str, Any]) -> dict[str, Any]:
             "hourly_pulse_mm": round(persist, 2),
             "atlas_regime": regime,
         },
+        "hybrid": _hybrid_pack(ours_days, member_ids, wmap, members, times, n),
+    }
+
+
+def _hybrid_pack(
+    ours_days: list[dict[str, Any]],
+    member_ids: list[str],
+    wmap: dict[str, float],
+    members: dict,
+    times: list,
+    n: int,
+) -> dict[str, Any]:
+    day0_ids, day0_vals = day_members(members, 0) if members else ([], [])
+    ww0 = [wmap.get(s, 0) for s in day0_ids] if day0_ids else []
+    return {
+        "method": "vera_moe_vincentize",
+        "guidance_only": True,
+        "rain_day": "03:00Z/03:00Z",
+        "members": member_ids,
+        "weights": wmap,
+        "attribution": "Forecast data from Open-Meteo (CC BY 4.0); models ECMWF/NOAA/DWD.",
+        "hazards": {
+            "guidance_only": True,
+            "heavy_rain": {
+                "p": round(p_exceed(day0_vals, RAIN_HEAVY_MM, ww0), 3) if day0_vals else None,
+                "threshold_mm": RAIN_HEAVY_MM,
+                "cdf": "vincentized_24h",
+            },
+            "very_heavy_rain": {
+                "p": round(p_exceed(day0_vals, RAIN_VERY_HEAVY_MM, ww0), 3) if day0_vals else None,
+                "threshold_mm": RAIN_VERY_HEAVY_MM,
+            },
+            "extreme_rain": {
+                "p": round(p_exceed(day0_vals, RAIN_EXTREME_MM, ww0), 3) if day0_vals else None,
+                "threshold_mm": RAIN_EXTREME_MM,
+            },
+        },
+        "days": [
+            {
+                "date": d.get("date"),
+                "q10": d.get("precip_q10_mm"),
+                "q50": d.get("precip_q50_mm"),
+                "q90": d.get("precip_q90_mm"),
+                "p_heavy": d.get("p_heavy"),
+            }
+            for d in ours_days
+        ],
     }

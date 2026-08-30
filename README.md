@@ -39,7 +39,7 @@ Monorepo. **The backend is a standalone HTTP API** (no web assets).
 | **Alerts** | IMD CAP + CPCB + INCOIS + USGS + local pump / field / storm actions |
 | **Map** | All-India / state storm map: past lightning (Weatherbit), predicted lightning/storm + confidence, IR cells, polygons, GIBS IR/IMERG |
 | **Forecast** | Charts, 7-day outlook, district compare |
-| **Predicted** | Trusted Open-Meteo vs local residual-blend |
+| **Predicted / Models** | Trusted Open-Meteo vs VERA-MoE hybrid blend, 24 h hourly, satellite lab |
 | **Risks** | Explainable cards + the same live storm map |
 | **Market** | Agmarknet mandi prices |
 | **Advisor** | Open-LLM chat; presets EN/HI/BN; reply-in language |
