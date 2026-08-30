@@ -201,6 +201,23 @@ export async function fetchStates(): Promise<string[]> {
   }
 }
 
+export async function fetchWeatherGrid(hour = 0) {
+  const r = await fetch(`${apiUrl("/map/weather-grid")}?hour=${hour}`);
+  if (!r.ok) return null;
+  return r.json();
+}
+
+export async function fetchRadarFrames() {
+  const r = await fetch(apiUrl("/map/radar"));
+  if (!r.ok) return null;
+  return r.json() as Promise<{
+    ok: boolean;
+    host: string;
+    radar: { time: number; path: string }[];
+    satellite: { time: number; path: string }[];
+  }>;
+}
+
 export async function fetchStormMap(state: string): Promise<StormMapPack | null> {
   const q = `state=${encodeURIComponent(state)}`;
   for (const path of ["/nowcast/storm-map", "/nowcast-storm-map"]) {

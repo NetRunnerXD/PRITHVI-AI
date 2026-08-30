@@ -7,6 +7,7 @@ from openai import AsyncOpenAI
 
 from app.config import get_settings
 from app.llm import providers as registry
+from app.llm.worker_hub import WorkerOffline, hub
 
 _clients: dict[str, AsyncOpenAI] = {}
 _active: ContextVar[str | None] = ContextVar("llm_provider", default=None)
@@ -82,6 +83,20 @@ async def chat(
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
             tools_stripped = False
+            if pid == "ollama" and hub.online():
+                try:
+                    parsed = await hub.submit(kwargs, timeout=float(get_settings().llm_worker_timeout_s))
+                except WorkerOffline as exc:
+                    last_err = exc
+                    continue
+                parsed = {
+                    "content": (parsed.get("content") or "").strip(),
+                    "tool_calls": parsed.get("tool_calls") or [],
+                    "tools_stripped": bool(parsed.get("tools_stripped")),
+                    "provider": pid,
+                    "via": "home-worker",
+                }
+                return parsed
             try:
                 resp = await client().chat.completions.create(**kwargs)
             except Exception:
@@ -116,10 +131,15 @@ async def ping() -> tuple[bool, str]:
     p = _resolved()
     if p.id != "ollama":
         return True, f"{p.id}:{p.model}"
+    if hub.online():
+        return True, f"home-online:{p.model}"
     try:
         await client().models.list()
         return True, p.model
     except Exception as exc:
+        token = (s.llm_worker_token or "").strip()
+        if token:
+            return False, "home-offline"
         return False, str(exc)
 
 
@@ -129,9 +149,14 @@ def catalog() -> dict[str, Any]:
     rows = []
     for p in registry.available(s):
         rows.append({"id": p.id, "model": p.model, "ok": True})
+    home = hub.status()
     return {
         "active": active.id,
         "model": active.model,
         "available": rows,
-        "ollama": {"ok": True, "model": s.ollama_model},
+        "ollama": {
+            "ok": True,
+            "model": s.ollama_model,
+            "home": home,
+        },
     }

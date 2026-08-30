@@ -15,6 +15,8 @@ docker compose up --build
 
 Use **one uvicorn worker**. The SWR cache is in-process.
 
+Home Ollama: set `LLM_WORKER_TOKEN` on the API, run `python backend/scripts/ollama_worker.py --api https://your-api` on the PC that has Ollama. See the README “Home Ollama” section.
+
 ## Public HTTPS
 
 1. Set `.env` from `.env.production.example` (`PUBLIC_BASE_URL`, `CORS_ORIGINS`, `NEXT_PUBLIC_API_BASE`).

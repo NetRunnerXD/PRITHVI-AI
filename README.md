@@ -112,6 +112,23 @@ ollama pull qwen2.5
 
 If port 8000 is already taken, `main.py` exits with a clear error. Tests: `cd backend; python -m pytest -q`.
 
+### Home Ollama for a deployed API
+
+The cloud host cannot open a port on your PC. A small worker on this machine connects **out** and runs inference locally.
+
+1. Set the same `LLM_WORKER_TOKEN` on the deployed API and in `backend/.env`.
+2. Keep `ollama serve` running here (`ollama pull qwen2.5:3b`).
+3. Point the worker at the public API:
+
+```powershell
+cd backend
+$env:LLM_WORKER_TOKEN="your-shared-secret"
+$env:PRITHVI_API="https://your-api.example"
+python scripts/ollama_worker.py
+```
+
+`GET /api/health` then shows `ollama.home.online: true` and `detail: home-online:…`. When this process stops, chat uses `LLM_FALLBACK` (e.g. Groq) if configured.
+
 ---
 
 ## Configuration

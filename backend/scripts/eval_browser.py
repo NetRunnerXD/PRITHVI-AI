@@ -45,7 +45,7 @@ def main() -> int:
         search.fill(args.place)
         page.wait_for_timeout(800)
         page.locator("ul.neo button", has_text=args.place).first.click()
-        page.get_by_test_id("tab-advisor").click()
+        page.get_by_test_id("tab-chat").click()
         page.get_by_test_id("chat-locus").filter(has_text=args.place).wait_for(timeout=120000)
         if args.locale and args.locale != "en":
             page.get_by_test_id(f"locale-{args.locale}").click()

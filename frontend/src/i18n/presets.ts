@@ -26,15 +26,7 @@ export const PRESETS: Preset[] = [
       bn: "আগামী ২ ঘণ্টায় বৃষ্টি হবে? এখন পাম্প সেট চালাব কি?",
     },
   },
-  {
-    id: "window-haldia",
-    label: { en: "Haldia 23–28 Aug", hi: "हल्दिया 23–28 अगस्त", bn: "হলদিয়া ২৩–২৮ আগস্ট" },
-    text: {
-      en: "Can you show me rainfall prediction in Haldia for 23 to 28th August?",
-      hi: "हल्दिया में 23 से 28 अगस्त की बारिश का अनुमान दिखाएँ।",
-      bn: "হলদিয়ায় ২৩ থেকে ২৮ আগস্ট বৃষ্টির পূর্বাভাস দেখাবেন?",
-    },
-  },
+
   {
     id: "irrigate",
     label: { en: "Should I irrigate?", hi: "सिंचाई?", bn: "সেচ দেব?" },
@@ -44,24 +36,7 @@ export const PRESETS: Preset[] = [
       bn: "আগামী তিন দিনে বৃষ্টির সম্ভাবনা কেমন? এখন সেচ দেওয়া উচিত কি?",
     },
   },
-  {
-    id: "list-wb",
-    label: { en: "List WB districts", hi: "बंगाल ज़िले", bn: "জেলার তালিকা" },
-    text: {
-      en: "List all districts in West Bengal.",
-      hi: "पश्चिम बंगाल के सभी ज़िलों की सूची दें।",
-      bn: "পশ্চিমবঙ্গের সব জেলার তালিকা দিন।",
-    },
-  },
-  {
-    id: "list-od",
-    label: { en: "List Odisha districts", hi: "ओडिशा ज़िले", bn: "ওড়িশা জেলা" },
-    text: {
-      en: "List all districts in Odisha.",
-      hi: "ओडिशा के सभी ज़िलों की सूची दें।",
-      bn: "ওড়িশার সব জেলার তালিকা দিন।",
-    },
-  },
+
   {
     id: "mandi",
     label: { en: "State mandi prices", hi: "मंडी भाव", bn: "মান্ডি দাম" },
@@ -80,15 +55,7 @@ export const PRESETS: Preset[] = [
       bn: "৭ দিনের আউটলুক ও জল ভারসাম্য দিন।",
     },
   },
-  {
-    id: "compare",
-    label: { en: "Compare with Pune", hi: "पुणे तुलना", bn: "পুণের তুলনা" },
-    text: {
-      en: "Compare this district with Pune.",
-      hi: "इस ज़िले की पुणे से तुलना करें।",
-      bn: "এই জেলার সঙ্গে পুণের তুলনা করুন।",
-    },
-  },
+
   {
     id: "aqi",
     label: { en: "Air quality", hi: "वायु गुणवत्ता", bn: "বায়ুর মান" },
@@ -118,7 +85,7 @@ export const PRESETS: Preset[] = [
   },
 ];
 
-const ASK_IDS = ["nowcast", "flood-wb", "list-od", "mandi", "outlook", "irrigate", "aqi"] as const;
+const ASK_IDS = ["nowcast", "outlook", "irrigate", "aqi", "sky", "quake", "flood-wb"] as const;
 
 export function presetsFor(locale: Locale): { id: string; label: string; text: string }[] {
   return PRESETS.map((p) => ({ id: p.id, label: p.label[locale], text: p.text[locale] }));

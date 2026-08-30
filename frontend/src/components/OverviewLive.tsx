@@ -12,11 +12,10 @@ import {
   YAxis,
 } from "recharts";
 import type { DashboardSnapshot } from "@/types/dashboard";
-import { QualityCatalog } from "@/components/QualityCatalog";
 import { COPY, type Locale } from "@/i18n/copy";
 import { useApp } from "@/lib/store";
 import { todayStory } from "@/lib/plain";
-import { dist, height, rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
+import { dist, rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
 
 function hhmm(t: string) {
   const i = t.indexOf("T");
@@ -55,6 +54,60 @@ const tip = {
   color: "var(--text)",
 };
 
+// ── Suggestion severity helper ──────────────────────────────────────
+function suggestionLevel(id: string, v: string): "ok" | "watch" | "alert" | "danger" {
+  const val = v.toLowerCase().trim();
+  if (val === "quiet" || val === "0" || val === "—") return "ok";
+  if (val === "watch") return "watch";
+  if (val === "warning" || val === "alert") return "alert";
+  if (val === "danger" || val === "extreme") return "danger";
+  // numeric heuristics
+  const num = parseFloat(val);
+  if (!isNaN(num)) {
+    if (id === "flood" || id === "drought" || id === "heat") {
+      if (num >= 75) return "danger";
+      if (num >= 50) return "alert";
+      if (num >= 25) return "watch";
+      return "ok";
+    }
+    if (id === "uv") {
+      if (num >= 11) return "danger";
+      if (num >= 8) return "alert";
+      if (num >= 3) return "watch";
+      return "ok";
+    }
+    if (id === "fish") {
+      if (num > 3) return "danger";
+      if (num > 2) return "alert";
+      if (num > 1) return "watch";
+      return "ok";
+    }
+    if (num > 0) return "watch";
+  }
+  return "watch"; // non-empty, non-quiet = watch
+}
+
+const suggLevel: Record<string, { bg: string; text: string; dot: string }> = {
+  ok: { bg: "bg-[color-mix(in_srgb,var(--accent)_10%,transparent)]", text: "text-neo-accent", dot: "bg-[var(--accent)]" },
+  watch: { bg: "bg-[color-mix(in_srgb,var(--warn)_12%,transparent)]", text: "text-neo-warn", dot: "bg-[var(--warn)]" },
+  alert: { bg: "bg-[color-mix(in_srgb,var(--accent2)_12%,transparent)]", text: "text-neo-accent2", dot: "bg-[var(--accent2)]" },
+  danger: { bg: "bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]", text: "text-neo-danger", dot: "bg-[var(--danger)]" },
+};
+
+// Alert severity colors for the sidebar panel
+const alertTone: Record<string, string> = {
+  extreme: "border-l-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_7%,transparent)]",
+  warning: "border-l-[var(--warn)]   bg-[color-mix(in_srgb,var(--warn)_7%,transparent)]",
+  alert: "border-l-[var(--accent2)] bg-[color-mix(in_srgb,var(--accent2)_6%,transparent)]",
+  watch: "border-l-[var(--accent)]  bg-[color-mix(in_srgb,var(--accent)_6%,transparent)]",
+};
+const alertDot: Record<string, string> = {
+  extreme: "text-neo-danger",
+  warning: "text-neo-warn",
+  alert: "text-neo-accent2",
+  watch: "text-neo-accent",
+};
+
 export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale: Locale }) {
   const t = COPY[locale];
   const units = useApp((s) => s.settings.units);
@@ -78,62 +131,39 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
     rain: series.precip_hourly?.[i]?.value ?? 0,
     wind: series.wind_hourly?.[i]?.value ?? 0,
   }));
-  const nc = dash.science?.nowcast;
-  const ncStrip = [
-    ...(nc?.observed || []).slice(-3).map((h) => ({
-      t: hhmm(h.t),
-      rain: h.mm,
-      engine: "observed" as const,
-    })),
-    ...(nc?.hours || []).map((h) => ({
-      t: hhmm(h.t),
-      rain: h.mm,
-      engine: (h.engine || "nwp") as "nowcast" | "blend" | "nwp",
-    })),
-  ];
-  const engineLabel: Record<string, string> = {
-    observed: t.engineObserved,
-    nowcast: t.engineNowcast,
-    blend: t.engineBlend,
-    nwp: t.engineNwp,
-  };
   const days = (dash.predictive.outlook_days || []).slice(0, 7);
 
-  const decide = [
-    {
-      k: t.pumpSet,
-      v: (nc?.pump?.action || "—").toUpperCase(),
-      sub: `${t.pInterrupt} ${nc?.pump?.p_interrupt_90m ?? "—"}`,
-      hot: nc?.pump?.action === "hold",
-    },
-    {
-      k: t.fieldAccess,
-      v: nc?.access?.enterable === false ? t.closedField : t.enterable,
-      sub: (nc?.access?.reasons || []).slice(0, 1).join(", ") || "",
-      hot: nc?.access?.enterable === false,
-    },
-    {
-      k: t.kalWatch,
-      v: nc?.kal?.level === "watch" || nc?.tide?.drain_blocked ? (nc?.tide?.drain_blocked ? t.drainBlocked : t.kalWatch) : t.allClear,
-      sub: regimeLabel(nc?.regime?.name),
-      hot: nc?.kal?.level === "watch" || Boolean(nc?.tide?.drain_blocked),
-    },
+  const story = todayStory(dash, locale);
+  const sixHour = (dash.predictive.hourly || []).slice(0, 6).map((h) => ({
+    t: h.hour || hhmm(h.t),
+    rain: h.precip_mm ?? 0,
+    temp: h.temp_c ?? 0,
+    wind: h.wind_kmh ?? 0,
+  }));
+  const sixFromSeries = hourly.slice(0, 6);
+  const six = sixHour.length ? sixHour : sixFromSeries;
+
+  // All warnings + actions for the alerts panel
+  const allAlerts = [
+    ...dash.prescriptive.warnings.slice(0, 24),
+    ...dash.prescriptive.actions.slice(0, 8).map((a) => ({
+      id: a.id,
+      severity: "watch" as const,
+      title: a.action,
+      body: a.when || "",
+      hazard: "weather",
+      source: "",
+      issued_at: null,
+    })),
   ];
 
-  const story = todayStory(dash, locale);
   return (
     <div className="space-y-3">
       {story ? <p className="text-sm text-neo-muted">{story}</p> : null}
-      <div className="grid gap-2 sm:grid-cols-3">
-        {decide.map((c) => (
-          <div key={c.k} className={`neo px-3 py-2 ${c.hot ? "ring-1 ring-neo-danger" : ""}`}>
-            <p className="text-[10px] uppercase tracking-widest text-neo-muted">{c.k}</p>
-            <p className="mt-1 text-sm font-bold">{c.v}</p>
-            {c.sub ? <p className="text-[11px] text-neo-muted">{c.sub}</p> : null}
-          </div>
-        ))}
-      </div>
+
+      {/* ── Row 1: Sky + Rain — Extended full width ── */}
       <div className="grid gap-3 lg:grid-cols-12">
+        {/* Sky card */}
         <section className="neo sky-card relative overflow-hidden p-5 lg:col-span-7">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.sky}</p>
           <div className="mt-3 flex items-center gap-4">
@@ -145,7 +175,7 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
               </p>
               <p className="mt-1 text-xs text-neo-muted">
                 {sky.is_day ? t.day : t.night}
-                {feels != null ? ` · ${temp(feels, units)}` : ""}
+                {feels != null ? ` · feels ${temp(feels, units)}` : ""}
                 {sky.place ? ` · ${sky.place}` : ""}
               </p>
             </div>
@@ -158,6 +188,7 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
           </div>
         </section>
 
+        {/* Rain panel */}
         <section className="neo p-5 lg:col-span-5">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.rainToday}</p>
           <p className="mt-3 font-mono text-4xl font-extrabold text-neo-accent">
@@ -176,147 +207,324 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
         </section>
       </div>
 
-      {ncStrip.length > 0 ? (
-        <section className="neo overflow-x-auto p-3">
-          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.nowcast}</p>
-          </div>
-          <div className="mb-3 flex flex-wrap gap-2 text-[11px]">
-            {nc?.clock?.t_start ? (
-              <span className="chip">
-                {t.onset} {hhmm(nc.clock.t_start)}
-              </span>
-            ) : null}
-            {nc?.clock?.t_stop ? (
-              <span className="chip">
-                {t.cessation} {hhmm(nc.clock.t_stop)}
-              </span>
-            ) : null}
-            {nc?.pump ? (
-              <span className="chip">
-                {t.pumpSet} {nc.pump.action === "hold" ? t.holdHint : t.applyHint} · {t.pInterrupt}{" "}
-                {nc.pump.p_interrupt_90m ?? "—"}
-              </span>
-            ) : null}
-            {nc?.access ? (
-              <span className="chip">
-                {t.fieldAccess} {nc.access.enterable ? t.enterable : t.closedField}
-              </span>
-            ) : null}
-            {nc?.kal?.level === "watch" ? <span className="chip">{t.kalWatch}</span> : null}
-            {nc?.tide?.drain_blocked ? <span className="chip">{t.drainBlocked}</span> : null}
-            {nc?.ponding?.mm_60 != null ? (
-              <span className="chip">
-                {t.ponding} {rain(nc.ponding.mm_60, units)}
-              </span>
-            ) : null}
-          </div>
-          <div className="flex min-w-max gap-2">
-            {ncStrip.map((h, i) => (
-              <div key={`${h.engine}-${h.t}-${i}`} className="w-12 shrink-0 text-center">
-                <p className="text-[10px] text-neo-muted">{h.t}</p>
-                <div className="mx-auto mt-1 h-10 w-1.5 overflow-hidden rounded-full bg-neo-bg">
-                  <div
-                    className="mt-auto w-full rounded-full"
-                    style={{
-                      height: `${Math.min(100, h.rain * 18)}%`,
-                      background:
-                        h.engine === "nowcast"
-                          ? "var(--accent)"
-                          : h.engine === "blend"
-                            ? "var(--rain)"
-                            : h.engine === "observed"
-                              ? "var(--text)"
-                              : "var(--muted)",
-                      minHeight: h.rain > 0 ? 4 : 0,
-                    }}
-                  />
+      {/* ── Row 2: (Wind + Next 6h + 7-day forecast) on left & Alerts on right ── */}
+      <div className="grid gap-3 lg:grid-cols-12 items-stretch">
+        {/* Left column: Wind + 6h row & 7-day forecast */}
+        <div className="space-y-3 lg:col-span-8 flex flex-col justify-between">
+          {/* Wind + Next 6h */}
+          <div className="grid gap-3 sm:grid-cols-12">
+            {/* Wind panel */}
+            <section className="neo p-4 sm:col-span-5">
+              <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.windProfile}</p>
+              <div className="flex items-center gap-3">
+                <WindRose
+                  fromDeg={wind.direction_deg ?? null}
+                  flowDeg={wind.flow_deg ?? null}
+                  rose={rose}
+                  compass={wind.compass || "—"}
+                  flow={wind.flow_compass || "—"}
+                />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-neo-muted">Speed</p>
+                    <p className="font-mono text-2xl font-bold text-neo-accent">{speed(wind.speed_kmh, units)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-neo-muted">Direction</p>
+                    <p className="text-sm font-semibold">
+                      {wind.compass || "—"}
+                      <span className="mx-1 text-neo-muted">→</span>
+                      {wind.flow_compass || "—"}
+                    </p>
+                  </div>
+                  {wind.direction_deg != null && (
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-3.5 w-3.5 rounded-full border-2 border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)]"
+                        style={{ transform: `rotate(${wind.direction_deg}deg)` }}
+                        aria-hidden
+                      />
+                      <span className="text-[11px] text-neo-muted">{wind.direction_deg}°</span>
+                    </div>
+                  )}
                 </div>
-                <p className="mt-1 font-mono text-[11px] font-bold">{h.rain ? h.rain.toFixed(1) : "—"}</p>
-                <p className="text-[9px] uppercase tracking-wide text-neo-muted">{engineLabel[h.engine] || h.engine}</p>
               </div>
-            ))}
-          </div>
-        </section>
-      ) : hourly.length > 0 ? (
-        <section className="neo overflow-x-auto p-3">
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.nextHours}</p>
-          <div className="flex min-w-max gap-2">
-            {hourly.map((h) => (
-              <div key={h.t} className="w-12 shrink-0 text-center">
-                <p className="text-[10px] text-neo-muted">{h.t}</p>
-                <p className="mt-1 font-mono text-sm font-bold">{Math.round(h.temp)}°</p>
-                <div className="mx-auto mt-1 h-8 w-1.5 overflow-hidden rounded-full bg-neo-bg">
-                  <div
-                    className="mt-auto w-full rounded-full"
-                    style={{
-                      height: `${Math.min(100, h.rain * 18)}%`,
-                      background: "var(--rain)",
-                      minHeight: h.rain > 0 ? 4 : 0,
-                    }}
-                  />
+              {wind.hourly && wind.hourly.length > 0 && (
+                <div className="mt-3 h-14">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={wind.hourly.slice(0, 8).map((h) => ({ t: hhmm(h.t), v: units === "imperial" ? h.speed * 0.621 : h.speed }))}>
+                      <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} />
+                      <Tooltip contentStyle={tip} />
+                      <Bar dataKey="v" fill="var(--accent)" radius={[3, 3, 0, 0]} opacity={0.75} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-                <p className="mt-1 text-[10px] text-neo-muted">{h.rain ? h.rain.toFixed(1) : "—"}</p>
+              )}
+            </section>
+
+            {/* Next 6h */}
+            <section className="neo p-4 sm:col-span-7 flex flex-col justify-between">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.next6h}</p>
+              {six.length ? (
+                <div className="mt-2 grid grid-cols-6 gap-1">
+                  {six.map((h) => (
+                    <div key={h.t} className="neo-in flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-center">
+                      <p className="text-[9px] font-semibold text-neo-muted">{h.t}</p>
+                      <p className="font-mono text-xs font-bold text-neo-accent">{temp(h.temp, units)}</p>
+                      <p className="text-[10px] font-mono text-neo-rain">{rain(h.rain, units)}</p>
+                      <p className="text-[9px] text-neo-muted">{speed(h.wind, units)}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="mt-2 h-20">
+                {six.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={six}>
+                      <CartesianGrid stroke="var(--line)" vertical={false} />
+                      <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} />
+                      <YAxis stroke="var(--muted)" fontSize={8} width={20} />
+                      <Tooltip contentStyle={tip} />
+                      <Bar dataKey="rain" fill="var(--rain)" radius={[3, 3, 0, 0]} name="Rain" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="flex h-full items-center justify-center text-xs text-neo-muted">—</p>
+                )}
               </div>
-            ))}
+            </section>
           </div>
-        </section>
-      ) : null}
 
-      {days.length > 0 ? (
-        <section className="neo p-3">
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.tabForecast}</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-            {days.map((d) => (
-              <div key={d.date} className="neo-in rounded-2xl px-2 py-2 text-center">
-                <p className="text-[11px] font-semibold">{weekday(d.date)}</p>
-                <p className="mt-1 font-mono text-sm font-bold">{temp(d.temp_max_c, units)}</p>
-                <p className="text-[11px] text-neo-muted">{rain(d.precip_mm, units)}</p>
-                <p className="text-[10px] text-neo-muted">{d.precip_prob_pct}%</p>
-              </div>
-            ))}
+          {/* 7-day Forecast */}
+          <section className="neo p-4">
+            <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.forecast7}</p>
+            <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
+              {days.map((d) => (
+                <div key={d.date} className="neo-in flex flex-col items-center gap-0.5 rounded-xl py-2 text-center">
+                  <p className="text-[10px] font-bold">{weekday(d.date)}</p>
+                  <p className="mt-0.5 font-mono text-xs font-extrabold">{temp(d.temp_max_c, units)}</p>
+                  <p className="text-[9px] text-neo-muted">{temp(d.temp_min_c, units)}</p>
+                  <div className="my-0.5 h-px w-6 rounded-full bg-[var(--line)]" />
+                  <p className="font-mono text-[10px] font-semibold text-neo-rain">{rain(d.precip_mm, units)}</p>
+                  <p className="text-[9px] text-neo-muted">{d.precip_prob_pct ?? 0}%</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        {/* Alerts sidebar — expanded height with scrollable list */}
+        <aside className="neo flex flex-col lg:col-span-4 h-[25.5rem] max-h-[25.5rem] overflow-hidden">
+          {/* Header */}
+          <div className="flex shrink-0 items-center gap-2 border-b border-[var(--line)] px-3.5 py-2.5">
+            <span className="live-dot" aria-hidden />
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.alertsPanel}</p>
+            {allAlerts.length > 0 && (
+              <span className="ml-auto rounded-full bg-[color-mix(in_srgb,var(--danger)_15%,transparent)] px-2 py-0.5 text-[10px] font-bold text-neo-danger">
+                {allAlerts.length}
+              </span>
+            )}
           </div>
-        </section>
-      ) : null}
-
-      <div className="grid gap-3 lg:grid-cols-12">
-        <section className="neo flex flex-wrap items-center gap-4 p-3 lg:col-span-5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.windProfile}</p>
-          <WindRose
-            fromDeg={wind.direction_deg ?? null}
-            flowDeg={wind.flow_deg ?? null}
-            rose={rose}
-            compass={wind.compass || "—"}
-            flow={wind.flow_compass || "—"}
-          />
-          <div className="min-w-0 text-sm">
-            <p className="font-mono text-2xl font-bold text-neo-accent">{speed(wind.speed_kmh, units)}</p>
-            <p className="text-neo-muted">
-              {t.fromWind} {wind.compass || "—"}
-              {wind.direction_deg != null ? ` (${Math.round(Number(wind.direction_deg))}°)` : ""}
-              <span className="mx-1">→</span>
-              {wind.flow_compass || "—"}
-            </p>
-          </div>
-        </section>
-
-        <section className="neo p-4 lg:col-span-7">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.descriptive}</p>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Stat k={`${t.soil} (m³/m³)`} v={cur.soil_moisture_m3m3 != null ? cur.soil_moisture_m3m3.toFixed(3) : "—"} />
-            <Stat k={`${t.et0} (mm)`} v={cur.et0_mm != null ? cur.et0_mm.toFixed(2) : "—"} />
-            <Stat k={t.aqi} v={cur.aqi != null ? `${cur.aqi}${cur.aqi_category ? ` ${cur.aqi_category}` : ""}` : "—"} />
-            <Stat k={`${t.windSpeed}`} v={speed(wind.speed_kmh, units)} />
-            <Stat
-              k={t.waves}
-              v={live?.marine?.wave_height_m != null ? height(live.marine.wave_height_m, units) : "—"}
+          {/* Scrollable list */}
+          <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5">
+            {allAlerts.length === 0 ? (
+              <li className="flex h-full items-center justify-center text-sm text-neo-muted">{t.allClear}</li>
+            ) : (
+              allAlerts.map((w) => (
+                <li
+                  key={w.id}
+                  className={`rounded-xl border-l-[3px] px-2.5 py-2 ${alertTone[w.severity] ?? "border-l-[var(--line)]"}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <p className={`text-[9px] font-bold uppercase tracking-widest ${alertDot[w.severity] ?? "text-neo-muted"}`}>
+                      {w.severity}
+                    </p>
+                    {w.hazard ? (
+                      <span className="chip ml-auto text-[9px] px-1.5 py-0">{w.hazard}</span>
+                    ) : null}
+                  </div>
+                  <p className="mt-0.5 text-xs font-semibold leading-snug">{w.title}</p>
+                  {w.body ? (
+                    <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-neo-muted">{w.body}</p>
+                  ) : null}
+                </li>
+              ))
+            )}
+          </ul>
+          {/* Footer summary */}
+          <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-[var(--line)] p-2.5">
+            <AlertStat
+              label={t.floodWatch}
+              value={`${live?.flood?.trend ?? "—"} · ${live?.flood?.score_pct ?? "—"}%`}
             />
-            <Stat k={t.discharge} v={dash.predictive.flood_discharge_trend || "—"} />
+            <AlertStat
+              label={t.aqi}
+              value={
+                live?.air?.cpcb?.value != null
+                  ? `${live.air.cpcb.value} ${live.air.cpcb.category ?? ""}`.trim()
+                  : "—"
+              }
+            />
           </div>
-        </section>
+        </aside>
       </div>
 
-      <QualityCatalog dash={dash} />
+      <HomeHazardStrip dash={dash} locale={locale} />
+    </div>
+  );
+}
+
+function AlertStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="neo-in rounded-xl px-2.5 py-2">
+      <p className="text-[10px] uppercase tracking-widest text-neo-muted">{label}</p>
+      <p className="mt-0.5 truncate font-mono text-xs font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function HomeHazardStrip({ dash, locale }: { dash: DashboardSnapshot; locale: Locale }) {
+  const t = COPY[locale];
+  const q = dash.quality || {};
+  const air = (q.air || {}) as Record<string, unknown>;
+  const climate = (q.climate || {}) as Record<string, unknown>;
+  const marine = (q.marine || {}) as Record<string, unknown>;
+  const pollen = ((air.pollen || {}) as Record<string, unknown>);
+  const flood = (q.flood || {}) as Record<string, unknown>;
+  const seismic = (q.seismic || dash.live?.quakes || []) as Record<string, unknown>[];
+  const tsunami = (q.tsunami || dash.live?.tsunami || []) as Record<string, unknown>[];
+  const gdacs = (q.gdacs || []) as Record<string, unknown>[];
+  const conv = dash.science?.nowcast?.convective;
+  const vera = dash.predictions?.vera;
+  const risk = (id: string) => dash.risks.find((r) => r.id === id);
+
+  const cards = [
+    {
+      title: t.aqi,
+      rows: [
+        ["AQI", String(dash.descriptive.current.aqi ?? air.us_aqi ?? "—")],
+        ["PM2.5", String(air.pm2_5 ?? "—")],
+        ["UV", String(air.uv_index ?? climate.uv_index ?? "—")],
+      ],
+    },
+    {
+      title: t.landWeather,
+      rows: [
+        ["Tmax", String(climate.temp_max ?? "—")],
+        ["RH", String(climate.rh_now ?? "—")],
+        ["Soil", String(climate.soil_m_0_1 ?? dash.descriptive.current.soil_moisture_m3m3 ?? "—")],
+      ],
+    },
+    {
+      title: t.marineWeather,
+      rows: [
+        ["Wave m", String(marine.wave_height_m ?? "—")],
+        ["SST", String(marine.sst_c ?? "—")],
+        ["Swell", String(marine.swell_height_m ?? "—")],
+      ],
+    },
+    {
+      title: t.allergen,
+      rows: [
+        ["Grass", String(pollen.grass ?? "—")],
+        ["Ragweed", String(pollen.ragweed ?? "—")],
+        ["Source", String(pollen.source ?? "India climatology")],
+      ],
+    },
+    {
+      title: t.cyclone,
+      rows: [
+        ["GDACS", String(gdacs.length)],
+        ["Latest", String(gdacs[0]?.title ?? "—")],
+        ["Type", String(gdacs[0]?.event_type ?? "—")],
+      ],
+    },
+    {
+      title: t.tsunami,
+      rows: [
+        ["ITEWS", String((tsunami[0] as { title?: string } | undefined)?.title ?? t.noItews)],
+        ["Threat", String((tsunami[0] as { threat?: unknown } | undefined)?.threat ?? "—")],
+        ["Flood", String(flood.trend ?? dash.predictive.flood_discharge_trend ?? "—")],
+      ],
+    },
+    {
+      title: t.earthquake,
+      rows: [
+        ["Mag", String(seismic[0]?.mag ?? "—")],
+        ["Place", String(seismic[0]?.place ?? "—")],
+        ["km", String(seismic[0]?.distance_km ?? "—")],
+      ],
+    },
+  ];
+
+  const suggestions: { id: string; label: string; v: string }[] = [
+    { id: "lightning", label: "Lightning", v: String(conv?.lightning?.level ?? conv?.lightning?.score_pct ?? "quiet") },
+    { id: "cloudburst", label: "Cloudburst", v: String(conv?.cloudburst?.level ?? "quiet") },
+    { id: "cyclone", label: "Cyclone", v: String(gdacs[0]?.event_type || gdacs.length ? `${gdacs.length}` : "quiet") },
+    { id: "flood", label: "Flood", v: `${risk("flood")?.score_pct ?? flood.score_pct ?? "—"}` },
+    { id: "drought", label: "Drought", v: `${risk("drought")?.score_pct ?? "—"}` },
+    { id: "heat", label: "Heat Wave", v: String(vera?.extremes?.heat_wave?.level ?? risk("heat")?.score_pct ?? "—") },
+    { id: "fire", label: "Forest Fire", v: String(climate.temp_max != null && Number(climate.temp_max) >= 38 && Number(climate.rh_now || 50) < 30 ? "watch" : "quiet") },
+    { id: "slide", label: "Landslide", v: String(Number(dash.predictive.precip_next_3d_mm) > 80 ? "watch" : "quiet") },
+    { id: "heavy", label: "Heavy Rainfall", v: String(vera?.extremes?.heavy_rain?.level ?? "—") },
+    { id: "snow", label: "Heavy Snowfall", v: String(climate.snowfall_now ?? climate.snowfall_sum ?? "0") },
+    { id: "uv", label: "High UV Radiation", v: String(air.uv_index ?? climate.uv_index_max ?? "—") },
+    { id: "fog", label: "Fog / Low Visibility", v: String(dash.descriptive.current.visibility_km != null && Number(dash.descriptive.current.visibility_km) < 1 ? "watch" : "quiet") },
+    { id: "agri", label: "Agriculture", v: dash.prescriptive.actions[0]?.action || "—" },
+    { id: "urban", label: "Urban Flooding", v: String(dash.science?.nowcast?.ponding?.mm_60 ?? "—") },
+    { id: "aviation", label: "Aviation", v: String(dash.science?.nowcast?.squall?.watch ? "squall" : dash.descriptive.current.visibility_km ?? "—") },
+    { id: "fish", label: "Marine Fishing", v: String(marine.wave_height_m ?? "inland") },
+    { id: "lp", label: "Low Pressure", v: String(climate.pressure_msl_hpa ?? "—") },
+  ];
+
+  return (
+    <div className="space-y-3">
+      {/* Hazard info cards */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {cards.map((c) => (
+          <section key={c.title} className="neo p-3">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{c.title}</p>
+            <dl className="mt-2 space-y-1.5 text-sm">
+              {c.rows.map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-2">
+                  <dt className="text-neo-muted">{k}</dt>
+                  <dd className="truncate font-mono font-semibold">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+      </div>
+
+      {/* ── Suggestions — improved with color-coded status ── */}
+      <section className="neo p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.suggestions}</p>
+          <div className="ml-auto flex items-center gap-2 text-[10px] text-neo-muted">
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--accent)]" />Quiet</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--warn)]" />Watch</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--danger)]" />Alert</span>
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          {suggestions.map((s) => {
+            const level = suggestionLevel(s.id, s.v);
+            const style = suggLevel[level];
+            return (
+              <div
+                key={s.id}
+                className={`flex items-center gap-2.5 rounded-2xl px-3 py-2.5 ${style.bg}`}
+              >
+                <span className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-neo-muted">{s.label}</p>
+                  <p className={`mt-0.5 truncate font-mono text-sm font-bold ${style.text}`}>{s.v}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }
@@ -387,13 +595,6 @@ function RainOdds({ k, pct, days }: { k: string; pct: number[]; days: string[] }
       </div>
     </div>
   );
-}
-
-function regimeLabel(name?: string | null) {
-  if (!name) return "";
-  const n = name.replace(/_/g, " ").trim();
-  if (n.toLowerCase() === "squall") return "STORM";
-  return n.toUpperCase();
 }
 
 function Spark({
@@ -520,17 +721,17 @@ function SkyGlyph({ kind, day }: { kind: string; day: boolean }) {
           <circle cx={kind === "partly" ? 30 : 44} cy={kind === "partly" ? 30 : 40} r="14" fill={sun} />
           {day
             ? [0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
-                <line
-                  key={a}
-                  x1={kind === "partly" ? 30 : 44}
-                  y1={kind === "partly" ? 30 : 40}
-                  x2={kind === "partly" ? 30 : 44}
-                  y2={kind === "partly" ? 8 : 16}
-                  stroke={sun}
-                  strokeWidth="2"
-                  transform={`rotate(${a} ${kind === "partly" ? 30 : 44} ${kind === "partly" ? 30 : 40})`}
-                />
-              ))
+              <line
+                key={a}
+                x1={kind === "partly" ? 30 : 44}
+                y1={kind === "partly" ? 30 : 40}
+                x2={kind === "partly" ? 30 : 44}
+                y2={kind === "partly" ? 8 : 16}
+                stroke={sun}
+                strokeWidth="2"
+                transform={`rotate(${a} ${kind === "partly" ? 30 : 44} ${kind === "partly" ? 30 : 40})`}
+              />
+            ))
             : null}
         </g>
       ) : null}

@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap");
 @import "leaflet/dist/leaflet.css";
 
 @tailwind base;
@@ -144,6 +144,7 @@ body {
   background-image:
     radial-gradient(900px 520px at 6% -14%, var(--glow1), transparent 55%),
     radial-gradient(720px 420px at 100% 0%, var(--glow2), transparent 52%);
+  background-attachment: fixed;
 }
 
 [data-density="compact"] .neo {
@@ -156,7 +157,8 @@ body {
 [data-motion="off"] .rise,
 [data-motion="off"] .live-dot,
 [data-motion="off"] .sky-sun,
-[data-motion="off"] .sky-drops line {
+[data-motion="off"] .sky-drops line,
+[data-motion="off"] .assistant-bob {
   animation: none !important;
 }
 
@@ -171,19 +173,27 @@ body {
 }
 
 .neo {
-  @apply rounded-organ shadow-neo;
-  background: var(--card);
+  @apply rounded-organ;
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--text) 8%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
+  backdrop-filter: blur(18px) saturate(1.25);
 }
 
 .neo-in {
-  @apply rounded-organ shadow-neo-in;
-  background: var(--bg);
+  @apply rounded-organ;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  box-shadow: inset 0 1px 8px color-mix(in srgb, var(--text) 6%, transparent);
+  backdrop-filter: blur(10px);
 }
 
 .neo-btn {
-  @apply rounded-2xl px-3 py-2 text-sm font-semibold shadow-neo-sm transition hover:-translate-y-0.5;
-  background: var(--card);
+  @apply rounded-2xl px-3 py-2 text-sm font-semibold transition hover:-translate-y-0.5;
+  background: color-mix(in srgb, var(--card) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   color: var(--text);
+  backdrop-filter: blur(12px);
 }
 
 .neo-btn-on {
@@ -257,6 +267,19 @@ select.neo-in {
 
 .rise {
   animation: rise 0.4s ease both;
+}
+
+.assistant-bob {
+  animation: assistantbob 1.6s ease-in-out infinite;
+}
+@keyframes assistantbob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
 }
 
 @keyframes rise {

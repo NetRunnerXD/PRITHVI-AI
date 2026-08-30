@@ -536,17 +536,30 @@ export type ChatMsg = {
   translation?: ChatTranslation;
 };
 
-export type TabId =
-  | "overview"
-  | "nowcast"
-  | "alerts"
-  | "map"
-  | "forecast"
-  | "predicted"
-  | "risks"
-  | "market"
-  | "advisor"
-  | "settings";
+export type TabId = "home" | "analytics" | "data" | "map" | "model" | "chat" | "settings";
+
+export const TAB_ALIAS: Record<string, TabId> = {
+  home: "home",
+  overview: "home",
+  analytics: "analytics",
+  nowcast: "analytics",
+  forecast: "analytics",
+  alerts: "home",
+  data: "data",
+  risks: "data",
+  market: "data",
+  map: "map",
+  model: "model",
+  predicted: "model",
+  chat: "chat",
+  advisor: "chat",
+  settings: "settings",
+};
+
+export function resolveTab(id: string | undefined | null): TabId | null {
+  if (!id) return null;
+  return TAB_ALIAS[id] || null;
+}
 
 export type ThemeId = "sand" | "monsoon" | "midnight" | "ocean" | "contrast";
 export type UnitSys = "metric" | "imperial";

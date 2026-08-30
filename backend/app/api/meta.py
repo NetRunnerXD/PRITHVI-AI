@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.llm import ollama_client
+from app.llm.worker_hub import hub
 from app.services.location_svc import resolve_location
 
 router = APIRouter()
@@ -73,12 +74,22 @@ async def health():
     ollama_ok, ollama_msg = await ollama_client.ping()
     loc = resolve_location()
     llm = ollama_client.catalog()
-    llm["ollama"] = {"ok": ollama_ok, "detail": ollama_msg, "model": settings.ollama_model}
+    llm["ollama"] = {
+        "ok": ollama_ok,
+        "detail": ollama_msg,
+        "model": settings.ollama_model,
+        "home": hub.status(),
+    }
     return {
         **service_card(),
         "default_location": loc.model_dump(),
         "llm": llm,
-        "ollama": {"ok": ollama_ok, "detail": ollama_msg, "model": settings.ollama_model},
+        "ollama": {
+            "ok": ollama_ok,
+            "detail": ollama_msg,
+            "model": settings.ollama_model,
+            "home": hub.status(),
+        },
         "keys": {
             "imd_api_key": bool(settings.imd_api_key),
             "aikosh_api_key": bool(settings.aikosh_api_key),
@@ -111,19 +122,29 @@ async def bootstrap():
         "default_location": loc.model_dump(),
         "locales": ["en", "hi", "bn"],
         "tabs": [
+            "home",
+            "analytics",
+            "data",
+            "map",
+            "model",
+            "chat",
+            "settings",
             "overview",
             "nowcast",
             "alerts",
-            "map",
             "forecast",
             "predicted",
             "risks",
             "market",
             "advisor",
-            "settings",
         ],
         "public_base_url": settings.public_base_url or None,
-        "ollama": {"ok": ollama_ok, "detail": ollama_msg, "model": settings.ollama_model},
+        "ollama": {
+            "ok": ollama_ok,
+            "detail": ollama_msg,
+            "model": settings.ollama_model,
+            "home": hub.status(),
+        },
         "keys": {
             "imd_api_key": bool(settings.imd_api_key),
             "aikosh_api_key": bool(settings.aikosh_api_key),

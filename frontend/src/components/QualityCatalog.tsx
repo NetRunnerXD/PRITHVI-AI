@@ -251,7 +251,7 @@ export function QualityCatalog({ dash }: { dash: DashboardSnapshot }) {
 
       <Sector
         title="Tsunami / flood"
-        note="INCOIS ITEWS + Open-Meteo GloFAS + GDACS. Ambee is not wired (no public key)."
+        note="INCOIS ITEWS + Open-Meteo GloFAS + GDACS."
       >
         <Stat k="River discharge trend" v={fmt(flood.trend ?? dash.predictive.flood_discharge_trend)} />
         <Stat k="River discharge (now)" v={fmt((flood.discharge as number[] | undefined)?.[0] ?? dash.predictive.river_discharge?.[0])} />
@@ -263,7 +263,6 @@ export function QualityCatalog({ dash }: { dash: DashboardSnapshot }) {
         <Stat k="GDACS events" v={String(gdacs.length)} />
         <Stat k="GDACS latest" v={fmt(gdacs[0]?.title)} />
         <Stat k="GDACS type" v={fmt(gdacs[0]?.event_type)} />
-        <Stat k="Ambee" v="unavailable (no public API key)" />
       </Sector>
     </div>
   );

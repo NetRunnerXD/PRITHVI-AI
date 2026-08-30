@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS, useApp } from "@/lib/store";
 import type { Density, TabId, ThemeId, UnitSys } from "@/types/dashboard";
 
 const THEMES: ThemeId[] = ["sand", "monsoon", "midnight", "ocean", "contrast"];
-const TABS: TabId[] = ["overview", "nowcast", "alerts", "map", "forecast", "predicted", "risks", "market", "advisor"];
+const TABS: TabId[] = ["home", "analytics", "data", "map", "model", "chat"];
 
 type LlmRow = { id: string; model: string; ok?: boolean };
 
@@ -177,15 +177,12 @@ export function SettingsPanel() {
 
 function tabLabel(t: Record<string, string>, id: TabId) {
   const map: Record<string, string> = {
-    overview: t.tabOverview,
-    nowcast: t.tabNowcast,
-    alerts: t.tabAlerts,
+    home: t.tabHome,
+    analytics: t.tabAnalytics,
+    data: t.tabData,
     map: t.tabMap,
-    forecast: t.tabForecast,
-    predicted: t.tabPredicted,
-    risks: t.tabRisks,
-    market: t.tabMarket,
-    advisor: t.tabAdvisor,
+    model: t.tabModel,
+    chat: t.tabChat,
     settings: t.tabSettings,
   };
   return map[id] || id;

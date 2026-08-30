@@ -8,7 +8,7 @@ import { useApp } from "@/lib/store";
 import type { ChatMsg, ChatSuggestion, DashboardSnapshot } from "@/types/dashboard";
 import { ChatBlocks } from "./ChatBlocks";
 
-export function ChatDock() {
+export function ChatDock({ compact = false }: { compact?: boolean }) {
   const {
     locale,
     outputLocale,
@@ -102,7 +102,13 @@ export function ChatDock() {
   }
 
   return (
-    <section className="neo flex h-[min(70dvh,calc(100dvh-8rem))] min-h-[280px] flex-col overflow-hidden lg:h-[min(720px,calc(100vh-11rem))] lg:min-h-[420px]">
+    <section
+      className={`neo flex flex-col overflow-hidden ${
+        compact
+          ? "h-[min(28rem,62dvh)] min-h-[240px]"
+          : "h-[min(70dvh,calc(100dvh-8rem))] min-h-[280px] lg:h-[min(720px,calc(100vh-11rem))] lg:min-h-[420px]"
+      }`}
+    >
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-neo-line px-3 py-2">
         <div>
           <p className="text-sm font-bold">{t.chat}</p>

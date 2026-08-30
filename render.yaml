@@ -26,3 +26,7 @@ services:
         sync: false
       - key: OLLAMA_MODEL
         sync: false
+      - key: LLM_WORKER_TOKEN
+        sync: false
+      - key: LLM_FALLBACK
+        sync: false

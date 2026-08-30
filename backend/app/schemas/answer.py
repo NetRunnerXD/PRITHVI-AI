@@ -8,16 +8,21 @@ from pydantic import BaseModel, Field
 
 
 TAB_IDS = (
+    "home",
+    "analytics",
+    "data",
+    "map",
+    "model",
+    "chat",
+    "settings",
     "overview",
     "nowcast",
     "alerts",
-    "map",
     "forecast",
     "predicted",
     "risks",
     "market",
     "advisor",
-    "settings",
 )
 
 BlockType = Literal[

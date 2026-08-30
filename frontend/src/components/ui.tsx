@@ -7,7 +7,7 @@ import { levelWord } from "@/lib/plain";
 import type { TabId } from "@/types/dashboard";
 
 const EXTRA: Partial<Record<TabId, Record<Locale, string[]>>> = {
-  alerts: {
+  data: {
     en: [
       "IMD CAP weather · CPCB air (data.gov.in) · INCOIS ITEWS tsunami · USGS seismic (NCS has no public JSON) · Open-Meteo flood, marine & air. Open-Meteo does not publish earthquakes or tsunami.",
       "Alerts also include local rule actions (pump, field access, storm watch).",
@@ -62,12 +62,13 @@ export function Pill({ level, locale }: { level: Level; locale: Locale }) {
 }
 
 const TAB_SOURCES: Partial<Record<TabId, Record<Locale, string[]>>> = {
-  nowcast: {
+  analytics: {
     en: [
       "Live storm: IMD INSAT-3D/3DS public IR JPEG, NASA GIBS IR + IMERG, Weatherbit lightning strokes. Cells are tracked; 15–60 min is Lagrangian nowcast.",
       "Cloudburst = extreme-rain cell at the pin. Downburst = collapsing cell + gust/CAPE. Lightning detections are strokes when Weatherbit returns them.",
       "Locked hourly millimetres stay Open-Meteo (Advisor totals). Satellite rain-rate is a separate live estimate.",
       "INSAT HEM HDF needs MOSDAC approval. Hugli tide / port only on the estuary.",
+      "Seven-day rain and drying: Open-Meteo daily values. Soil wetting/drying memory.",
     ],
     hi: [
       "नाउकास्टिंग: सेकंड घड़ी (समय, हुगली ज्वार)। बारिश 1-मिनट और लॉक घंटे के बराबर।",
@@ -80,7 +81,7 @@ const TAB_SOURCES: Partial<Record<TabId, Record<Locale, string[]>>> = {
       "MinuteCast / রাডার নয়। Open-Meteo গেজ নয়, উপগ্রহ নয়।",
     ],
   },
-  overview: {
+  home: {
     en: [
       "Sky, rain, wind, soil: Open-Meteo (weather model, not a village rain-gauge).",
       "Next 6 hours: 0–2 h nowcast, 3–4 h blend, 5–6 h NWP. Past hours are model analysis, not a gauge.",
@@ -103,33 +104,37 @@ const TAB_SOURCES: Partial<Record<TabId, Record<Locale, string[]>>> = {
   map: {
     en: [
       "Places: Indian gazetteer first, then Open-Meteo India search.",
-      "Live storm map: pick a state to crop. Lightning from Weatherbit, cells from IMD INSAT IR + GIBS. Views: Storm, Live IR, IMERG rain, satellite.",
+      "Live storm map: pick a state to crop. Lightning from Weatherbit, cells from IMD INSAT IR + GIBS.",
+      "Weather field (wind, heat, rain, pressure, clouds, humidity, CAPE): global Open-Meteo grid. Radar / Sat IR: RainViewer (world). Storm cells and the forecast pin stay India-only.",
       "Overlay: Bhuvan / NRSC geomorphology via our map proxy.",
     ],
-    hi: ["जगह: पहले भारत गज़ेटियर, फिर Open-Meteo भारत खोज।", "परत: भूवन / NRSC, हमारे प्रॉक्सी से।"],
-    bn: ["জায়গা: আগে ভারত গেজেটিয়ার, পরে Open-Meteo ভারত খোঁজ।", "স্তর: ভুবন / NRSC, আমাদের প্রক্সি দিয়ে।"],
+    hi: [
+      "जगह: पहले भारत गज़ेटियर, फिर Open-Meteo भारत खोज।",
+      "पवन/ताप/वर्षा/दाब/आर्द्रता: वैश्विक Open-Meteo। तूफान केवल भारत।",
+      "परत: भूवन / NRSC, हमारे प्रॉक्सी से।",
+    ],
+    bn: [
+      "জায়গা: আগে ভারত গেজেটিয়ার, পরে Open-Meteo ভারত খোঁজ।",
+      "বাতাস/তাপ/বৃষ্টি/চাপ/আর্দ্রতা: বিশ্ব Open-Meteo। ঝড় শুধু ভারত।",
+      "স্তর: ভুবন / NRSC, আমাদের প্রক্সি দিয়ে।",
+    ],
   },
-  forecast: {
-    en: ["Seven-day rain and drying: Open-Meteo daily values.", "Soil day-to-day: wetting/drying memory (same rain runs off more if soil is already wet).", "Compare: two district snapshots, same method."],
-    hi: ["7 दिन बारिश/सुखना: Open-Meteo दैनिक अंक।", "मिट्टी: गीली शाखा पर वही बारिश ज्यादा बहती है।", "तुलना: दो ज़िलों का एक जैसा स्नैपशॉट।"],
-    bn: ["৭ দিন বৃষ্টি/শুকনো: Open-Meteo দৈনিক সংখ্যা।", "মাটি: ভেজা শাখায় একই বৃষ্টি বেশি বয়ে যায়।", "তুলনা: দুই জেলার একই পদ্ধতি।"],
+  data: {
+    en: [
+      "Cards are traffic-lights, not fortune-telling.",
+      "Flood factors follow a water budget (rain, runoff, soil store, river).",
+      "Earthquake / sea cards only repeat official lists (USGS, INCOIS), they do not predict.",
+      "Prices: Agmarknet via data.gov.in, rupees per quintal.",
+    ],
+    hi: ["कार्ड ट्रैफ़िक-लाइट हैं, भविष्यवाणी नहीं।", "बाढ़ कारक जल बजट से आते हैं।", "भाव: Agmarknet / data.gov.in।"],
+    bn: ["কার্ড ট্রাফিক-লাইট, ভাগ্যগণনা নয়।", "বন্যা কারণ আসে জল হিসাব থেকে।", "দাম: Agmarknet / data.gov.in।"],
   },
-  predicted: {
-    en: ["Weather service = published Open-Meteo.", "Rituchakra = same backbone, small local adjustment (never more than about 12%).", "Which to use: official warning first; otherwise the trust line on this page."],
-    hi: ["मौसम सेवा = प्रकाशित Open-Meteo।", "ऋतुचक्र = वही आधार, छोटी स्थानीय मिलावट (लगभग 12% से अधिक नहीं)।", "क्या मानें: पहले सरकारी चेतावनी।"],
-    bn: ["আবহাওয়া পরিষেবা = প্রকাশিত Open-Meteo।", "ঋতুচক্র = একই ভিত্তি, ছোট স্থানীয় মিল (প্রায় ১২%-এর বেশি নয়)।", "কী মানবেন: আগে সরকারি সতর্কতা।"],
+  model: {
+    en: ["Weather service = published Open-Meteo.", "PRITHVI-AI = same backbone, small local adjustment (never more than about 12%).", "Which to use: official warning first; otherwise the trust line on this page."],
+    hi: ["मौसम सेवा = प्रकाशित Open-Meteo।", "PRITHVI-AI = वही आधार, छोटी स्थानीय मिलावट (लगभग 12% से अधिक नहीं)।", "क्या मानें: पहले सरकारी चेतावनी।"],
+    bn: ["আবহাওয়া পরিষেবা = প্রকাশিত Open-Meteo।", "PRITHVI-AI = একই ভিত্তি, ছোট স্থানীয় মিল (প্রায় ১২%-এর বেশি নয়)।", "কী মানবেন: আগে সরকারি সতর্কতা।"],
   },
-  risks: {
-    en: ["Cards are traffic-lights, not fortune-telling.", "Flood factors follow a water budget (rain, runoff, soil store, river).", "Earthquake / sea cards only repeat official lists (USGS, INCOIS), they do not predict."],
-    hi: ["कार्ड ट्रैफ़िक-लाइट हैं, भविष्यवाणी नहीं।", "बाढ़ कारक जल बजट से आते हैं।", "भूकंप/समुद्र केवल आधिकारिक सूची दोहराते हैं।"],
-    bn: ["কার্ড ট্রাফিক-লাইট, ভাগ্যগণনা নয়।", "বন্যা কারণ আসে জল হিসাব থেকে।", "ভূমিকম্প/সমুদ্র শুধু সরকারি তালিকা বলে।"],
-  },
-  market: {
-    en: ["Prices: Agmarknet via data.gov.in, rupees per quintal.", "Missing rows mean no arrival was filed for this district today."],
-    hi: ["भाव: Agmarknet / data.gov.in, रुपये प्रति क्विंटल।", "खाली तालिका = आज इस ज़िले की आवक दर्ज नहीं।"],
-    bn: ["দাম: Agmarknet / data.gov.in, টাকা প্রতি কুইন্টাল।", "খালি তালিকা = আজ এই জেলার আগমন নথি নেই।"],
-  },
-  advisor: {
+  chat: {
     en: ["You may type any language. We translate to English for the model, then back.", "The model only reads tool numbers. It must not invent rain, litres, AQI or rupees."],
     hi: ["कोई भी भाषा लिखें। प्रश्न अंग्रेज़ी होकर मॉडल को जाता है, उत्तर आपकी भाषा में आता है।", "मॉडल केवल टूल के अंक पढ़ता है — बारिश/लीटर/AQI/रुपये नहीं गढ़ता।"],
     bn: ["যেকোনো ভাষায় লিখুন। প্রশ্ন ইংরেজি হয়ে মডেলে যায়, উত্তর আপনার ভাষায় ফেরে।", "মডেল শুধু টুলের সংখ্যা পড়ে — বৃষ্টি/লিটার/AQI/টাকা তৈরি করে না।"],

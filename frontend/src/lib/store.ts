@@ -1,13 +1,14 @@
 import { create } from "zustand";
 import type { ChatMsg, DashboardSnapshot, Density, Location, TabId, ThemeId, UiAction, UnitSys } from "@/types/dashboard";
+import { resolveTab } from "@/types/dashboard";
 import type { Locale } from "@/i18n/copy";
 
 export type ReplyLocale = Locale | "auto";
 import { fetchDashboard } from "./api";
 
-const FAV_KEY = "rituchakra.favs";
-const REC_KEY = "rituchakra.recent";
-const SET_KEY = "rituchakra.settings";
+const FAV_KEY = "prithvi.favs";
+const REC_KEY = "prithvi.recent";
+const SET_KEY = "prithvi.settings";
 
 export type AppSettings = {
   theme: ThemeId;
@@ -24,13 +25,13 @@ export type AppSettings = {
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  theme: "sand",
+  theme: "midnight",
   units: "metric",
   density: "comfortable",
   reduceMotion: false,
   fontScale: 100,
   refreshSec: 300,
-  defaultTab: "overview",
+  defaultTab: "home",
   showHints: false,
   locale: "en",
   llmProvider: "ollama",
@@ -40,7 +41,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export function readSettings(): AppSettings {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
   try {
-    return { ...DEFAULT_SETTINGS, ...(JSON.parse(window.localStorage.getItem(SET_KEY) || "{}") as Partial<AppSettings>) };
+    const raw = JSON.parse(window.localStorage.getItem(SET_KEY) || window.localStorage.getItem("rituchakra.settings") || "{}") as Partial<AppSettings>;
+    const tab = resolveTab(raw.defaultTab) || DEFAULT_SETTINGS.defaultTab;
+    return { ...DEFAULT_SETTINGS, ...raw, defaultTab: tab };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -124,22 +127,11 @@ function newConversationId(): string {
   return `c-${Date.now()}`;
 }
 
-const TABS = new Set<TabId>([
-  "overview",
-  "nowcast",
-  "alerts",
-  "map",
-  "forecast",
-  "predicted",
-  "risks",
-  "market",
-  "advisor",
-  "settings",
-]);
+const TABS = new Set<TabId>(["home", "analytics", "data", "map", "model", "chat", "settings"]);
 
 export const useApp = create<State>((set, get) => ({
   locale: "en",
-  tab: "overview",
+  tab: "home",
   settings: DEFAULT_SETTINGS,
   location: null,
   dashboard: null,
@@ -272,7 +264,8 @@ export const useApp = create<State>((set, get) => ({
     if (s.window) set({ windowPack: s.window });
     if (center) set({ mapFocus: { center, zoom: s.zoom ?? 10 } });
     // Chip click with an explicit tab is an open-tab action. Location-only suggestions do not switch tabs.
-    if (s.tab && TABS.has(s.tab as TabId)) set({ tab: s.tab as TabId });
+    const nextTab = resolveTab(s.tab);
+    if (nextTab && TABS.has(nextTab)) set({ tab: nextTab });
     if (loc && typeof loc.lat === "number" && typeof loc.lon === "number") {
       const cur = get().location;
       const same =

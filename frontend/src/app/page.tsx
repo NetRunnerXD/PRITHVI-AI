@@ -21,20 +21,11 @@ import { COPY } from "@/i18n/copy";
 import { fetchCompare, searchPlaces } from "@/lib/api";
 import { rain } from "@/lib/units";
 import { useApp } from "@/lib/store";
+import { ChatFloat } from "@/components/ChatFloat";
+import { QualityCatalog } from "@/components/QualityCatalog";
 import type { TabId } from "@/types/dashboard";
 
-const TAB_ORDER: TabId[] = [
-  "overview",
-  "nowcast",
-  "alerts",
-  "map",
-  "forecast",
-  "predicted",
-  "risks",
-  "market",
-  "advisor",
-  "settings",
-];
+const TAB_ORDER: TabId[] = ["home", "analytics", "data", "map", "model", "chat", "settings"];
 
 export default function Page() {
   const {
@@ -118,7 +109,7 @@ export default function Page() {
     if (!dashboard) return;
     const act = dashboard.prescriptive.actions[0];
     const lines = [
-      `Rituchakra — ${dashboard.location.label}`,
+      `PRITHVI-AI — ${dashboard.location.label}`,
       `${t.rain3}: ${rain(dashboard.predictive.precip_next_3d_mm, units)}`,
       act?.action || "",
     ].filter(Boolean);
@@ -172,64 +163,16 @@ export default function Page() {
           <p className="text-neo-muted">{status === "loading" ? t.loading : "…"}</p>
         ) : (
           <>
-            {tab === "overview" && dashboard ? (
+            {tab === "home" && dashboard ? (
               <div className="space-y-3">
                 <OverviewLive dash={dashboard} locale={locale} />
-                <Collapse title={t.science} defaultOpen={false}>
-                  <SciencePanel dash={dashboard} locale={locale} />
-                </Collapse>
-                <Collapse title={t.plots} defaultOpen={false}>
-                  <OverviewPlots dash={dashboard} locale={locale} />
-                </Collapse>
-                <SourcesBox tab="overview" locale={locale} provenance={dashboard.science?.provenance} />
+                <SourcesBox tab="home" locale={locale} provenance={dashboard.science?.provenance} />
               </div>
             ) : null}
 
-            {tab === "nowcast" && dashboard ? (
-              <div className="space-y-3">
-                <NowcastLive dash={dashboard} locale={locale} />
-                <SourcesBox tab="nowcast" locale={locale} provenance={dashboard.science?.provenance} />
-              </div>
-            ) : null}
-
-            {tab === "alerts" && dashboard ? (
-              <div className="space-y-3">
-                <section className="neo p-4">
-                  <h3 className="text-sm font-bold">{t.actions}</h3>
-                  <ul className="mt-3 space-y-2 text-sm">
-                    {dashboard.prescriptive.actions.slice(0, 6).map((a) => (
-                      <li key={a.id} className="border-t border-neo-line pt-2">
-                        <p className="font-semibold">{a.action}</p>
-                        {a.when ? <p className="text-xs text-neo-muted">{a.when}</p> : null}
-                      </li>
-                    ))}
-                    {!dashboard.prescriptive.actions.length ? <li className="text-neo-muted">{t.allClear}</li> : null}
-                  </ul>
-                </section>
-                <EarlyWarnings
-                  items={dashboard.prescriptive.warnings}
-                  locale={locale}
-                  live={dashboard.live}
-                  status={dashboard.provider_status}
-                />
-                <SourcesBox tab="alerts" locale={locale} />
-              </div>
-            ) : null}
-
-            {tab === "map" && dashboard ? (
-              <div className="space-y-3">
-                <SquareMap
-                  dash={dashboard}
-                  locale={locale}
-                  onPick={(l) => setLocation(l)}
-                  focus={mapFocus}
-                />
-                <SourcesBox tab="map" locale={locale} />
-              </div>
-            ) : null}
-
-            {tab === "forecast" && dashboard ? (
+            {tab === "analytics" && dashboard ? (
               <div className="space-y-4">
+                <NowcastLive dash={dashboard} locale={locale} />
                 {windowPack && Array.isArray((windowPack as { days?: unknown[] }).days) ? (
                   <section className="neo overflow-x-auto p-4">
                     <h3 className="text-sm font-bold">{t.predictive}</h3>
@@ -255,6 +198,7 @@ export default function Page() {
                 ) : null}
                 <OutlookTable dash={dashboard} locale={locale} />
                 <ForecastCharts dash={dashboard} locale={locale} />
+                <OverviewPlots dash={dashboard} locale={locale} />
                 <Collapse title={t.compare} defaultOpen={false}>
                   <div className="flex flex-wrap gap-2">
                     <input value={cmpQ} onChange={(e) => setCmpQ(e.target.value)} className="neo-in px-3 py-2 text-sm" placeholder="Pune" />
@@ -278,19 +222,16 @@ export default function Page() {
                     </table>
                   ) : null}
                 </Collapse>
-                <SourcesBox tab="forecast" locale={locale} />
+                <SourcesBox tab="analytics" locale={locale} provenance={dashboard.science?.provenance} />
               </div>
             ) : null}
 
-            {tab === "predicted" && dashboard ? (
-              <div className="space-y-4">
-                <PredictionsPanel dash={dashboard} locale={locale} />
-                <SourcesBox tab="predicted" locale={locale} />
-              </div>
-            ) : null}
-
-            {tab === "risks" && dashboard ? (
+            {tab === "data" && dashboard ? (
               <div className="space-y-3">
+                <QualityCatalog dash={dashboard} />
+                <Collapse title={t.science} defaultOpen={false}>
+                  <SciencePanel dash={dashboard} locale={locale} />
+                </Collapse>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {dashboard.risks.map((r) => (
                     <RiskCard
@@ -301,28 +242,40 @@ export default function Page() {
                     />
                   ))}
                 </div>
+                <MandiPanel dash={dashboard} locale={locale} />
+                <EarlyWarnings
+                  items={dashboard.prescriptive.warnings}
+                  locale={locale}
+                  live={dashboard.live}
+                  status={dashboard.provider_status}
+                />
+                <SourcesBox tab="data" locale={locale} provenance={dashboard.science?.provenance} />
+              </div>
+            ) : null}
+
+            {tab === "map" && dashboard ? (
+              <div className="space-y-3">
                 <SquareMap
                   dash={dashboard}
                   locale={locale}
                   onPick={(l) => setLocation(l)}
                   focus={mapFocus}
-                  compact
                 />
-                <SourcesBox tab="risks" locale={locale} />
+                <SourcesBox tab="map" locale={locale} />
               </div>
             ) : null}
 
-            {tab === "market" && dashboard ? (
-              <div className="space-y-3">
-                <MandiPanel dash={dashboard} locale={locale} />
-                <SourcesBox tab="market" locale={locale} />
+            {tab === "model" && dashboard ? (
+              <div className="space-y-4">
+                <PredictionsPanel dash={dashboard} locale={locale} />
+                <SourcesBox tab="model" locale={locale} />
               </div>
             ) : null}
 
-            {tab === "advisor" ? (
+            {tab === "chat" ? (
               <div className="space-y-3">
                 <ChatDock />
-                <SourcesBox tab="advisor" locale={locale} />
+                <SourcesBox tab="chat" locale={locale} />
               </div>
             ) : null}
 
@@ -335,6 +288,7 @@ export default function Page() {
           </>
         )}
       </div>
+      {tab !== "chat" ? <ChatFloat /> : null}
     </div>
   );
 }
