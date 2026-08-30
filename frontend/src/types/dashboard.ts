@@ -558,6 +558,7 @@ export type VeraPack = {
     reasons?: Record<string, string>;
     confidence?: Record<string, number>;
     family?: Record<string, string>;
+    explain?: { factor?: string; detail?: string; shift?: string }[];
     by_window?: Record<string, Record<string, number>>;
     weight_map_rgb?: string | null;
   };
@@ -570,6 +571,8 @@ export type VeraPack = {
     pdf_x?: number[];
     pdf_y?: number[];
     extremes?: { p_ge_64_5?: number; p_ge_115_6?: number; p_ge_204_5?: number; thresholds_mm?: number[] };
+    temp?: { q50?: number | null; p_exceed?: number; threshold?: number };
+    wind?: { q50?: number | null; p_exceed?: number; threshold?: number };
   };
   temporal?: {
     windows?: Record<string, { dominant?: string; sat_w?: number; mm?: number }>;
@@ -618,5 +621,45 @@ export type VeraPack = {
       vs?: string;
     };
     hourly_history?: { t?: string; lead_h?: number; ensemble?: number; moe?: number; om?: number; obs?: number | null }[];
+    leaderboard?: { id: string; family?: string; mae?: number }[];
+    cost_loss?: { p_event?: number; value_vs_never?: number; note?: string };
   };
+  leads?: {
+    lead_h: number;
+    n_days?: number;
+    rain?: { q10?: number | null; q50?: number | null; q90?: number | null; website?: number | null; p_exceed?: number | null };
+    tmax?: { q50?: number | null; website?: number | null; p_exceed?: number | null };
+    tmin?: { q50?: number | null; website?: number | null };
+    wind?: { q50?: number | null; website?: number | null; p_exceed?: number | null };
+    gust_website?: number | null;
+  }[];
+  disagreement?: {
+    rain?: number;
+    temp?: number;
+    wind?: number;
+    flags?: { id?: string; title?: string; detail?: string; index?: number }[];
+    member_rain?: { min?: number | null; max?: number | null };
+    by_lead?: { lead_h?: number; rain_range?: (number | null)[]; flag?: boolean }[];
+    note?: string;
+  };
+  intra_hour?: {
+    note?: string;
+    days?: {
+      date: string;
+      weekday?: string;
+      label?: string;
+      offset?: number;
+      rain_mm?: number;
+      tmax_c?: number | null;
+      tmin_c?: number | null;
+      wind_max_kmh?: number | null;
+      heat_level?: string;
+      thunder_hint?: string | null;
+      hours?: { t?: string; rain_mm?: number; website_mm?: number | null; blend_mm?: number | null; ensemble_mm?: number | null; temp_c?: number | null; wind_kmh?: number; gust_kmh?: number | null; rh?: number; wbgt_c?: number | null; class?: string | null }[];
+      peak_minutes?: { t?: string; rain_mm?: number; rain_mm_h?: number; website_mm_h?: number; blend_mm_h?: number; ensemble_mm_h?: number; temp_c?: number; wind_kmh?: number; wbgt_c?: number }[];
+      minutes_today?: { t?: string; rain_mm?: number; rain_mm_h?: number; website_mm_h?: number; blend_mm_h?: number; ensemble_mm_h?: number; temp_c?: number; wind_kmh?: number; wbgt_c?: number }[];
+    }[];
+  };
+  replay?: { cases?: { id?: string; title?: string; place?: string; date?: string; kind?: string; signal?: string; note?: string; blend_mm?: number; p_heavy?: number }[]; kind?: string };
+  bulletin?: string;
 };
