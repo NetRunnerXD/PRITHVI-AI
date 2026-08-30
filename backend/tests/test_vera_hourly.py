@@ -4,6 +4,57 @@ from app.ml.vera.hourly import build
 from app.ml.vera.verify import LOG, ingest_forecast, run as verify_run, walk_forward_cv
 
 
+def test_leads_and_intra_and_bulletin():
+    from app.ml.vera.disagreement import run as disag_run
+    from app.ml.vera.intra_hour import _hour_minutes, run as intra_run
+    from app.ml.vera.leads import run as leads_run
+    from app.ml.vera.pipeline import build_vera
+    from app.schemas.location import Location
+
+    loc = Location(
+        id="x",
+        label="Howrah",
+        country="IN",
+        state="West Bengal",
+        district="Howrah",
+        lat=22.6,
+        lon=88.3,
+        timezone="Asia/Kolkata",
+        crop_hint="rice",
+    )
+    times = [f"2026-08-30T{h:02d}:00+05:30" for h in range(24)] + [f"2026-08-31T{h:02d}:00+05:30" for h in range(24)]
+    f = {
+        "precip_days": [12.0, 4.0, 1.0, 0.0, 2.0, 3.0, 1.0, 0.5, 0.2, 0.1],
+        "temp_max": [33, 34, 32, 31, 30, 29, 28, 27, 26, 25],
+        "temp_min": [25, 25, 24, 24, 23, 23, 22, 22, 21, 21],
+        "wind_max": [20, 22, 18, 16, 14, 12, 10, 10, 9, 8],
+        "hourly_precip": [0.5] * 48,
+        "hourly_temp": [30] * 48,
+        "hourly_wind": [12] * 48,
+        "hourly_times": times,
+        "members": {
+            "ifs025": {"precip_days": [20.0, 5.0], "temp_max": [34], "wind_max": [22], "hourly_precip": [0.6] * 48},
+            "gfs": {"precip_days": [4.0, 3.0], "temp_max": [32], "wind_max": [18], "hourly_precip": [0.2] * 48},
+        },
+    }
+    leads = leads_run(f, f["members"], {"ifs025": 0.6, "gfs": 0.4})
+    assert [r["lead_h"] for r in leads] == [24, 72, 120, 240]
+    assert leads[0]["rain"]["q50"] is not None
+    mins = _hour_minutes(10.0, 30, 31, 10, 12, 70, times[0], stride_min=5)
+    assert abs(sum(m["rain_mm"] for m in mins) - 10.0) < 1e-6
+    intra = intra_run(f, blend_hourly=[0.4] * 48)
+    assert intra["days"]
+    assert intra["days"][0].get("minutes_today")
+    d = disag_run(f["members"], {"q50": 40, "extremes": {"p_ge_64_5": 0.4}}, leads)
+    assert d["rain"] > 0
+    pack = build_vera(f, loc, {"ok": True, "insat": {"ok": True, "url": "https://example/ir.jpg"}}, f["members"])
+    assert pack["bulletin"]
+    assert pack["leads"]
+    assert pack["intra_hour"]["days"]
+    assert pack["replay"]["cases"]
+    assert pack["gate"]["explain"]
+
+
 def test_hourly_48():
     f = {"hourly_precip": [0.1] * 48, "hourly_times": [f"2026-08-30T{h:02d}:00" for h in range(24)] + [f"2026-08-31T{h:02d}:00" for h in range(24)]}
     members = {"ifs025": {"hourly_precip": [0.2] * 48}, "gfs": {"hourly_precip": [0.0] * 48}}
