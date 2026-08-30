@@ -31,7 +31,11 @@ def schaake_shuffle(traces: list[list[float]], historical: list[list[float]]) ->
     if not traces or not historical:
         return traces
     n = min(len(traces), len(historical))
-    m = min(len(traces[0]), len(historical[0]))
+    if n == 0 or not traces[0] or not historical[0]:
+        return traces
+    m = min(min(len(t) for t in traces[:n]), min(len(h) for h in historical[:n]))
+    if m <= 0:
+        return traces
     out = [list(t[:m]) for t in traces[:n]]
     for j in range(m):
         hist_order = sorted(range(n), key=lambda i: historical[i][j])
@@ -66,7 +70,9 @@ def run(
     extreme = p_exceed(mus, RAIN_EXTREME_MM, ww) if mus else 0.0
     traces = []
     for sid in ids:
-        ser = (members[sid].get("precip_days") or [])[:7]
+        ser = [float(x) for x in (members[sid].get("precip_days") or [])[:7]]
+        while len(ser) < 7:
+            ser.append(ser[-1] if ser else 0.0)
         traces.append(ser)
     hist_mm = float((historical.get("climatology") or {}).get("mean") or 6)
     hist_tr = [[hist_mm * (0.6 + 0.1 * (i + j) % 5) for j in range(7)] for i in range(len(traces))]

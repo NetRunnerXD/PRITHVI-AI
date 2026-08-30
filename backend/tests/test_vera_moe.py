@@ -67,6 +67,37 @@ def test_build_vera_graph():
         "hourly_precip": [0.2] * 12,
     }
     pack = build_vera(f, loc, {"ok": True, "cells": [], "insat": {"ok": True, "url": "https://example/ir.jpg"}}, f["members"])
+
+
+def test_build_vera_short_daily_times():
+    loc = Location(
+        id="x",
+        label="Haldia",
+        country="IN",
+        state="West Bengal",
+        district="Purba Medinipur",
+        lat=22.07,
+        lon=88.07,
+        timezone="Asia/Kolkata",
+        crop_hint="rice",
+    )
+    f = {
+        "precip_days": [12.0, 4.0],
+        "precip_3d_mm": 16.0,
+        "precip_z": 0.8,
+        "clim_daily_mm": 7.0,
+        "daily_times": ["2026-08-20"],
+        "members": {
+            "ecmwf_ifs025": {"precip_days": [10.0, 5.0], "daily_times": ["2026-08-20"]},
+            "gfs_seamless": {"precip_days": [14.0], "daily_times": ["2026-08-20"]},
+        },
+        "hourly_precip": [0.2] * 12,
+    }
+    pack = build_vera(f, loc, {"ok": True, "cells": []}, f["members"])
+    days = (pack.get("compare") or {}).get("days") or []
+    assert len(days) == 7
+    assert days[0]["date"] == "2026-08-20"
+    assert days[1]["date"] is None
     assert pack["name"] == "VERA-MoE"
     assert pack["graph"]["nodes"]
     assert pack["fusion"]["q50"] is not None

@@ -597,7 +597,15 @@ def _vegetation(f: dict) -> dict:
 def _vera_pack(f: dict[str, Any], loc: Location, live_sat: dict[str, Any] | None) -> dict[str, Any]:
     from app.ml.vera import build_vera
 
-    return build_vera(f, loc, live_sat, f.get("members") if isinstance(f.get("members"), dict) else {})
+    try:
+        return build_vera(f, loc, live_sat, f.get("members") if isinstance(f.get("members"), dict) else {})
+    except Exception as exc:
+        return {
+            "name": "VERA-MoE",
+            "title": "Vision-Enhanced Regime-Adaptive Mixture-of-Experts",
+            "error": str(exc),
+            "guidance_only": True,
+        }
 
 
 async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot:
@@ -696,11 +704,12 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
         )
     if science["blindspot"]["level"] != "clear":
         drivers.append("unobserved hydrology watch")
+        why = (science["blindspot"].get("drivers") or ["Unobserved hydrology"])[0]
         stories.append(
             DiagnosticStory(
                 id="blindspot",
                 title="Model blind spot",
-                why=science["blindspot"]["drivers"][0],
+                why=why,
                 evidence=f"blind-spot {science['blindspot']['score_pct']}% ({science['blindspot']['level']}).",
                 implication="A quiet flood card is not proof the village is dry.",
             )

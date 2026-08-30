@@ -90,6 +90,16 @@ GRAPH = {
 }
 
 
+def _lead_date(members: dict[str, dict], member_ids: list[str], i: int) -> str | None:
+    if not member_ids:
+        return None
+    times = list((members.get(member_ids[0]) or {}).get("daily_times") or [])
+    if i < len(times):
+        val = times[i]
+        return str(val) if val is not None else None
+    return None
+
+
 def build_vera(
     f: dict[str, Any],
     loc: Any,
@@ -221,9 +231,16 @@ def build_vera(
             "hours": hourly_rows,
             "days": [
                 {
-                    "date": ((members.get(member_ids[0]) or {}).get("daily_times") or [None] * 7)[i] if member_ids else None,
+                    "date": _lead_date(members, member_ids, i),
                     "ensemble": fus.get("q50") if i == 0 else None,
-                    "members": {sid: ((members.get(sid) or {}).get("precip_days") or [None])[i] if i < len((members.get(sid) or {}).get("precip_days") or []) else None for sid in member_ids},
+                    "members": {
+                        sid: (
+                            ((members.get(sid) or {}).get("precip_days") or [None])[i]
+                            if i < len((members.get(sid) or {}).get("precip_days") or [])
+                            else None
+                        )
+                        for sid in member_ids
+                    },
                 }
                 for i in range(7)
             ],
