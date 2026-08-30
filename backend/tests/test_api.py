@@ -34,6 +34,11 @@ def test_states_and_districts():
     assert d.json()["count"] >= 20
 
 
+def test_imd_asia_proxy_route():
+    r = client.get("/api/sat/imd-asia")
+    assert r.status_code in (200, 502)
+
+
 def test_map_layers():
     r = client.get("/api/map/layers")
     assert r.status_code == 200

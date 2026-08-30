@@ -60,7 +60,7 @@ def test_hybrid_members_use_q50_not_mean():
         },
     }
     dual = build_dual_predictions(f)
-    assert dual["hybrid"]["method"] == "equal_vincentize"
+    assert dual["hybrid"]["method"] == "vera_moe_vincentize"
     assert dual["hybrid"]["hazards"]["guidance_only"] is True
     assert dual["ours"]["days"][0]["precip_q50_mm"] == 0.0
     assert dual["ours"]["days"][0]["precip_q90_mm"] >= 64.5
