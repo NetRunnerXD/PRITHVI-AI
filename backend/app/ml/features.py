@@ -358,6 +358,7 @@ def extract(
         "hourly_cape": hw(_hourly(om, "cape")),
         "hourly_vpd": hw(_hourly(om, "vapour_pressure_deficit")),
         "hourly_prob": hw(_hourly(om, "precipitation_probability")),
+        "hourly_vis": hw(_hourly(om, "visibility")),
         "hourly_us_aqi": _hourly(aq, "us_aqi"),
         "hourly_eu_aqi": _hourly(aq, "european_aqi"),
         "hourly_aqi_times": aqi_times,

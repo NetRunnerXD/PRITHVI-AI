@@ -92,6 +92,7 @@ class Predictive(BaseModel):
     irrigate_dates: list[str] = []
     flood_watch_dates: list[str] = []
     outlook_days: list[dict] = []
+    hourly: list[dict] = []
     model: str = "open-meteo:best_match"
 
 

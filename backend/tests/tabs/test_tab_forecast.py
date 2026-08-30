@@ -1,5 +1,11 @@
 """Forecast / outlook / scan stay inside the asked state."""
 
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.schemas.dashboard import Predictive
+from app.services.location_svc import resolve_location
+
 import pytest
 
 from app.data.india_districts import districts_in_state
@@ -52,3 +58,26 @@ async def test_rank_west_bengal_never_lists_raipur(monkeypatch):
     assert states == {"West Bengal"}
     assert "Raipur" not in names
     assert "Howrah" in names or loc("Howrah").district in names
+
+
+def test_forecast_hourly_filters_date(monkeypatch):
+    class Snap:
+        location = resolve_location(q="Haldia")
+        predictive = Predictive(
+            hourly=[
+                {"t": "2026-08-30T01:00", "date": "2026-08-30", "hour": "01:00", "precip_mm": 0.2},
+                {"t": "2026-08-31T02:00", "date": "2026-08-31", "hour": "02:00", "precip_mm": 1.1},
+            ]
+        )
+
+    async def fake(loc, locale="en"):
+        return Snap()
+
+    monkeypatch.setattr("app.api.dashboard.build_snapshot", fake)
+    c = TestClient(app)
+    r = c.get("/api/forecast/hourly", params={"date": "2026-08-30", "place": "Haldia"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["n"] == 1
+    assert body["hours"][0]["date"] == "2026-08-30"
+    assert "2026-08-31" in body["dates"]

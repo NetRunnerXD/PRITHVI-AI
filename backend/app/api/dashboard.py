@@ -28,6 +28,27 @@ async def forecast(loc: Location = Depends(loc_from_query)):
     }
 
 
+@router.get("/forecast/hourly")
+async def forecast_hourly(
+    loc: Location = Depends(loc_from_query),
+    date: str | None = Query(default=None, description="YYYY-MM-DD IST"),
+):
+    snap = await build_snapshot(loc)
+    hours = list(snap.predictive.hourly or [])
+    days = sorted({str(h.get("date")) for h in hours if h.get("date")})
+    if date:
+        hours = [h for h in hours if str(h.get("date")) == date[:10]]
+    return {
+        "location": snap.location.model_dump(),
+        "date": (date or "")[:10] or None,
+        "dates": days,
+        "hours": hours,
+        "n": len(hours),
+        "source": "open-meteo hourly",
+        "note": "Model forecast, not a gauge. Hours are Asia/Kolkata.",
+    }
+
+
 @router.get("/predictions")
 async def predictions(loc: Location = Depends(loc_from_query), source: str = "both"):
     snap = await build_snapshot(loc)
@@ -45,6 +66,7 @@ async def outlook(loc: Location = Depends(loc_from_query)):
     return {
         "location": snap.location.model_dump(),
         "outlook_days": snap.predictive.outlook_days,
+        "hourly": snap.predictive.hourly,
         "precip_7d_mm": snap.predictive.precip_7d_mm,
         "et0_7d_mm": snap.predictive.et0_7d_mm,
         "water_balance_7d_mm": snap.predictive.water_balance_7d_mm,

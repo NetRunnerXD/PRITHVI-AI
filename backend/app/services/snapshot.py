@@ -7,7 +7,7 @@ from typing import Any
 from app.ml.anomaly import compute as compute_anomalies
 from app.ml.features import extract
 from app.ml.blend import build_dual_predictions
-from app.ml.outlook import build_outlook
+from app.ml.outlook import build_hourly_7d, build_outlook
 from app.ml.prescribe import recommend
 from app.ml.risk import all_risks
 from app.ml.hazards_outlook import build_hazard_forecast
@@ -946,6 +946,7 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
             irrigate_dates=list(outlook.get("irrigate_dates") or []),
             flood_watch_dates=list(outlook.get("flood_watch_dates") or []),
             outlook_days=list((dual.get("ours") or {}).get("days") or outlook.get("days") or []),
+            hourly=build_hourly_7d(f),
             model="open-meteo trusted + Rituchakra residual-blend v4",
         ),
         prescriptive=Prescriptive(warnings=warnings, actions=actions),
