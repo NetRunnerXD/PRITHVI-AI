@@ -48,6 +48,8 @@ def _mean(vals: list[float]) -> float:
 
 def block_flow(prev: list[list[float]], curr: list[list[float]], step: int = 8) -> tuple[float, float]:
     """Coarse optical-flow: best 8×8 block shift on the coldest half of the grid."""
+    if not curr or not curr[0]:
+        return 0.0, 0.0
     h, w = len(curr), len(curr[0])
     if len(prev) != h or not prev[0] or len(prev[0]) != w:
         return 0.0, 0.0
@@ -78,6 +80,8 @@ def block_flow(prev: list[list[float]], curr: list[list[float]], step: int = 8) 
 
 
 def cooling_stats(prev: list[list[float]], curr: list[list[float]]) -> dict[str, float]:
+    if not curr or not curr[0]:
+        return {"d_tb": 0.0, "n_cold": 0.0, "n_ot": 0.0, "jump": 0.0}
     h, w = len(curr), len(curr[0])
     cool = 0.0
     n_cold = 0
