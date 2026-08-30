@@ -30,11 +30,14 @@ class Settings(BaseSettings):
     mosdac_base_url: str | None = None
     nasa_earthdata_user: str | None = None
     nasa_earthdata_pass: str | None = None
+    nasa_earthdata_api: str | None = None
     openweather_api_key: str | None = None
     weatherbit_api_key: str | None = None
     eumetsat_token: str | None = None
     lightning_feed_url: str | None = None
     lightning_feed_key: str | None = None
+    cds_api_key: str | None = None
+    graphcast_weights_dir: str | None = None
 
     # Google gtx + MyMemory, no key. Off = skip inbound/outbound MT.
     translate_enabled: bool = True

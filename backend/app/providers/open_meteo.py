@@ -23,6 +23,9 @@ BLEND_MODELS: tuple[tuple[str, str], ...] = (
     ("gfs", "gfs_global"),
     ("graphcast", "gfs_graphcast025"),
     ("icon", "icon_global"),
+    ("pangu", "ecmwf_aifs025"),
+    ("fourcastnet", "icon_seamless"),
+    ("wrf_ncum", "ukmo_global_deterministic_10km"),
 )
 
 
@@ -112,6 +115,7 @@ async def forecast_models(lat: float, lon: float) -> dict[str, Any]:
         params = {
             "latitude": lat,
             "longitude": lon,
+            "hourly": "precipitation,temperature_2m,wind_speed_10m",
             "daily": (
                 "precipitation_sum,precipitation_probability_max,"
                 "temperature_2m_max,temperature_2m_min,wind_speed_10m_max"
@@ -194,6 +198,52 @@ async def _archive_fallback(lat: float, lon: float) -> dict[str, Any] | None:
         return data
     except Exception:
         return None
+
+
+async def era5_context(lat: float, lon: float) -> dict[str, Any]:
+    """ERA5-Land / IFS archive: precip + 500 hPa geopotential when the model exposes it."""
+    from datetime import date, timedelta
+
+    key = f"om:era5:{round(lat, 2)}:{round(lon, 2)}"
+    hit = cache.get(key)
+    if isinstance(hit, dict):
+        return hit
+    today = date.today()
+    start = (today - timedelta(days=16)).isoformat()
+    end = (today - timedelta(days=1)).isoformat()
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": start,
+        "end_date": end,
+        "hourly": "precipitation,temperature_2m,geopotential_height_500hPa,pressure_msl",
+        "daily": "precipitation_sum",
+        "timezone": "Asia/Kolkata",
+        "models": "era5_seamless",
+    }
+    try:
+        r = await client().get(ARCHIVE, params=params)
+        if r.status_code >= 400:
+            params.pop("models", None)
+            r = await client().get(ARCHIVE, params=params)
+        if r.status_code >= 400:
+            return {"ok": False, "status": f"http_{r.status_code}"}
+        data = r.json()
+        hourly = data.get("hourly") or {}
+        z = [float(x) for x in (hourly.get("geopotential_height_500hPa") or []) if x is not None]
+        p = [float(x) for x in ((data.get("daily") or {}).get("precipitation_sum") or []) if x is not None]
+        out = {
+            "ok": True,
+            "source": "open-meteo-era5-archive",
+            "z500_m": round(sum(z) / len(z), 1) if z else None,
+            "z500_std": round((sum((x - sum(z) / len(z)) ** 2 for x in z) / len(z)) ** 0.5, 2) if len(z) > 2 else None,
+            "precip_days": p[-16:],
+            "n_hours": len(hourly.get("time") or []),
+        }
+        cache.set(key, out, 6 * 3600)
+        return out
+    except Exception as e:
+        return {"ok": False, "status": "error", "error": str(e)[:160]}
 
 
 async def flood(lat: float, lon: float) -> dict[str, Any]:
