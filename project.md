@@ -37,7 +37,7 @@ Default focus: **Haldia, Purba Medinipur, West Bengal** (`22.0667, 88.0698`). Na
 
 - **India-only UX.** Gazetteer + geocoding are India. Do not add global city search as default.
 - **LLM never invents numbers.** Forecasts, risk %, liters, AQI, mandi rupees, nowcast mm, and **date-window daily mm** come from providers/ML/tools. The LLM orchestrates tools and writes prose. For “rain in Haldia 23–28 August” the answer is `get_rain_window` rows (or the deterministic table built from them), never free-form millimetres.
-- **Local Ollama.** Default main model `qwen2.5:3b` (fits RTX 3060 6 GB with KV headroom). Optional CPU triage `qwen2.5:0.5b`. Advisor is a zero-trust kernel: LLM narrates; `data()` + `check_claims` own millimetres.
+- **LLM narrates only.** Default is local Ollama `qwen2.5:3b` (fits RTX 3060 6 GB). Optional CPU triage `qwen2.5:0.5b`. Hosted OpenAI-compat narrators (`LLM_PROVIDER` = `groq` | `gemini` | `github` | `openrouter` | `xai`) may replace or fall back (`LLM_FALLBACK`). Keys stay on the server. Settings “Advisor model” picks among `GET /api/health` `llm.available`. Millimetres still come only from `data()` + `check_claims`.
 - **No IMD REST without IP whitelist.** `api.imd.gov.in` returns 401. Use **IMD CAP RSS** for official warnings.
 - **Do not commit API keys.** `DATA_GOV_IN_API_KEY` and others live in `backend/.env` (gitignored).
 - **Open-Meteo has no earthquake or tsunami products.** Seismic = USGS FDSN. Tsunami = INCOIS ITEWS. Label sources honestly.
@@ -117,6 +117,8 @@ Any client (frontend/ or a new web / React Native folder using clients/js)
                           ├─ /app/v1/*         same handlers for Expo / native
                           ├─ /api/health
                           ├─ /api/dashboard    snapshot
+                          ├─ /api/forecast           7-day predictive pack
+                          ├─ /api/forecast/hourly    IST hour slots (optional ?date=YYYY-MM-DD)
                           ├─ /api/nowcast           locked 0–6 h object
                           ├─ /api/nowcast/live      1-min gap + 1 Hz playhead
                           ├─ /api/nowcast-live      alias (proxies that drop /live)
@@ -164,10 +166,11 @@ Location
 | Path | Role |
 |---|---|
 | `main.py` | FastAPI app, CORS, `/`, `/docs`, `/api`, `/api/health` — **no static UI** |
-| `config.py` | pydantic-settings; `backend/.env` |
+| `config.py` | pydantic-settings; `backend/.env` (Ollama + hosted LLM keys) |
+| `llm/providers.py` | OpenAI-compat registry: ollama / groq / gemini / github / openrouter / xai |
 | `http_urls.py` | Absolute API URLs (`PUBLIC_BASE_URL` or request host) |
 | `cache.py` | In-memory TTL cache (do not slam Open-Meteo/CAP) |
-| `api/dashboard.py` | `/dashboard`, `/forecast`, `/predictions`, `/outlook`, `/risks`, `/science`, `/nowcast`, `/nowcast/live`, `/nowcast-live`, `/live-nowcast`, `/nowcast/sat`, `/nowcast-sat`, `/nowcast/storm-map`, `/nowcast-storm-map`, `/insights`, `/scan`, `/compare`, `/states`, `/districts`, `/brief`, `/agent/tools` |
+| `api/dashboard.py` | `/dashboard`, `/forecast`, **`/forecast/hourly`**, `/predictions`, `/outlook`, `/risks`, `/science`, `/nowcast`, `/nowcast/live`, `/nowcast-live`, `/live-nowcast`, `/nowcast/sat`, `/nowcast-sat`, `/nowcast/storm-map`, `/nowcast-storm-map`, `/insights`, `/scan`, `/compare`, `/states`, `/districts`, `/brief`, `/agent/tools` |
 | `api/geo.py` | `/geo/search`, `/geo/reverse`, `/geo/nearby`, `/map/layers`, **`/map/wms` Bhuvan proxy** |
 | `api/deps.py` | `loc_from_query(district, place, lat, lon)` |
 | `api/chat.py` | `POST /chat` SSE (`data: {json}\n\n`) |
@@ -206,7 +209,7 @@ Location
 | `ml/features.py` | Flatten OM/flood/air/marine; **slice daily series from IST today** (`_start_today`); keep `precip_yesterday_mm` |
 | `ml/risk.py` | Weighted-linear XAI cards: flood, drought, heat, irrigation, air, seismic, tsunami, livelihood |
 | `ml/blend.py` | Dual 7-day forecast; ours stays within ~±12% of trusted Open-Meteo |
-| `ml/outlook.py` | 7-day soil bucket, irrigate/flood flags (hysteresis soil) |
+| `ml/outlook.py` | 7-day soil bucket + **`build_hourly_7d`** (IST hours for the next 7 calendar days) |
 | `ml/prescribe.py` | Daily actions + why/when/who + liter bands |
 | `ml/anomaly.py` | Drivers + `DiagnosticStory` |
 | `ml/sky.py` | WMO code → sky; 16-point compass; wind rose bins |
@@ -251,10 +254,11 @@ Location
 | `services/rain_window.py` | Open-Meteo daily slice for a place + calendar window |
 | `agents/orchestrator.py` | SSE chat: interpret → resolve India place → optional `data()` loop → quote/lock → MT |
 | `agents/prompts.py` | English `SYSTEM`. Outbound is MT, not a second Ollama rewrite. |
-| `llm/ollama_client.py` | OpenAI client → Ollama; empty-choices safe; retry without tools |
+| `llm/ollama_client.py` | OpenAI client for the **active** provider (`use_provider`); fallback chain; empty-choices safe; retry without tools; `catalog()` for Settings |
 | `data/fuzzy.py` | Name fold + Damerau–Levenshtein (`Puruliya`→Purulia, never Puri) |
 | `data/india_capitals.py` | Weather HQ for every state / UT (Delhi, Odisha→Bhubaneswar, …) |
 | `data/blocked_places.py` | Fiction / foreign names that must never geocode |
+| `data/closed_class.py` | Calendar / deixis / product tokens (`tomorrow`, `mm`, `yes`) that are never place names |
 | `tools/__init__.py` | LangChain-shaped registry for `/agent/tools` and older tests |
 | `rag/store.py` + `rag/knowledge/` | Tiny playbook retrieve |
 | `schemas/` | `Location`, `DashboardSnapshot`, `EarlyWarning`, `LiveWatch`, `RiskCard`, `ChatRequest` |
@@ -328,6 +332,8 @@ Clicking an incident focuses the map only — it must **not** call `onPick` / ch
 
 `predictions`: `{ trusted, ours, adjustments, inputs, hazards }`.
 
+`predictive.hourly`: list of IST hour dicts (`t`, `date`, `hour`, precip/temp/wind/RH/cloud/sky/visibility) for today through +6 days. Built by `ml.outlook.build_hourly_7d`. `GET /api/forecast/hourly?date=` filters one IST day. Model hours, not gauges.
+
 `EarlyWarning`: `hazard` = weather|flood|air|marine|seismic|tsunami; titles go through `imd.humanize_cap_title` (never leave “Heavy to very heavy with extremely heavy rainfall”).
 
 ---
@@ -344,20 +350,22 @@ This folder is **one optional web client**. Do not treat it as the API. New UIs 
 | `lib/api.ts` | `fetchDashboard`, `fetchNowcastLive` (tries `/nowcast/live` then aliases), `fetchNowcastSat`, `fetchStormMap`, `fetchStates`, `searchPlaces`, `streamChat` |
 | `lib/nowcastGap.ts` | Client 1-min gap if live endpoint 404s |
 | `lib/satKalman.ts` | Envelope twin + `chartFromPredSeries` / `interpSeries` (plot **server** points; do not run `sat_phys` in the browser) |
-| `lib/store.ts` | Zustand: locale, **outputLocale**, tab, dashboard, chat, settings, favorites, **`applySuggestion` (tab + `setLocation` + `mapFocus`)** |
+| `lib/store.ts` | Zustand: locale, **outputLocale**, tab, dashboard, chat, settings (`llmProvider`, `showEvidence`), favorites, **`applySuggestion` (tab + `setLocation` + `mapFocus`)** |
 | `lib/units.ts` | Metric / imperial display |
 | `types/dashboard.ts` | Mirrors backend snapshot + `NowcastPack` (keep in sync) |
 | `i18n/copy.ts` | UI strings `en` / `hi` / `bn` — add **all three** when adding a key |
 | `i18n/presets.ts` | Same Advisor questions in en / hi / bn (includes “Next 2 hours?” and **Haldia 23–28 Aug**) |
 | `components/Sidebar.tsx` | Collapsible rail + ASK chips |
 | `components/OverviewLive.tsx` | Sky, rain, **engine-labelled nowcast hours**, wind; `OverviewPlots` |
+| `components/OutlookTable.tsx` | 7-day glance; selected date opens `HourlyForecast` |
 | `components/NowcastLive.tsx` | Nowcasting tab: playhead, Hugli tide, countdown, 120-min bar, ponding |
 | `components/NowcastSat.tsx` | Minute / Second live series from API, history vs scenes (pred / held / obs / offset bars), MAE / innovation |
 | `app/api/nowcast/live/route.ts` | Next proxy to FastAPI `/api/nowcast/live` (same-origin fallback) |
 | `app/api/nowcast/sat/route.ts` | Next proxy to FastAPI `/api/nowcast/sat` |
 | `components/SciencePanel.tsx` | Decision-science + nowcast tiles (collapsed on Overview) |
 | `components/EarlyWarnings.tsx` | Multi-hazard watch (Alerts tab) |
-| `components/SettingsPanel.tsx` | Theme, units, language, refresh, **API origin** |
+| `components/SettingsPanel.tsx` | Theme, units, language, refresh, **API origin**, **Advisor model** (`llm.available`), show-evidence |
+| `components/HourlyForecast.tsx` | Expandable 24 h table + rain/temp/wind charts for a selected outlook date |
 | `components/ChatDock.tsx` | Presets; `ChatBlocks`; suggestion chips call `applySuggestion` (no auto tab switch) |
 | `components/ChatBlocks.tsx` | Always show prose + optional tables/metrics |
 | `components/SquareMap.tsx` + `MapView.tsx` + `StormFeed.tsx` | Leaflet storm map: state / All India, basemap vs weather layers (no duplicate View/Basemap satellite), past/predicted/live highlights, zoom-aware circles, Weatherbit past ⚡, predicted ✦ + confidence, storm polygons. Incident click focuses only. |
@@ -368,6 +376,8 @@ This folder is **one optional web client**. Do not treat it as the API. New UIs 
 Keys `1–9` switch the first nine tabs.
 
 **Overview order:** decision chips (pump / field / Kal-ghat) → sky + today’s rain → engine-labelled 0–6 h nowcast → 7-day glance → wind → collapsed Decision science → collapsed plots.
+
+**Forecast / Predicted:** 7-day outlook. Selecting a date expands IST hourly rain/temp/wind (`HourlyForecast`). Hours come from `predictive.hourly` / `GET /api/forecast/hourly`.
 
 **Nowcasting tab:** 1 Hz playhead, Hugli tide (only if `phys.show_tide`), onset countdown, between-scene Kalman (Minute / Second + **History vs scenes**), locked-shape sweep, 120-min bar, ponding tank. Hours stay locked. Advisor never quotes Kalman mm/h. History line is the server physical series, not a bar between two hours.
 
@@ -405,7 +415,8 @@ Chat-first, not a preset XOR. One function: **`data(need=…)`**. The dashboard 
 `POST /api/chat` body (`ChatRequest`):
 
 ```
-message, locale_hint, output_locale, location, history[], regenerate, conversation_id
+message, locale_hint, output_locale, location, history[], regenerate, conversation_id,
+stream (default true), llm (provider id, else LLM_PROVIDER), show_evidence
 ```
 
 `run_agent` (`orchestrator.py`):
@@ -415,7 +426,7 @@ message, locale_hint, output_locale, location, history[], regenerate, conversati
 3. **`utterance.interpret`** on the English line: refuse (pets / tourism / fiction), catalog (“all metrics”), follow-up (`yes` / `all of them`), or named `data()` needs. Bare “Puruliya” is a forecast. **`How about Malda` / `what about Puri`** is a place retarget → `forecast` at that town. **`what about Kerala?`** after a rank stays a **state follow-up** (not a capital forecast).
 4. **Resolve place:** `resolve_named_place` (towns → districts → state/UT capital) then, if needed, `resolve_india_place` (Open-Meteo `countryCode=IN`). Never fall back to Haldia for an unknown or fictitious name. `Puruliya` ≠ Puri. `Delhi` is the city, not a state ranking. `all of them` is not a place.
 5. Follow-ups inherit the last **asked** town from `memory.TurnState`. After a refuse, `yes` / `still tell me` stays refused (no Haldia AQI).
-6. Optional Ollama tool loop (`data()` only). Deterministic needs (bare place, **how-about place**, catalog, date window) are **prefetched** so qwen cannot shrug or invent a 7-day table.
+6. Optional tool loop (`data()` only) on the selected narrator (Ollama or hosted). Deterministic needs (bare place, **how-about place**, catalog, date window) are **prefetched** so the model cannot shrug or invent a 7-day table.
 7. **Grounding:** `check_claims` replaces unbound digits with `—`. `fill_slots` replaces `[temp_c]` / `[rain_mm]`. `drop_false_shrug` drops “couldn’t find weather” when a pack exists. If the draft is **dash-soup** (`August —` / `—%` / `— mm` four or more times), **replace it** with `quote_facts` (now includes `outlook_days`). Otherwise append `quote_facts` when the prose forgot numbers.
 8. **Outbound MT** of the English draft. No second Ollama rewrite. If MT fails: `compose_indic` for hi/bn, else English.
 9. Suggestions (`focus-map`, forecast, nowcast, alerts, risks) include `location` + `center`. The UI calls `applySuggestion` → `setLocation` + `mapFocus`. Do **not** auto-`setTab`.
@@ -471,7 +482,7 @@ CARTO Positron, OSM, Esri World Imagery, OpenTopoMap.
 
 ### Local data
 
-`india_districts.py`, `india_towns.py`, `india_capitals.py`, `india_coast.py`, `india_mask.py`, `physiography.py`, `fuzzy.py`, `blocked_places.py`, `rag/knowledge/*.md`.
+`india_districts.py`, `india_towns.py`, `india_capitals.py`, `india_coast.py`, `india_mask.py`, `physiography.py`, `fuzzy.py`, `blocked_places.py`, `closed_class.py`, `rag/knowledge/*.md`.
 
 **Bhuvan pitfall:** `geomorphology.wb_gm50k_0506_new` on vec2 does **not** work. Use `GET /api/map/wms` with `gw_wfs:WB_LGEOM`. Leaflet url = `apiUrl("/map/wms")` (absolute when `PUBLIC_BASE_URL` or request host is set). `/api/map/layers` returns both `url` (absolute) and `path` (`/api/map/wms`).
 
@@ -488,7 +499,8 @@ Chat and search share the same pipeline (`resolve_named_place` then `resolve_ind
 3. **District gazetteer** + aliases (`puruliya`, `calcutta`, `calicut`→Kozhikode)
 4. **State / UT capital** (`india_capitals.py`) — bare `Delhi` / `Odisha` / `Goa` is a forecast at the HQ, not every district in the state. Label is never `Delhi, Delhi`.
 5. **Open-Meteo India geocode** — any other real Indian town/district (Wardha, Munnar, Tezpur, …)
-6. **Refuse** fiction / foreign (`blocked_places.py`: Atlantis, Hogwarts, Paris). No Haldia fallback.
+6. **Closed-class skip** (`closed_class.py`) — `tomorrow` / `yes` / `mm` are not towns
+7. **Refuse** fiction / foreign (`blocked_places.py`: Atlantis, Hogwarts, Paris). No Haldia fallback.
 
 `resolve_location()` with no query still defaults to Haldia. `data(place=…)` uses `resolve_india_place` and returns `unknown_place` instead of the pin.
 
@@ -508,7 +520,7 @@ Run from `backend/`:
 python -m pytest -q
 ```
 
-Notable tests: `test_imd_title`, `test_warnings`, `test_sky`, `test_coast`, `test_blend`, `test_translate_reply`, `test_mt_layer`, `test_location` (Haldia / Cherrapunji / Puruliya≠Puri), `test_risk_xai`, `test_science`, `test_nowcast`, `test_live`, `test_sat_kalman`, `test_sat_phys`, `test_features`, `test_dates`, `test_rain_window`, `test_agent_tools`, `test_intent`, `test_api`, `test_physiography` (Leh orographic, Jaipur no tide), `test_india_mask` (Kolkata in, Lhasa/Dhaka/Kathmandu out), `test_convective`, `test_cv_nowcast`, `test_thunder_predict` (distinct lifetimes + confidence), `test_storm_map` (pytest skips network).
+Notable tests: `test_imd_title`, `test_warnings`, `test_sky`, `test_coast`, `test_blend`, `test_translate_reply`, `test_mt_layer`, `test_location` (Haldia / Cherrapunji / Puruliya≠Puri), `test_risk_xai`, `test_science`, `test_nowcast`, `test_live`, `test_sat_kalman`, `test_sat_phys`, `test_features`, `test_dates`, `test_rain_window`, `test_agent_tools`, `test_intent`, `test_api`, `test_physiography` (Leh orographic, Jaipur no tide), `test_india_mask` (Kolkata in, Lhasa/Dhaka/Kathmandu out), `test_convective`, `test_cv_nowcast`, `test_thunder_predict` (distinct lifetimes + confidence), `test_storm_map` (pytest skips network), `test_llm_providers`.
 
 Chat / place: `test_fuzzy`, `test_fuzzy_names`, `test_fuzzy_contradictions`, `test_fictitious_places`, `test_bare_place`, `test_utterance`, `test_place_resolution`, `test_unpopular_places`, `test_human_utterances`, `test_followup_catalog` (`yes` / `all of them` stay on Purulia; chips carry `location`), `test_orchestrator`, `test_facts` (incl. dash-soup), `test_claims`, `test_binder`, `test_llm_eval` + `tests/llm/cases.json` (`How about malda` → forecast). Scripts: `scripts/eval_chat.py`, `scripts/eval_chat_live.py`.
 
@@ -526,7 +538,7 @@ Chat / place: `test_fuzzy`, `test_fuzzy_names`, `test_fuzzy_contradictions`, `te
 | `test_tab_map.py` | Map | Nearby has no Raipur/CG | Search Raipur is CG |
 | `test_tab_advisor.py` | Advisor | `How about malda` fetches Malda numbers | Joke stays chat; Kerala follow-up stays rank |
 
-When changing `extract`, `all_risks`, `compose_indic`, CAP titles, nowcast millimetre rules, date parsing, CORS, place fold, `interpret`, or `locality` — update these tests. Each pass should keep a contradiction sibling (Puruliya≠Puri, Howrah≠Hogwarts, Howrah≠Chhattisgarh, catalog≠single AQI). If a test fails, add the inverse case before “fixing” only the happy path.
+When changing `extract`, `all_risks`, `compose_indic`, CAP titles, nowcast millimetre rules, date parsing, CORS, place fold, `interpret`, `locality`, LLM providers, or 7-day hourly — update these tests. Each pass should keep a contradiction sibling (Puruliya≠Puri, Howrah≠Hogwarts, Howrah≠Chhattisgarh, catalog≠single AQI). If a test fails, add the inverse case before “fixing” only the happy path.
 
 ---
 
@@ -538,6 +550,13 @@ When changing `extract`, `all_risks`, `compose_indic`, CAP titles, nowcast milli
 |---|---|
 | `OLLAMA_BASE_URL` | default `http://127.0.0.1:11434/v1` |
 | `OLLAMA_MODEL` | `qwen2.5:3b` (6 GB GPU). `OLLAMA_TRIAGE_MODEL=qwen2.5:0.5b` optional |
+| `LLM_PROVIDER` | `ollama` (default) \| `groq` \| `gemini` \| `github` \| `openrouter` \| `xai` |
+| `LLM_FALLBACK` | Comma list tried after the primary (e.g. `groq,ollama`) |
+| `GROQ_API_KEY` / `GROQ_MODEL` | Groq OpenAI-compat (`llama-3.1-8b-instant`) |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | Gemini OpenAI-compat (`gemini-2.0-flash`) |
+| `GITHUB_TOKEN` / `GITHUB_MODEL` | GitHub Models |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | OpenRouter |
+| `XAI_API_KEY` / `XAI_MODEL` | xAI (`grok-4.5`) |
 | `TRANSLATE_ENABLED` | default true; Google gtx + MyMemory, no key |
 | `DATA_GOV_IN_API_KEY` | CPCB + Agmarknet |
 | `WEATHERBIT_API_KEY` | Current / historical lightning |
@@ -651,8 +670,9 @@ Only one listener on 8000. After a restart, `/api/health` should be 200 and `/` 
 5. `backend/app/science/nowcast.py` + `science/live.py` + `science/sat_kalman.py` + `science/sat_phys.py`
 6. `backend/app/science/storm_map.py` + `thunder_predict.py` + `cv_nowcast.py` + `data/india_mask.py`
 7. `backend/app/agents/orchestrator.py` + `agents/dates.py` + `services/rain_window.py`
-8. Repo `main.py` launcher + `backend/app/main.py` (standalone API + CORS)
-9. `frontend/src/components/SquareMap.tsx` + `MapView.tsx` + `StormFeed.tsx`
-10. `clients/js/src/index.ts`
+8. `backend/app/llm/providers.py` + `backend/.env.example`
+9. Repo `main.py` launcher + `backend/app/main.py` (standalone API + CORS)
+10. `frontend/src/components/SquareMap.tsx` + `MapView.tsx` + `StormFeed.tsx`
+11. `clients/js/src/index.ts`
 
 Then grep for the feature name (`compose_indic`, `humanize_cap_title`, `WB_LGEOM`, `get_nowcast`, `get_rain_window`, `in_india`, `storm-map`, `apiUrl`, `quietRefresh`, …).

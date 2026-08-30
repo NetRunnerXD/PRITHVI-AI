@@ -73,6 +73,22 @@ IST calendar “today”; `past_days=1` so yesterday is available but not labell
 
 **Hourly series (window around now):** precip, soil 0–7 cm, temp, RH, dew, MSL pressure, wind, gust, cloud layers, weather code, CAPE, VPD, precip probability.
 
+**7-day hourly forecast (`predictive.hourly`, `GET /api/forecast/hourly`):** IST hours for today through +6 calendar days. Yesterday (`past_days`) is dropped. Model hours, not gauges.
+
+| Field | Unit | Kind |
+|---|---|---|
+| `t` | ISO local | Fetched timestamp |
+| `date`, `hour` | IST calendar | Calculated split |
+| `precip_mm` | mm | Fetched |
+| `precip_prob_pct` | % | Fetched |
+| `temp_c` | °C | Fetched |
+| `wind_kmh`, `wind_gust_kmh`, `wind_dir_deg` | km/h, ° | Fetched |
+| `rh_pct`, `cloud_pct` | % | Fetched |
+| `weather_code`, `sky_label`, `sky_kind` | WMO / text | Fetched + mapped |
+| `visibility_km` | km | Fetched (m → km) |
+
+UI: Forecast / Predicted tab expands a day into `HourlyForecast` (table + rain/temp/wind charts). Filter one day with `?date=YYYY-MM-DD`.
+
 **Daily series from IST today:** precip, ET₀, Tmax, Tmin, wind max, wind dir.
 
 ---
@@ -306,12 +322,15 @@ Rule engine (`ml/prescribe.py` + nowcast actions). Examples: irrigation hold/app
 | Compare | Delta of rain 3 d, water balance, flood score, AQI between two pins |
 | Rank | Districts **in one state** by flood/rain/drought/heat/irrigation |
 | Rain window | Daily precip/Tmax/Tmin/weather for a date span (forecast + ERA5 archive) |
+| 7-day hourly | `predictive.hourly` / `/forecast/hourly` — Open-Meteo hours, IST, skip yesterday |
 
 ---
 
 ## 16. Snapshot series keys (`descriptive.series`)
 
 `precip_hourly`, `temp_hourly`, `soil_hourly`, `rh_hourly`, `wind_hourly`, `wind_dir_hourly`, `cloud_hourly`, `aqi_hourly`, `aqi_history`, `uv_hourly`, `dust_hourly`, `pm10_hourly`, `wave_hourly`, `sst_hourly`, `swell_hourly`, `precip_daily`, `et0_daily`, `tmax_daily`, `tmin_daily`, `discharge_daily`.
+
+The 7-day hour table is **not** these series keys; it lives on `predictive.hourly` (and `/outlook` / `/forecast/hourly`).
 
 Each point: `t`, `value`, `unit`, `source`.
 
