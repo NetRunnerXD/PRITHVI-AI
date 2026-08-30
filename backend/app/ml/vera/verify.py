@@ -213,7 +213,26 @@ def agreement(pin: str) -> dict[str, Any]:
     for sid in ids:
         pairs = [(float((r.get("members") or {}).get(sid)), float(r["om"])) for r in rows if (r.get("members") or {}).get(sid) is not None]
         members[sid] = _mae_rmse(pairs)
-    return {"ensemble": ens, "moe": moe, "members": members, "n": ens.get("n") or 0, "vs": "open-meteo"}
+    eq_pairs = []
+    for r in rows:
+        mems = r.get("members") or {}
+        if mems and r.get("om") is not None:
+            eq_pairs.append((sum(float(v) for v in mems.values()) / len(mems), float(r["om"])))
+    equal = _mae_rmse(eq_pairs)
+    best = None
+    best_mae = 1e9
+    for sid, sc in members.items():
+        if sc.get("mae") is not None and sc["mae"] < best_mae:
+            best_mae, best = sc["mae"], sid
+    return {
+        "ensemble": ens,
+        "moe": moe,
+        "equal_weight": equal,
+        "members": members,
+        "best_member": best,
+        "n": ens.get("n") or 0,
+        "vs": "open-meteo",
+    }
 
 
 def hourly_history(pin: str, n: int = 48) -> list[dict[str, Any]]:
@@ -252,6 +271,7 @@ def run(pin: str, forecast_rows: list[dict[str, Any]], f: dict[str, Any]) -> dic
         times, precip, obs_src = indep
         n_back = backfill_obs(pin, times, precip, source=obs_src)
     sc = scores(pin)
+    agr = agreement(pin)
     verified = int(sc.get("ensemble", {}).get("n") or 0)
     independent = bool(sc.get("independent_obs")) and verified > 0
     return {
@@ -259,7 +279,7 @@ def run(pin: str, forecast_rows: list[dict[str, Any]], f: dict[str, Any]) -> dic
         "cv": walk_forward_cv(pin),
         "history": history(pin),
         "hourly_history": hourly_history(pin),
-        "agreement": agreement(pin),
+        "agreement": agr,
         "n_logged": len([r for r in _load() if r.get("pin") == pin]),
         "n_verified": verified if independent else 0,
         "backfilled": n_back,
@@ -268,4 +288,39 @@ def run(pin: str, forecast_rows: list[dict[str, Any]], f: dict[str, Any]) -> dic
         "note": None
         if independent
         else "Skill vs Open-Meteo is omitted until IMERG/HEM/gauge hours are backfilled. OM is the NWP reference, not obs.",
+        "cost_loss": _cost_loss(sc, f),
+        "leaderboard": _leaderboard(agr),
     }
+
+
+def _cost_loss(sc: dict[str, Any], f: dict[str, Any]) -> dict[str, Any]:
+    p = 0.0
+    days = f.get("precip_days") or []
+    if days and float(days[0] or 0) >= 64.5:
+        p = 0.7
+    elif days:
+        p = min(0.45, float(days[0] or 0) / 80.0)
+    cl = 0.3
+    warn = p * (1 - cl) - (1 - p) * cl
+    return {
+        "p_event": round(p, 3),
+        "cost_loss_ratio": cl,
+        "value_vs_never": round(max(0.0, warn), 3),
+        "note": "Relative value of a heavy-rain warning vs never warning. Not rupees. C/L=0.3.",
+    }
+
+
+def _leaderboard(agr: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    if agr.get("ensemble", {}).get("mae") is not None:
+        rows.append({"id": "ensemble", "family": "ensemble", "mae": agr["ensemble"]["mae"]})
+    if agr.get("moe", {}).get("mae") is not None:
+        rows.append({"id": "blend", "family": "blend", "mae": agr["moe"]["mae"]})
+    if agr.get("equal_weight", {}).get("mae") is not None:
+        rows.append({"id": "equal_weight", "family": "baseline", "mae": agr["equal_weight"]["mae"]})
+    for sid, sc in (agr.get("members") or {}).items():
+        if sc.get("mae") is not None:
+            fam = "ai" if any(k in sid.lower() for k in ("graphcast", "pangu", "fourcast", "aifs")) else "nwp"
+            rows.append({"id": sid, "family": fam, "mae": sc["mae"]})
+    rows.sort(key=lambda r: r["mae"])
+    return rows

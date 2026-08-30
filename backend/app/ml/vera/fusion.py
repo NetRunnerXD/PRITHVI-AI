@@ -90,4 +90,26 @@ def run(
         },
         "schaake": {"n_traces": len(shuffled), "leads": len(shuffled[0]) if shuffled else 0},
         "members_used": ids,
+        "temp": _branch(members, weights, "temp_max", 40.0),
+        "wind": _branch(members, weights, "wind_max", 60.0),
+    }
+
+
+def _branch(members: dict[str, dict], weights: dict[str, float], key: str, thresh: float) -> dict[str, Any]:
+    ids, mus, ws = [], [], []
+    for sid, pack in members.items():
+        ser = pack.get(key) or []
+        if ser and sid in weights:
+            ids.append(sid)
+            mus.append(float(ser[0]))
+            ws.append(float(weights[sid]))
+    q = vincentize(mus, ws) if mus else {"q10": None, "q50": None, "q90": None}
+    p = p_exceed(mus, thresh, ws) if mus else 0.0
+    return {
+        "q10": q.get("q10"),
+        "q50": q.get("q50"),
+        "q90": q.get("q90"),
+        "p_exceed": round(p, 3),
+        "threshold": thresh,
+        "n": len(mus),
     }

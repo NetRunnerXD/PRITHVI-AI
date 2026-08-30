@@ -205,6 +205,12 @@ def run(
             s += 0.15
         s += float(skill.get(sid) or 0) * 0.4
         s -= spread * 0.02
+        p0 = float(((members.get(sid) or {}).get("precip_days") or [0])[0] or 0)
+        if day0 and max(day0) >= 40 and p0 >= (sum(day0) / len(day0)):
+            s += 0.22
+        t0 = float(((members.get(sid) or {}).get("temp_max") or [0])[0] or 0)
+        if t0 >= 40:
+            s += 0.12
         logits.append(s)
     raw = dict(zip(ids, _softmax(logits)))
     prev = _load_prev()
@@ -260,6 +266,12 @@ def run(
             conf += 5
         confidence[sid] = int(_clip(conf, 28, 94))
         reasons[sid] = _plain_reason(sid, w, fam, top, spread, ci, lead_hours, skill.get(sid))
+    for sid, w in sm.items():
+        if sid not in confidence:
+            fam = _family(sid)
+            family[sid] = fam
+            confidence[sid] = int(_clip(55 + float(w) * 35, 28, 94))
+            reasons.setdefault(sid, _plain_reason(sid, float(w), fam, top, spread, ci, lead_hours, skill.get(sid)))
 
     return {
         "method": "ViT spatial attention + Kalman + TV",
@@ -283,4 +295,12 @@ def run(
         "weight_map_rgb": rgb_map(maps.get("short_6_48") or [[ [0, 0, 0] ]]),
         "kalman": {"q": 0.08, "r": 0.25, "prev": prev},
         "tv_lambda": 0.15,
+        "explain": [
+            {"factor": "regime", "detail": str(top), "shift": "Monsoon/heat/cyclone pattern changes which physics model is trusted."},
+            {"factor": "lead", "detail": f"{lead_hours:.0f} h", "shift": "AI members get more share after day 2; NWP more in the first day."},
+            {"factor": "spread", "detail": f"{spread:.1f} mm", "shift": "Large spread trims any one model’s peak weight."},
+            {"factor": "satellite", "detail": "growing storm" if ci else "quiet IR", "shift": "Convective initiation raises near-term rain caution."},
+            {"factor": "tail", "detail": "heavy/hot members upweighted" if (day0 and max(day0) >= 40) else "average-day loss", "shift": "Loss upweights extremes so the blend is not only tuned for ordinary days."},
+            {"factor": "online", "detail": "Kalman vs last cycle", "shift": "Yesterday’s mix is eased toward today’s scores so weights do not jump."},
+        ],
     }

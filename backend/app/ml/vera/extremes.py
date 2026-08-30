@@ -94,8 +94,8 @@ def run(
     rain_key = "watch" if (p_heavy or 0) >= 0.3 or rain24 >= RAIN_HEAVY_MM else ("outlook" if rain24 >= 25 else "quiet")
     blend = [float(x) for x in (blend_hourly or [])[:48]]
     compare = []
-    n = max(len(hourly_rain), len(blend), 24)
-    for i in range(min(24, n)):
+    n = max(len(hourly_rain), len(blend), 48)
+    for i in range(min(48, n)):
         compare.append(
             {
                 "h": i,
@@ -135,7 +135,7 @@ def run(
             "rule": "IMD heavy ≥64.5 mm/day; very heavy ≥115.6 mm/day",
         },
         "compare": {
-            "note": "Blend = satellite + NWP mix. Website = Open-Meteo (same feed weather apps use).",
+            "note": "Blend = gated mix of physics and AI members. Website = Open-Meteo. This is not the satellite Ensemble series.",
             "hourly": compare,
         },
     }

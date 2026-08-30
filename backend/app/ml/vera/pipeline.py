@@ -7,6 +7,7 @@ from typing import Any
 from app.ml.vera import cv_branch, fusion as fusion_mod, gate as gate_mod, historical as hist_mod
 from app.ml.vera import extremes as extremes_mod, hourly as hourly_mod, mlops as mlops_mod
 from app.ml.vera import preprocess, regime as regime_mod, temporal as temporal_mod, verify as verify_mod
+from app.ml.vera import disagreement as disag_mod, intra_hour as intra_mod, leads as leads_mod, replays as replay_mod
 from app.config import get_settings
 from app.providers import graphcast_run, imd_gridded, mosdac
 from app.providers import gpm_imerg
@@ -123,7 +124,22 @@ def build_vera(
         perf = {"scores": {}, "cv": {"folds": 0}, "history": []}
     ens_mae = (perf.get("scores") or {}).get("ensemble", {}).get("mae") if perf.get("independent_obs") else None
     ops = mlops_mod.run(member_ids, str(regime.get("top")), fus, mae=ens_mae)
-    ext = extremes_mod.run(f, members, g.get("weights") or {}, fus, blend_hourly=list(temp.get("hourly_0_48") or []))
+    moe_hourly = [hourly_mod.blend_hour(hourly_mod.member_hourly(members, h), g.get("weights") or {}) for h in range(48)]
+    ext = extremes_mod.run(f, members, g.get("weights") or {}, fus, blend_hourly=moe_hourly)
+    lead_rows = leads_mod.run(f, members, g.get("weights") or {})
+    disag = disag_mod.run(members, fus, lead_rows)
+    intra = intra_mod.run(f, blend_hourly=moe_hourly, ensemble_hourly=list(temp.get("hourly_0_48") or []))
+    replay = replay_mod.run()
+    loc_name = getattr(loc, "place_name", None) or getattr(loc, "district", None) or getattr(loc, "label", None) or "pin"
+    rain24 = (lead_rows[0]["rain"] if lead_rows else {}).get("q50")
+    flags = disag.get("flags") or []
+    bulletin = (
+        f"{loc_name}: 24 h blend rain {rain24 if rain24 is not None else '—'} mm (q50). "
+        f"Regime {regime.get('top')}. "
+        + (flags[0]["title"] + ". " if flags else "No disagreement flag. ")
+        + f"Heat {(ext.get('heat_wave') or {}).get('level')}; wind {(ext.get('high_wind') or {}).get('level')}; "
+        + f"heavy rain {(ext.get('heavy_rain') or {}).get('level')}. Automated; not a gauge."
+    )
     from app.providers.imd_insat import ASIA_BOUNDS, INDIA_BOUNDS
 
     aw, ae, aso, an = ASIA_BOUNDS
@@ -195,6 +211,11 @@ def build_vera(
         },
         "hourly": hourly_rows,
         "extremes": ext,
+        "leads": lead_rows,
+        "disagreement": disag,
+        "intra_hour": intra,
+        "replay": replay,
+        "bulletin": bulletin,
         "performance": perf,
         "compare": {
             "hours": hourly_rows,
