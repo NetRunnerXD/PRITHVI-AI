@@ -85,9 +85,14 @@ export function SettingsPanel() {
             value={settings.refreshSec}
             onChange={(e) => setSettings({ refreshSec: Number(e.target.value) })}
           >
-            {[30, 60, 120, 300].map((s) => (
+            {[
+              [30, "30 seconds"],
+              [60, "1 minute"],
+              [120, "2 minutes"],
+              [300, "5 minutes"],
+            ].map(([s, label]) => (
               <option key={s} value={s}>
-                {s}s
+                {label}
               </option>
             ))}
           </select>
