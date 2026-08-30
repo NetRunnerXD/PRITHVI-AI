@@ -233,7 +233,7 @@ NCS has no public JSON (not scraped).
 | IMD CAP warnings | Fetched | CAP RSS (not IMD REST) |
 | Sachet / NDMA CAP | Fetched | State + India RSS |
 | Hooghly / Haldia port signal | Fetched | Best-effort scrape; hugli belt only |
-| Ambee | — | Not wired (no public key) |
+
 
 ---
 
@@ -354,4 +354,4 @@ Capability holes (honest “not available”): radar, INSAT HEM, NCS, IMD REST, 
 
 Open-Meteo forecast / flood / air / marine / geocode / archive · NASA POWER · IMD CAP RSS · CPCB NAQI · Agmarknet · USGS FDSN CSV · EMSC FDSN · INCOIS ITEWS · OpenAQ · GDACS · IMD public INSAT IR JPEG · NASA GIBS · Weatherbit lightning (if key) · Sachet CAP · Hooghly port (hugli) · local moon · India pollen climatology.
 
-**Not live / not invented:** IMD REST, NCS JSON, MOSDAC HEM millimetres, Ambee, Google Flood Hub, WeatherAPI moon.
+**Not live / not invented:** IMD REST, NCS JSON, MOSDAC HEM millimetres, Google Flood Hub, WeatherAPI moon.

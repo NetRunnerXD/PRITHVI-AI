@@ -2,11 +2,11 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Rituchakra — weather and farm advice for India",
-  description: "Live rain, flood, air, mandi prices and what to do today — in English, Hindi and Bengali.",
+  title: "PRITHVI-AI — Earth intelligence for India",
+  description: "Live rain, flood, air, hazards and farm advice — in English, Hindi and Bengali.",
   manifest: "/manifest.webmanifest",
-  applicationName: "Rituchakra",
-  appleWebApp: { capable: true, title: "Rituchakra", statusBarStyle: "default" },
+  applicationName: "PRITHVI-AI",
+  appleWebApp: { capable: true, title: "PRITHVI-AI", statusBarStyle: "black-translucent" },
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     apple: [{ url: "/apple-touch-icon.svg" }],
@@ -23,7 +23,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="sand">
+    <html lang="en" data-theme="midnight">
       <head>
         <link rel="manifest" href="/manifest.webmanifest" />
       </head>

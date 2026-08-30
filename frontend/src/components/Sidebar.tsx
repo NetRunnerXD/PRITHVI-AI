@@ -7,32 +7,26 @@ import { useApp } from "@/lib/store";
 import type { TabId } from "@/types/dashboard";
 import {
   IconAdvisor,
-  IconAlerts,
   IconNowcast,
   IconForecast,
   IconLanguages,
   IconMap,
-  IconMarket,
   IconOverview,
   IconPanelClose,
   IconPanelOpen,
   IconPin,
   IconPredicted,
   IconRefresh,
-  IconRisks,
   IconSettings,
 } from "./Icons";
 
 const TABS: { id: TabId; Icon: ComponentType<{ className?: string }> }[] = [
-  { id: "overview", Icon: IconOverview },
-  { id: "nowcast", Icon: IconNowcast },
-  { id: "alerts", Icon: IconAlerts },
+  { id: "home", Icon: IconOverview },
+  { id: "analytics", Icon: IconForecast },
+  { id: "data", Icon: IconNowcast },
   { id: "map", Icon: IconMap },
-  { id: "forecast", Icon: IconForecast },
-  { id: "predicted", Icon: IconPredicted },
-  { id: "risks", Icon: IconRisks },
-  { id: "market", Icon: IconMarket },
-  { id: "advisor", Icon: IconAdvisor },
+  { id: "model", Icon: IconPredicted },
+  { id: "chat", Icon: IconAdvisor },
   { id: "settings", Icon: IconSettings },
 ];
 
@@ -41,15 +35,12 @@ export function Sidebar() {
     useApp();
   const t = COPY[locale];
   const tabLabel: Record<TabId, string> = {
-    overview: t.tabOverview,
-    nowcast: t.tabNowcast,
-    alerts: t.tabAlerts,
+    home: t.tabHome,
+    analytics: t.tabAnalytics,
+    data: t.tabData,
     map: t.tabMap,
-    forecast: t.tabForecast,
-    predicted: t.tabPredicted,
-    risks: t.tabRisks,
-    market: t.tabMarket,
-    advisor: t.tabAdvisor,
+    model: t.tabModel,
+    chat: t.tabChat,
     settings: t.tabSettings,
   };
 
@@ -61,7 +52,7 @@ export function Sidebar() {
     >
       <div className={`flex items-center ${sidebarOpen ? "justify-between" : "flex-col gap-2"}`}>
         <div className={sidebarOpen ? "min-w-0" : "text-center"}>
-          <p className="text-lg font-extrabold tracking-tight text-neo-accent">{sidebarOpen ? t.brand : "R"}</p>
+          <p className="text-lg font-extrabold tracking-tight text-neo-accent">{sidebarOpen ? t.brand : "P"}</p>
           {sidebarOpen ? <p className="mt-0.5 text-[11px] leading-snug text-neo-muted">{t.tag}</p> : null}
         </div>
         <button
@@ -163,7 +154,7 @@ export function Sidebar() {
                 className="chip hover:text-neo-accent2"
                 onClick={() => {
                   setPendingAsk(item.q);
-                  setTab("advisor");
+                  setTab("chat");
                 }}
               >
                 {item.short}
