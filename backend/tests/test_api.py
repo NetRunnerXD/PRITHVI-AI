@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -173,6 +175,26 @@ def test_chat_json_mode(monkeypatch):
     monkeypatch.setattr(chat_mod, "run_agent", fake_run)
     r = client.post("/api/chat", json={"message": "irrigate?", "stream": False})
     assert r.status_code == 200
+    dumped = json.dumps(
+        {
+            "message": "What is the AQI in Haldia tomorrow?",
+            "stream": False,
+            "place": "Haldia",
+            "output_locale": "en",
+        }
+    )
+    as_string = client.post(
+        "/api/chat",
+        content=json.dumps(dumped),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    assert as_string.status_code == 200
+    plain = client.post(
+        "/api/chat",
+        content=dumped,
+        headers={"Content-Type": "text/plain", "Accept": "application/json"},
+    )
+    assert plain.status_code == 200
     body = r.json()
     assert body["ok"] is True
     assert body["stream"] is False
