@@ -339,6 +339,10 @@ Dashboard section **Models** (`tabPredicted`). Pack is `predictions.vera` from `
 | Verify | Log `.cache/vera_hourly_log.jsonl` keyed `pin\|hour\|lead`. `obs` only from `imerg_hourly` / `hem_hourly` / `obs_hourly`. `agreement` = MAE vs Open-Meteo (always). Skill KPI hidden without independent obs |
 | Extremes | Heat / wind / rain with labels **No alert / Possible / Warning**. `compare.hourly` = blend rain vs website (Open-Meteo) |
 | Satellite lab | `SatProcessMap`: proxied IR overlay, GIBS IMERG WMS, IR rain PNG, cells, AMV line, gate RGB |
+| Leads | 24 / 72 / 120 / 240 h rain, Tmax/Tmin, wind + P(exceed) |
+| Disagreement | Member-spread index; high-impact / low-confidence flags |
+| Intra-hour | Today 15-min + next ~7 days hourly; peak-hour 5-min rain/temp/wind/WBGT. Minute rain **sums to the locked hourly mm** |
+| Replay / bulletin | Canned illustrations + auto text. Not signed IMD products |
 | Colours | Ensemble teal `#146b7a`, blend purple `#8e44ad`, AI orange `#d35400`, NWP blue `#2c7fb8`, Open-Meteo rust `#c45c26` |
 
 Do not call walk-forward “k-fold”. MLOps MAE is last verified ensemble error when independent obs exist — not `abs(q50)*0.12`.
