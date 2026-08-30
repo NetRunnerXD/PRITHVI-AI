@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.agents.orchestrator import run_agent
@@ -8,6 +8,45 @@ from app.schemas.chat import ChatRequest
 from app.services.location_svc import resolve_location
 
 router = APIRouter()
+
+
+def _unprocessable(msg: str, raw: str | None = None) -> JSONResponse:
+    item: dict = {
+        "type": "model_attributes_type",
+        "loc": ["body"],
+        "msg": msg,
+    }
+    if raw is not None:
+        item["input"] = raw[:500]
+    return JSONResponse(status_code=422, content={"detail": [item]})
+
+
+async def parse_chat_payload(request: Request) -> ChatRequest | JSONResponse:
+    raw = (await request.body() or b"").decode("utf-8", "replace").strip()
+    if not raw:
+        data: object = {}
+    else:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return _unprocessable(
+                'Body must be JSON. In Thunder Client set Body type to JSON (not Text). Example: {"message":"...","stream":false}',
+                raw,
+            )
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError:
+                return _unprocessable(
+                    "Body is a JSON string, not an object. Thunder Client: Body → JSON, paste the object (no wrapping quotes).",
+                    data,
+                )
+    if not isinstance(data, dict):
+        return _unprocessable(
+            "Input should be a JSON object. Thunder Client: Body type = JSON, not Text.",
+            raw,
+        )
+    return ChatRequest.model_validate(data)
 
 
 def _want_json(payload: ChatRequest, request: Request) -> bool:
@@ -20,7 +59,9 @@ def _want_json(payload: ChatRequest, request: Request) -> bool:
 
 
 @router.post("/chat")
-async def chat(payload: ChatRequest, request: Request):
+async def chat(request: Request, payload: ChatRequest | JSONResponse = Depends(parse_chat_payload)):
+    if isinstance(payload, JSONResponse):
+        return payload
     if not (payload.message or "").strip():
         return JSONResponse(
             status_code=422,
