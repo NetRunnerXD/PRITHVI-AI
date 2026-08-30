@@ -43,6 +43,8 @@ Default focus: **Haldia, Purba Medinipur, West Bengal** (`22.0667, 88.0698`). Na
 - **Open-Meteo past hours are not rain-gauges.** Nowcast labels them `observed` / `open-meteo-analysis`. Do not call them station observations in the UI.
 - **Kalman scenes are not satellite.** Default knots are Open-Meteo hourly analysis (`source_kind: model-analysis`). MOSDAC HEM / IMERG Early stay settings stubs until a legal download is wired. Do not label the live/history graph “INSAT”.
 - **Storm-map IR is a public JPEG, not HEM millimetres.** `imd_insat.py` georeferences IMD’s Asia-sector INSAT-3D/3DS IR1 JPEG. Adler–Negri rain-rate is a Tb proxy. Do not quote it as a rain-gauge or as MOSDAC HEM. Cells are clipped with `india_mask.in_india` — the 68–97.5°E rectangle includes Tibet/Yunnan.
+- **Asiamer bounds are 40–110°E, 10°S–45°N** (IMD SATMET SOP), not the old Kalpana 50–130°E / 40°S–40°N box. Public JPEGs include title + colorbar; `crop_chrome` strips those pixels before sampling and before `GET /api/sat/imd-asia`. Leaflet must use the proxy URL (CORS). Do not overlay the raw IMD host JPEG.
+- **Models-tab hourly VERA is a nowcast overlay, not ECMWF ENS.** Ensemble = IR rain-rate mix + Open-Meteo hour. Blend / moe = gated member mean. Do not score Open-Meteo against itself: `obs` is IMERG/HEM/`obs_hourly` only. Until then show **agreement vs website** MAE, not “skill”. Alert words: No alert / Possible / Warning (not quiet / outlook / watch).
 - **Weatherbit lightning is observed flashes, not a model watch.** Current search is 75 km / 45 min; history costs 10 quota units per call. On 429, keep the last good cache; do not overwrite it with an empty list. Open-Meteo weather_code ≥ 95 at hubs is a thunder nowcast, not GPS strokes.
 - **Hugli tide / CWC / pond-tank are physiography-gated.** `physiography.classify` (Leh = orographic before arid). Jaipur and Leh must not show Hooghly port or Hugli tide.
 - **Daily “today” is the IST calendar date.** `features.extract` skips `past_days` rows before today. Do not use `daily[0]` after `past_days=1` — that is yesterday (this showed ~80 mm as “today’s rainfall” in Haldia).
@@ -117,6 +119,7 @@ Any client (frontend/ or a new web / React Native folder using clients/js)
                           ├─ /api/nowcast/storm-map  state / All-India IR cells + lightning feed
                           ├─ /api/nowcast-storm-map  alias
                           ├─ /api/science
+                          ├─ /api/sat/imd-asia CORS-safe cropped INSAT Asia JPEG
                           ├─ /api/geo/*        India search + Bhuvan WMS proxy
                           ├─ /api/chat         SSE ← agents.orchestrator.run_agent
                           └─ providers + ml + science + cache (in-memory TTL)
@@ -137,6 +140,7 @@ Location
                            monsoon clock, ledger, CWC station lookup)
   → Sachet CAP + Hooghly port signal attached onto science
   → ml.outlook + ml.blend (dual 7-day predictions)
+  → ml.vera.build_vera (Models tab pack on `predictions.vera`)
   → ml.anomaly + science diagnostic stories
   → ml.prescribe + nowcast actions (pump hold / take cover / stay off)
   → ml.hazards_outlook
@@ -156,7 +160,7 @@ Location
 | `config.py` | pydantic-settings; `backend/.env` |
 | `http_urls.py` | Absolute API URLs (`PUBLIC_BASE_URL` or request host) |
 | `cache.py` | In-memory TTL cache (do not slam Open-Meteo/CAP) |
-| `api/dashboard.py` | `/dashboard`, `/forecast`, `/predictions`, `/outlook`, `/risks`, `/science`, `/nowcast`, `/nowcast/live`, `/nowcast-live`, `/live-nowcast`, `/nowcast/sat`, `/nowcast-sat`, `/nowcast/storm-map`, `/nowcast-storm-map`, `/insights`, `/scan`, `/compare`, `/states`, `/districts`, `/brief`, `/agent/tools` |
+| `api/dashboard.py` | `/dashboard`, `/forecast`, `/predictions`, `/outlook`, `/risks`, `/science`, `/nowcast`, `/nowcast/live`, `/nowcast-live`, `/live-nowcast`, `/nowcast/sat`, `/nowcast-sat`, `/nowcast/storm-map`, `/nowcast-storm-map`, **`/sat/imd-asia`**, `/insights`, `/scan`, `/compare`, `/states`, `/districts`, `/brief`, `/agent/tools` |
 | `api/geo.py` | `/geo/search`, `/geo/reverse`, `/geo/nearby`, `/map/layers`, **`/map/wms` Bhuvan proxy** |
 | `api/deps.py` | `loc_from_query(district, place, lat, lon)` |
 | `api/chat.py` | `POST /chat` SSE (`data: {json}\n\n`) |
@@ -176,7 +180,7 @@ Location
 | `providers/sachet.py` | NDMA Sachet CAP RSS (state + India) |
 | `providers/port_signal.py` | IMD Hooghly / Haldia port signal (best-effort scrape) |
 | `providers/http.py` | Shared `httpx.AsyncClient` (25s timeout) |
-| `providers/imd_insat.py` | Public IMD INSAT-3D/3DS Asia-sector IR1 JPEG → India crop + Tb grid |
+| `providers/imd_insat.py` | Public IMD INSAT-3D/3DS Asiamer IR JPEG; chrome crop; `ASIA_BOUNDS` 40–110°E, 10°S–45°N; India crop + Tb grid |
 | `providers/gibs_ir.py` | NASA GIBS Himawari IR + IMERG rate at a pin |
 | `providers/weatherbit_lightning.py` | Current + historical lightning (75 km cap; last-good cache on 429) |
 | `providers/lightning_feed.py` | Optional bbox URL, else Weatherbit hubs + 6 h stroke memory |
@@ -192,6 +196,11 @@ Location
 | `ml/features.py` | Flatten OM/flood/air/marine; **slice daily series from IST today** (`_start_today`); keep `precip_yesterday_mm` |
 | `ml/risk.py` | Weighted-linear XAI cards: flood, drought, heat, irrigation, air, seismic, tsunami, livelihood |
 | `ml/blend.py` | Dual 7-day forecast; ours stays within ~±12% of trusted Open-Meteo |
+| `ml/vera/` | VERA-MoE Models pack: CV branch, gate, fusion, hourly mix, verify ledger, extremes |
+| `ml/train/` | Optional gate / sat pretrain scripts (not live path) |
+| `providers/gpm_imerg.py` | GIBS IMERG always; GES DISC when Earthdata token set |
+| `providers/graphcast_run.py` | GraphCast/Pangu/FourCastNet slot status + member attach |
+| `providers/imd_gridded.py` | IMD Pune 0.25° archive status / ingest |
 | `ml/outlook.py` | 7-day soil bucket, irrigate/flood flags (hysteresis soil) |
 | `ml/prescribe.py` | Daily actions + why/when/who + liter bands |
 | `ml/anomaly.py` | Drivers + `DiagnosticStory` |
@@ -245,6 +254,9 @@ Location
 | `rag/store.py` + `rag/knowledge/` | Tiny playbook retrieve |
 | `schemas/` | `Location`, `DashboardSnapshot`, `EarlyWarning`, `LiveWatch`, `RiskCard`, `ChatRequest` |
 | `scripts/export_openapi.py` | Write `backend/openapi.json` |
+| `scripts/ingest_imerg.py` / `ingest_mosdac.py` / `ingest_imd_gridded.py` | Optional archives under `.cache/` |
+| `scripts/nightly_obs.py` | Observation ingest for the verify ledger |
+| `scripts/verify_models_cities.py` | Playwright smoke of Models tab on five cities |
 
 ### 5.1 Nowcast (`science/nowcast.py`)
 
@@ -312,7 +324,24 @@ Clicking an incident focuses the map only — it must **not** call `onPick` / ch
 
 `DashboardSnapshot.science`: hysteresis, regret, livelihood, residual, bandit, phenology, vernacular, blindspot, water_balance, verify, **nowcast**, monsoon, ledger, cwc, market_lock, port, sachet_n, provenance.
 
-`predictions`: `{ trusted, ours, adjustments, inputs, hazards }`.
+`predictions`: `{ trusted, ours, adjustments, inputs, hazards, hybrid, vera }`.
+
+### 5.3 Models tab (`ml/vera/`)
+
+Dashboard section **Models** (`tabPredicted`). Pack is `predictions.vera` from `ml.vera.pipeline.build_vera`.
+
+| Piece | What it does |
+|---|---|
+| CV branch | Last INSAT frames → CNN / ConvLSTM / ViT-shaped numpy stack; Adler–Negri rain PNG |
+| Gate | Softmax over NWP + AI members, Kalman-smoothed; plain-English `reasons` + `confidence` % + `family` (`nwp` / `ai`) |
+| Temporal hourly | `sat_weight(lead) * IR_est + (1−w) * Open-Meteo hour` (ensemble). After 24 h, climatology pull |
+| Hourly rows | `ensemble`, **`moe` (gated blend)**, `om`, `members`, `lead_h` for 48 h; UI shows **0–24 h** |
+| Verify | Log `.cache/vera_hourly_log.jsonl` keyed `pin\|hour\|lead`. `obs` only from `imerg_hourly` / `hem_hourly` / `obs_hourly`. `agreement` = MAE vs Open-Meteo (always). Skill KPI hidden without independent obs |
+| Extremes | Heat / wind / rain with labels **No alert / Possible / Warning**. `compare.hourly` = blend rain vs website (Open-Meteo) |
+| Satellite lab | `SatProcessMap`: proxied IR overlay, GIBS IMERG WMS, IR rain PNG, cells, AMV line, gate RGB |
+| Colours | Ensemble teal `#146b7a`, blend purple `#8e44ad`, AI orange `#d35400`, NWP blue `#2c7fb8`, Open-Meteo rust `#c45c26` |
+
+Do not call walk-forward “k-fold”. MLOps MAE is last verified ensemble error when independent obs exist — not `abs(q50)*0.12`.
 
 `EarlyWarning`: `hazard` = weather|flood|air|marine|seismic|tsunami; titles go through `imd.humanize_cap_title` (never leave “Heavy to very heavy with extremely heavy rainfall”).
 
@@ -346,12 +375,16 @@ This folder is **one optional web client**. Do not treat it as the API. New UIs 
 | `components/SettingsPanel.tsx` | Theme, units, language, refresh, **API origin** |
 | `components/ChatDock.tsx` | Presets; `ChatBlocks`; suggestion chips call `applySuggestion` (no auto tab switch) |
 | `components/ChatBlocks.tsx` | Always show prose + optional tables/metrics |
+| `components/PredictionsPanel.tsx` | Models tab: hourly 24 h, satellite lab, blend + reasons, extremes vs website, compare toggles, performance (agreement MAE + hourly history) |
+| `components/SatProcessMap.tsx` | Leaflet process map; IMD proxy overlay; IMERG WMS; IR rain / cells / motion / gate RGB |
 | `components/SquareMap.tsx` + `MapView.tsx` + `StormFeed.tsx` | Leaflet storm map: state / All India, basemap vs weather layers (no duplicate View/Basemap satellite), past/predicted/live highlights, zoom-aware circles, Weatherbit past ⚡, predicted ✦ + confidence, storm polygons. Incident click focuses only. |
 | `components/MapWrap.tsx` | Dynamic `MapView` (no SSR) |
 | `components/ThemeBoot.tsx` | Applies `data-theme` from settings |
 
 **Tabs:** `overview | nowcast | alerts | map | forecast | predicted | risks | market | advisor | settings`  
-Keys `1–9` switch the first nine tabs.
+Keys `1–9` switch the first nine tabs. Predicted is labelled **Models**.
+
+**Models tab:** Hourly (ensemble / blend / Open-Meteo, 24 h) → Satellite lab → Blend (weights, confidence, reasons) → Extremes (No alert / Possible / Warning + website compare) → Compare (toggles) → Performance (website MAE always; IMERG skill when wired) → Outlook (7-day dual series).
 
 **Overview order:** decision chips (pump / field / Kal-ghat) → sky + today’s rain → engine-labelled 0–6 h nowcast → 7-day glance → wind → collapsed Decision science → collapsed plots.
 
