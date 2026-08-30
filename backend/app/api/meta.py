@@ -72,9 +72,12 @@ async def health_head():
 async def health():
     ollama_ok, ollama_msg = await ollama_client.ping()
     loc = resolve_location()
+    llm = ollama_client.catalog()
+    llm["ollama"] = {"ok": ollama_ok, "detail": ollama_msg, "model": settings.ollama_model}
     return {
         **service_card(),
         "default_location": loc.model_dump(),
+        "llm": llm,
         "ollama": {"ok": ollama_ok, "detail": ollama_msg, "model": settings.ollama_model},
         "keys": {
             "imd_api_key": bool(settings.imd_api_key),

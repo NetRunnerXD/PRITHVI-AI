@@ -18,6 +18,20 @@ class Settings(BaseSettings):
     ollama_triage_model: str = "qwen2.5:0.5b"
     ollama_api_key: str = "ollama"
 
+    # Hosted OpenAI-compat narrators. Keys stay on the server.
+    llm_provider: str = "ollama"
+    llm_fallback: str = ""
+    groq_api_key: str | None = None
+    groq_model: str = "llama-3.1-8b-instant"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.0-flash"
+    openrouter_api_key: str | None = None
+    openrouter_model: str = "meta-llama/llama-3.1-8b-instruct:free"
+    xai_api_key: str | None = None
+    xai_model: str = "grok-4.5"
+    github_token: str | None = None
+    github_model: str = "meta-llama/Llama-3.1-8B-Instruct"
+
     imd_api_key: str | None = None
     imd_api_base: str = "https://api.imd.gov.in/api/v1"
 

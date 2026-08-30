@@ -11,6 +11,9 @@ def test_health():
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
+    assert "llm" in body
+    assert body["llm"]["active"]
+    assert any(r.get("id") == "ollama" for r in body["llm"]["available"])
     assert body["default_location"]["place_name"] == "Haldia"
     assert body["default_location"]["district"] == "Purba Medinipur"
 

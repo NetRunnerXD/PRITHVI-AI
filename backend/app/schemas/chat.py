@@ -26,3 +26,5 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] = Field(default_factory=list)
     regenerate: bool = False
     stream: bool = True
+    llm: str | None = None
+    show_evidence: bool = False
