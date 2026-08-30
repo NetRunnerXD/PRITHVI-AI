@@ -18,7 +18,7 @@ from app.science.regret import evaluate as evaluate_regret
 from app.ml.sky import compass, flow_compass, flow_deg, rose_bins, sky_label
 from app.services.location_svc import nearby as nearby_districts
 from app.data.india_coast import nearest_coast
-from app.providers import aikosh, datagov, hazards, imd, nasa_power, open_meteo, openaq, port_signal, sachet
+from app.providers import aikosh, datagov, gpm_imerg, hazards, imd, mosdac, nasa_power, open_meteo, openaq, port_signal, sachet
 from app.schemas.dashboard import (
     CurrentConditions,
     DashboardSnapshot,
@@ -131,6 +131,12 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
     sachet_rows = await run_pair("sachet", sachet.alerts(loc.state), [])
     port = await run_pair("imd-port", port_signal.hooghly(), {})
     om_models = await run("open-meteo-models", open_meteo.forecast_models(loc.lat, loc.lon), {})
+    nasa_clim, era5, imerg_live, mosdac_live = await asyncio.gather(
+        run("nasa-power-clim", nasa_power.daily_years(loc.lat, loc.lon, 8), {}),
+        run("era5", open_meteo.era5_context(loc.lat, loc.lon), {}),
+        run("gpm-imerg", gpm_imerg.fetch_pin(loc.lat, loc.lon), {}),
+        run("mosdac", mosdac.fetch_live(), {}),
+    )
     dg_ok = {status.get("data.gov.in-aqi"), status.get("data.gov.in-mandi")}
     status["data.gov.in"] = "ok" if "ok" in dg_ok else (status.get("data.gov.in-aqi") or "error")
     return {
@@ -149,6 +155,10 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         "sachet": sachet_rows or [],
         "port": port or {},
         "om_models": om_models if isinstance(om_models, dict) else {},
+        "nasa_clim": nasa_clim if isinstance(nasa_clim, dict) else {},
+        "era5": era5 if isinstance(era5, dict) else {},
+        "imerg": imerg_live if isinstance(imerg_live, dict) else {},
+        "mosdac": mosdac_live if isinstance(mosdac_live, dict) else {},
         "status": status,
     }
 
@@ -432,6 +442,12 @@ def _vegetation(f: dict) -> dict:
     }
 
 
+def _vera_pack(f: dict[str, Any], loc: Location, live_sat: dict[str, Any] | None) -> dict[str, Any]:
+    from app.ml.vera import build_vera
+
+    return build_vera(f, loc, live_sat, f.get("members") if isinstance(f.get("members"), dict) else {})
+
+
 async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot:
     obs = await gather_observations(loc)
     f = extract(obs["om"], obs["flood"], obs["nasa_precip"], obs["aqi"], obs.get("marine") or {})
@@ -639,6 +655,16 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
     hourly_t = f.get("hourly_times") or []
     daily_t = f.get("daily_times") or []
     outlook = build_outlook(f)
+    try:
+        f["hist_rows"] = nasa_power.dated_precip(obs.get("nasa_clim") or {})
+    except Exception:
+        f["hist_rows"] = []
+    f["era5"] = obs.get("era5") or {}
+    f["mosdac"] = obs.get("mosdac") or {}
+    if isinstance(live_sat, dict) and obs.get("imerg"):
+        live_sat = {**live_sat, "imerg": obs.get("imerg")}
+    vera = _vera_pack(f, loc, live_sat)
+    f["vera_gate_weights"] = (vera.get("gate") or {}).get("weights") or {}
     dual = build_dual_predictions(f)
     sources = [k for k, v in obs["status"].items() if v == "ok"]
     sources.append("local-ml-v2")
@@ -791,6 +817,7 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
                 coast_km=f.get("coast_km"),
                 cap_hit=cap_hit,
             ),
+            "vera": vera,
         },
         live=_build_live(loc, f, obs, flood.score_pct, generated_at),
         science=science,

@@ -53,6 +53,7 @@ async def fetch(loc: Any) -> dict[str, Any]:
             "insat": {"ok": False},
             "ir": {"ok": False},
             "imerg": {"ok": False},
+            "channels": {"ok": False, "bands": []},
             "lightning": {"ok": False, "strokes": [], "n": 0},
             "cells": [],
             "method": "test-skip",
@@ -63,13 +64,20 @@ async def fetch(loc: Any) -> dict[str, Any]:
 
     lat = float(getattr(loc, "lat", 0) or 0)
     lon = float(getattr(loc, "lon", 0) or 0)
-    insat, ir, imerg, lightning = await asyncio.gather(
+    insat, ir, imerg, lightning, bands = await asyncio.gather(
         imd_insat.fetch_ir(lat, lon),
         gibs_ir.fetch_ir(lat, lon),
         gibs_ir.fetch_imerg(lat, lon),
         weatherbit_lightning.fetch(lat, lon),
+        imd_insat.fetch_channels(lat, lon),
     )
     grid, half = _pick_grid(insat, ir)
+    try:
+        from app.ml.vera.cv_branch import persist_grid
+
+        persist_grid(grid, insat.get("url") or ir.get("url"))
+    except Exception:
+        pass
     cells: list[dict[str, Any]] = []
     if grid:
         cells = sat_cv.segment(grid, lat0=lat, lon0=lon, half_deg=half)
@@ -101,9 +109,10 @@ async def fetch(loc: Any) -> dict[str, Any]:
         "ir": {k: v for k, v in ir.items() if k != "grid"},
         "imerg": imerg,
         "lightning": lightning,
+        "channels": bands,
         "cells": cells,
-        "ok": bool(insat.get("ok") or ir.get("ok") or lightning.get("ok") or imerg.get("ok")),
-        "method": "imd-insat + gibs-ir/imerg + weatherbit",
+        "ok": bool(insat.get("ok") or ir.get("ok") or lightning.get("ok") or imerg.get("ok") or bands.get("ok")),
+        "method": "imd-insat 5-band + gibs-ir/imerg + weatherbit",
     }
 
 

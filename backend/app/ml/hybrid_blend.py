@@ -19,13 +19,13 @@ def vincentize(values: list[float], weights: list[float] | None = None) -> dict[
     if weights is not None and len(weights) == len(values):
         pairs = [(float(v), float(w)) for v, w in zip(values, weights) if v is not None]
     if not pairs:
-        return {"q10": 0.0, "q50": 0.0, "q90": 0.0, "pop": 0.0, "mean": 0.0}
+        return {"q10": 0.0, "q25": 0.0, "q50": 0.0, "q75": 0.0, "q90": 0.0, "pop": 0.0, "mean": 0.0}
     tot = sum(w for _, w in pairs) or 1.0
     pairs = [(v, w / tot) for v, w in pairs]
     pairs.sort(key=lambda x: x[0])
     cdf = 0.0
     qs: dict[float, float] = {}
-    targets = [0.1, 0.5, 0.9]
+    targets = [0.1, 0.25, 0.5, 0.75, 0.9]
     for v, w in pairs:
         cdf += w
         for t in targets:
@@ -36,7 +36,15 @@ def vincentize(values: list[float], weights: list[float] | None = None) -> dict[
         qs.setdefault(t, last)
     pop = sum(w for v, w in pairs if v > 0)
     mean = sum(v * w for v, w in pairs)
-    return {"q10": qs[0.1], "q50": qs[0.5], "q90": qs[0.9], "pop": pop, "mean": mean}
+    return {
+        "q10": qs[0.1],
+        "q25": qs[0.25],
+        "q50": qs[0.5],
+        "q75": qs[0.75],
+        "q90": qs[0.9],
+        "pop": pop,
+        "mean": mean,
+    }
 
 
 def p_exceed(values: list[float], threshold: float, weights: list[float] | None = None) -> float:
@@ -55,6 +63,9 @@ def equal_weights(ids: list[str]) -> dict[str, float]:
 def member_daily_from_om(om: dict[str, Any]) -> dict[str, list]:
     times = list((om.get("daily") or {}).get("time") or [])
     start = _start_today(times)
+    from app.ml.features import _hourly
+
+    ht = list((om.get("hourly") or {}).get("time") or [])
     return {
         "daily_times": times[start:],
         "precip_days": _daily(om, "precipitation_sum")[start:],
@@ -62,6 +73,10 @@ def member_daily_from_om(om: dict[str, Any]) -> dict[str, list]:
         "temp_max": _daily(om, "temperature_2m_max")[start:],
         "temp_min": _daily(om, "temperature_2m_min")[start:],
         "wind_max": _daily(om, "wind_speed_10m_max")[start:],
+        "hourly_times": ht[:48],
+        "hourly_precip": _hourly(om, "precipitation")[:48],
+        "hourly_temp": _hourly(om, "temperature_2m")[:48],
+        "hourly_wind": _hourly(om, "wind_speed_10m")[:48],
     }
 
 

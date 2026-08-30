@@ -71,6 +71,11 @@ def build_dual_predictions(f: dict[str, Any]) -> dict[str, Any]:
     members = f.get("members") if isinstance(f.get("members"), dict) else {}
     member_ids = [k for k, v in members.items() if isinstance(v, dict)]
     wmap = equal_weights(member_ids) if member_ids else {}
+    vera_w = f.get("vera_gate_weights")
+    if isinstance(vera_w, dict) and member_ids:
+        merged = {sid: float(vera_w.get(sid, wmap.get(sid, 0))) for sid in member_ids}
+        s = sum(merged.values()) or 1.0
+        wmap = {k: round(v / s, 4) for k, v in merged.items()}
     soil = float(f.get("soil_m3m3") or 0.28)
     clim = float(f.get("clim_daily_mm") or 6.0)
     z = float(f.get("precip_z") or 0.0)
@@ -201,7 +206,7 @@ def _hybrid_pack(
     day0_ids, day0_vals = day_members(members, 0) if members else ([], [])
     ww0 = [wmap.get(s, 0) for s in day0_ids] if day0_ids else []
     return {
-        "method": "equal_vincentize",
+        "method": "vera_moe_vincentize",
         "guidance_only": True,
         "rain_day": "03:00Z/03:00Z",
         "members": member_ids,
