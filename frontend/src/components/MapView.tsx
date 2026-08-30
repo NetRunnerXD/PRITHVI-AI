@@ -20,6 +20,8 @@ import type { Location } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
 import type { StormMapPack, StormMapTools, StormStroke } from "@/lib/api";
 import { apiUrl, reverseGeocode } from "@/lib/api";
+import { WeatherOverlay, WindParticles } from "./WeatherOverlay";
+import { fieldKey, sampleGrid, unitOf, type WeatherGrid, type WxLayer } from "@/lib/weatherScale";
 
 const pin = L.divIcon({
   className: "",
@@ -108,10 +110,26 @@ function Click({ onPick }: { onPick: (l: Location) => void }) {
   return null;
 }
 
-function CursorReadout() {
+function CursorReadout({
+  grid,
+  layer,
+}: {
+  grid?: WeatherGrid | null;
+  layer?: WxLayer;
+}) {
   const [txt, setTxt] = useState("");
   useMapEvents({
-    mousemove: (e) => setTxt(`${e.latlng.lat.toFixed(3)}, ${e.latlng.lng.toFixed(3)}`),
+    mousemove: (e) => {
+      const lat = e.latlng.lat;
+      const lon = e.latlng.lng;
+      let extra = "";
+      const key = layer ? fieldKey(layer) : null;
+      if (grid && key) {
+        const v = sampleGrid(grid, lat, lon, key);
+        if (v != null) extra = ` · ${v.toFixed(layer === "precip" ? 2 : 1)} ${unitOf(layer!)}`;
+      }
+      setTxt(`${lat.toFixed(3)}, ${lon.toFixed(3)}${extra}`);
+    },
     mouseout: () => setTxt(""),
   });
   if (!txt) return null;
@@ -124,8 +142,8 @@ function CursorReadout() {
 
 const BASE: Record<string, { url: string; attr: string }> = {
   positron: {
-    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    attr: "© OpenStreetMap © CARTO",
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attr: "© OpenStreetMap",
   },
   streets: {
     url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -138,6 +156,10 @@ const BASE: Record<string, { url: string; attr: string }> = {
   terrain: {
     url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
     attr: "© OpenTopoMap",
+  },
+  dark: {
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    attr: "Tiles © Esri",
   },
 };
 
@@ -238,6 +260,10 @@ export function MapView({
   selectedId,
   tools,
   locale,
+  weatherLayer,
+  weatherGrid,
+  particles,
+  radarUrl,
   onPick,
 }: {
   lat: number;
@@ -254,14 +280,19 @@ export function MapView({
   selectedId?: string | null;
   tools?: StormMapTools;
   locale?: Locale;
+  weatherLayer?: WxLayer;
+  weatherGrid?: WeatherGrid | null;
+  particles?: boolean;
+  radarUrl?: string | null;
   onPick: (l: Location) => void;
 }) {
   const t = COPY[locale || "en"];
   const opt = tools || DEFAULT_TOOLS;
   const tile = BASE[basemap] || BASE.positron;
   const frame = storm?.frame;
-  const showIr = overlays.includes("gibs_ir") || basemap === "ir";
-  const showImerg = overlays.includes("gibs_imerg") || basemap === "rain";
+  const showIr = overlays.includes("gibs_ir") || (weatherLayer === "satellite" && !radarUrl);
+  const showImerg = overlays.includes("gibs_imerg");
+  const showField = weatherLayer && fieldKey(weatherLayer) && weatherGrid;
   const now = Date.now();
   const pastMs = Math.max(1, opt.pastHours) * 3600_000;
 
@@ -306,6 +337,11 @@ export function MapView({
     <MapContainer center={[lat, lon]} zoom={zoom} className="relative h-full w-full" scrollWheelZoom>
       <TileLayer attribution={tile.attr} url={tile.url} />
       <ScaleControl imperial={false} position="bottomleft" />
+      {showField ? <WeatherOverlay grid={weatherGrid!} layer={weatherLayer!} opacity={opt.overlayOpacity} /> : null}
+      {particles && weatherGrid ? <WindParticles grid={weatherGrid} on /> : null}
+      {radarUrl ? (
+        <TileLayer url={radarUrl} opacity={opt.overlayOpacity} attribution="RainViewer" pane="overlayPane" />
+      ) : null}
       {showIr ? (
         <WMSTileLayer
           url={GIBS}
@@ -366,7 +402,7 @@ export function MapView({
       )}
       <FitEvents nonce={opt.fitNonce} points={fitPts} />
       <Click onPick={onPick} />
-      <CursorReadout />
+      <CursorReadout grid={weatherGrid} layer={weatherLayer} />
       {opt.showPin ? (
         <ZoomCircle
           center={[lat, lon]}

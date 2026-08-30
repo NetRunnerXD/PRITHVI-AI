@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
 import type { DashboardSnapshot, Location } from "@/types/dashboard";
-import { fetchStates, fetchStormMap, reverseGeocode, type StormIncident, type StormMapPack } from "@/lib/api";
+import { fetchRadarFrames, fetchStates, fetchStormMap, fetchWeatherGrid, reverseGeocode, type StormIncident, type StormMapPack } from "@/lib/api";
 import { MapWrap } from "./MapWrap";
 import { StormFeed } from "./StormFeed";
+import { WX_LAYERS, legendStops, unitOf, type WeatherGrid, type WxLayer } from "@/lib/weatherScale";
 
-const BASES = ["positron", "streets", "satellite", "terrain"] as const;
+const BASES = ["dark", "positron", "streets", "satellite", "terrain"] as const;
 const HIGHLIGHT_IDS = [
   "past_lightning",
   "pred_lightning",
@@ -34,7 +35,14 @@ export function SquareMap({
   compact?: boolean;
 }) {
   const t = COPY[locale];
-  const [basemap, setBasemap] = useState<string>("positron");
+  const [basemap, setBasemap] = useState<string>("dark");
+  const [wxLayer, setWxLayer] = useState<WxLayer>("wind");
+  const [hour, setHour] = useState(0);
+  const [particles, setParticles] = useState(true);
+  const [grid, setGrid] = useState<WeatherGrid | null>(null);
+  const [radarHost, setRadarHost] = useState("https://tilecache.rainviewer.com");
+  const [radarPath, setRadarPath] = useState<string | null>(null);
+  const [satPath, setSatPath] = useState<string | null>(null);
   const [zoom, setZoom] = useState(focus?.zoom || dash.map.zoom || 7);
   const [overlays, setOverlays] = useState<string[]>([]);
   const [highlights, setHighlights] = useState<string[]>([
@@ -68,6 +76,31 @@ export function SquareMap({
 
   useEffect(() => {
     let dead = false;
+    void fetchWeatherGrid(hour).then((g) => {
+      if (!dead && g) setGrid(g as WeatherGrid);
+    });
+    return () => {
+      dead = true;
+    };
+  }, [hour]);
+
+  useEffect(() => {
+    let dead = false;
+    void fetchRadarFrames().then((pack) => {
+      if (dead || !pack?.ok) return;
+      setRadarHost(pack.host || "https://tilecache.rainviewer.com");
+      const last = pack.radar?.[pack.radar.length - 1];
+      const sat = pack.satellite?.[pack.satellite.length - 1];
+      setRadarPath(last?.path || null);
+      setSatPath(sat?.path || null);
+    });
+    return () => {
+      dead = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let dead = false;
     async function load() {
       const data = await fetchStormMap(state);
       if (!dead && data) setStorm(data);
@@ -94,6 +127,16 @@ export function SquareMap({
         basemap={mapBasemap}
         nearby={nearby}
         overlays={extraOverlays}
+        weatherLayer={wxLayer}
+        weatherGrid={grid}
+        particles={particles}
+        radarUrl={
+          wxLayer === "radar" && radarPath
+            ? `${radarHost}${radarPath}/256/{z}/{x}/{y}/2/1_1.png`
+            : wxLayer === "satellite" && satPath
+              ? `${radarHost}${satPath}/256/{z}/{x}/{y}/0/0_0.png`
+              : null
+        }
         storm={storm}
         highlights={highlights}
         focusPin={selected ? { lat: selected.lat, lon: selected.lon, zoom: 8 } : focus ? { lat: focus.center[0], lon: focus.center[1], zoom: focus.zoom } : null}
@@ -103,7 +146,7 @@ export function SquareMap({
         onPick={onPick}
       />
     ),
-    [dash.location, rain, zoom, mapBasemap, nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, fitNonce, locale]
+    [dash.location, rain, zoom, mapBasemap, nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, fitNonce, locale, wxLayer, grid, particles, radarHost, radarPath, satPath]
   );
 
   function toggleOverlay(id: string) {
@@ -201,8 +244,53 @@ export function SquareMap({
             {t.stormWeather || "Weather layers"}
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-labelledby="storm-wx-label">
+            {WX_LAYERS.map((id) => (
+              <button
+                key={id}
+                type="button"
+                className={`neo-btn text-xs ${wxLayer === id ? "neo-btn-on" : ""}`}
+                onClick={() => setWxLayer(id)}
+              >
+                {t[`wx_${id}`] || id}
+              </button>
+            ))}
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-[11px] text-neo-muted">
+            <input type="checkbox" checked={particles} onChange={(e) => setParticles(e.target.checked)} />
+            {t.wxParticles || "Wind particles"}
+          </label>
+          <label className="mt-2 block text-[11px] text-neo-muted" htmlFor="wx-hour">
+            {t.wxHour || "Forecast hour"} +{hour}h
+            {grid?.valid ? ` · ${String(grid.valid).slice(11, 16)} IST` : ""}
+          </label>
+          <input
+            id="wx-hour"
+            type="range"
+            min={0}
+            max={23}
+            value={hour}
+            className="mt-1 w-full"
+            onChange={(e) => setHour(Number(e.target.value))}
+          />
+          <div className="mt-2">
+            <p className="text-[10px] text-neo-muted">
+              {t[`wx_${wxLayer}`] || wxLayer} {unitOf(wxLayer)}
+            </p>
+            <div className="mt-1 flex h-2 overflow-hidden rounded-full">
+              {legendStops(wxLayer).map((s) => (
+                <div key={s.v} className="flex-1" style={{ background: s.color }} title={String(s.v)} />
+              ))}
+            </div>
+            <div className="mt-0.5 flex justify-between font-mono text-[9px] text-neo-muted">
+              {legendStops(wxLayer).filter((_, i, a) => i === 0 || i === a.length - 1 || i === Math.floor(a.length / 2)).map((s) => (
+                <span key={s.v}>{s.v}</span>
+              ))}
+            </div>
+          </div>
+          <p className="mt-1 text-[10px] text-neo-muted">{grid?.note || t.wxModelHint}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
             <button className={`neo-btn text-xs ${extraOverlays.includes("gibs_ir") ? "neo-btn-on" : ""}`} onClick={() => toggleOverlay("gibs_ir")}>
-              Live IR
+              {t.wxGibsIr || "Himawari IR"}
             </button>
             <button className={`neo-btn text-xs ${extraOverlays.includes("gibs_imerg") ? "neo-btn-on" : ""}`} onClick={() => toggleOverlay("gibs_imerg")}>
               IMERG

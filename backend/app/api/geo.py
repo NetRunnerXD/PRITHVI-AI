@@ -70,6 +70,38 @@ async def geo_nearby(lat: float, lon: float, limit: int = 8):
     return {"results": [l.model_dump() for l in nearby(lat, lon, limit=limit)]}
 
 
+@router.get("/map/weather-grid")
+async def map_weather_grid(hour: int = Query(default=0, ge=0, le=23)):
+    """Global Open-Meteo sample grid. Storm / pin stay India-only."""
+    from app.providers.weather_grid import world_grid
+
+    return await world_grid(hour)
+
+
+@router.get("/map/radar")
+async def map_radar():
+    """RainViewer frame list (public). Tiles are loaded in the browser."""
+    from app.providers.http import client
+
+    r = await client().get("https://api.rainviewer.com/public/weather-maps.json")
+    if r.status_code >= 400:
+        return {"ok": False, "radar": [], "satellite": []}
+    body = r.json()
+    host = str(body.get("host") or "https://tilecache.rainviewer.com")
+    radar = body.get("radar") or {}
+    sat = body.get("satellite") or {}
+    past = list(radar.get("past") or [])[-8:]
+    nowcast = list(radar.get("nowcast") or [])[:4]
+    infrared = list(sat.get("infrared") or [])[-4:]
+    return {
+        "ok": True,
+        "host": host,
+        "radar": past + nowcast,
+        "satellite": infrared,
+        "note": "RainViewer observed radar / IR tiles, not Open-Meteo millimetres.",
+    }
+
+
 @router.get("/map/layers")
 async def map_layers(request: Request):
     wms = api_url("/map/wms", request)
@@ -78,8 +110,8 @@ async def map_layers(request: Request):
             {
                 "id": "positron",
                 "label": "Light",
-                "url": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-                "attribution": "© OpenStreetMap © CARTO",
+                "url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                "attribution": "© OpenStreetMap",
             },
             {
                 "id": "streets",
@@ -99,6 +131,23 @@ async def map_layers(request: Request):
                 "url": "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
                 "attribution": "© OpenTopoMap",
             },
+            {
+                "id": "dark",
+                "label": "Dark",
+                "url": "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+                "attribution": "Tiles © Esri",
+            },
+        ],
+        "weather": [
+            {"id": "wind", "label": "Wind", "unit": "km/h", "source": "open-meteo"},
+            {"id": "temp", "label": "Temperature", "unit": "°C", "source": "open-meteo"},
+            {"id": "precip", "label": "Rain", "unit": "mm/h", "source": "open-meteo"},
+            {"id": "pressure", "label": "Pressure", "unit": "hPa", "source": "open-meteo"},
+            {"id": "clouds", "label": "Clouds", "unit": "%", "source": "open-meteo"},
+            {"id": "humidity", "label": "Humidity", "unit": "%", "source": "open-meteo"},
+            {"id": "cape", "label": "CAPE", "unit": "J/kg", "source": "open-meteo"},
+            {"id": "radar", "label": "Radar", "unit": "dBZ", "source": "rainviewer"},
+            {"id": "satellite", "label": "Satellite IR", "unit": "K", "source": "rainviewer"},
         ],
         "overlays": [
             {

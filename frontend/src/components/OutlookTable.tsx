@@ -12,7 +12,10 @@ export function OutlookTable({ dash, locale }: { dash: DashboardSnapshot; locale
   const units = useApp((s) => s.settings.units);
   const days = dash.predictive.outlook_days || [];
   const hourly = dash.predictive.hourly || [];
-  const hourDates = useMemo(() => [...new Set(hourly.map((h) => h.date).filter(Boolean))], [hourly]);
+  const hourDates = useMemo(
+    () => Array.from(new Set(hourly.map((h) => h.date).filter(Boolean) as string[])),
+    [hourly]
+  );
   const [open, setOpen] = useState<string | null>(hourDates[0] || days[0]?.date || null);
   return (
     <section className="neo overflow-auto p-4">

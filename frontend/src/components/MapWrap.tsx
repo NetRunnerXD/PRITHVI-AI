@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import type { Location } from "@/types/dashboard";
 import type { Locale } from "@/i18n/copy";
 import type { StormMapPack, StormMapTools } from "@/lib/api";
+import type { WeatherGrid, WxLayer } from "@/lib/weatherScale";
 
 const MapView = dynamic(() => import("./MapView").then((m) => m.MapView), { ssr: false });
 
@@ -22,6 +23,10 @@ export function MapWrap(props: {
   selectedId?: string | null;
   tools?: StormMapTools;
   locale?: Locale;
+  weatherLayer?: WxLayer;
+  weatherGrid?: WeatherGrid | null;
+  particles?: boolean;
+  radarUrl?: string | null;
   onPick: (l: Location) => void;
 }) {
   return <MapView {...props} />;
