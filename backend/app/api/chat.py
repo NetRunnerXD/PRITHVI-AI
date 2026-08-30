@@ -21,8 +21,21 @@ def _want_json(payload: ChatRequest, request: Request) -> bool:
 
 @router.post("/chat")
 async def chat(payload: ChatRequest, request: Request):
+    if not (payload.message or "").strip():
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": [
+                    {
+                        "type": "missing",
+                        "loc": ["body", "message"],
+                        "msg": 'Field required. Send JSON {"message": "Will it rain in Haldia?", "stream": false}',
+                    }
+                ]
+            },
+        )
     if payload.location is None:
-        payload.location = resolve_location()
+        payload.location = resolve_location(q=payload.place) if payload.place else resolve_location()
 
     if _want_json(payload, request):
         events: list[dict] = []
