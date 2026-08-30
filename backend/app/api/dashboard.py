@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 
 router = APIRouter()
 
@@ -9,6 +10,21 @@ from app.services.location_svc import list_districts, list_states
 from app.services.scan import rank_districts
 from app.services.snapshot import build_snapshot
 from app.tools import build_registry
+
+
+@router.get("/sat/imd-asia")
+async def imd_asia_jpeg():
+    """Same-origin INSAT Asia-sector JPEG so Leaflet ImageOverlay is not blocked by CORS."""
+    from app.providers.imd_insat import fetch_jpeg
+
+    body, _url, status = await fetch_jpeg()
+    if not body:
+        return Response(status_code=502, content=f"imd jpeg {status}".encode())
+    return Response(
+        content=body,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=120", "Access-Control-Allow-Origin": "*"},
+    )
 
 
 @router.get("/dashboard")

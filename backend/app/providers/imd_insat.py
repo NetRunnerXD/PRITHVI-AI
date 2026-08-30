@@ -21,12 +21,45 @@ IR_URLS = (
     "https://mausam.imd.gov.in/imd_latest/contents/satellite.php",
 )
 
-# Approximate geolocation of IMD 3D Asia-sector IR (full-disk crop used on the site).
+# INSAT-3D/3DS Asia-sector public JPEGs ≈ VIS / SWIR / MIR / TIR / WV.
+CHANNELS = (
+    ("VIS 0.65μm", ("https://mausam.imd.gov.in/Satellite/3Dasiasec_vis.jpg", "https://satellite.imd.gov.in/img/3Dasiasec_vis.jpg")),
+    ("SWIR 1.6μm", ("https://mausam.imd.gov.in/Satellite/3Dasiasec_swir.jpg", "https://mausam.imd.gov.in/Satellite/3RIMG_SWIR.jpg")),
+    ("MIR 3.9μm", ("https://mausam.imd.gov.in/Satellite/3Dasiasec_mir.jpg", "https://mausam.imd.gov.in/Satellite/3RIMG_MIR.jpg")),
+    ("TIR 10.8μm", IR_URLS[:3]),
+    ("WV 6.7μm", ("https://mausam.imd.gov.in/Satellite/3Dasiasec_wv.jpg", "https://satellite.imd.gov.in/img/3Dasiasec_wv.jpg")),
+)
+
+# IMD SATMET SOP Asiamer sector (3Dasiasec_* JPEGs): 10°S–45°N, 40°E–110°E.
 # lon west, lon east, lat south, lat north
-ASIA_BOUNDS = (40.0, 130.0, -40.0, 40.0)
+ASIA_BOUNDS = (40.0, 110.0, -10.0, 45.0)
 # Tight India crop. Tibet / Yunnan still sit inside a rectangle — pixels
 # outside the political outline are warmed to 300 K in downsample_india.
 INDIA_BOUNDS = (68.1, 97.4, 6.6, 35.8)
+# Public JPEGs include title, lat ticks, and a right-hand colorbar.
+# Crop those chrome pixels so ASIA_BOUNDS maps onto the Earth image only.
+CHROME_LTRB = (0.042, 0.078, 0.118, 0.052)
+
+
+def crop_chrome(png: bytes) -> bytes:
+    try:
+        from PIL import Image
+    except ImportError:
+        return png
+    try:
+        im = Image.open(io.BytesIO(png)).convert("RGB")
+    except Exception:
+        return png
+    w, h = im.size
+    if w < 80 or h < 80:
+        return png
+    l, t, r, b = CHROME_LTRB
+    box = (int(w * l), int(h * t), int(w * (1 - r)), int(h * (1 - b)))
+    if box[2] - box[0] < 40 or box[3] - box[1] < 40:
+        return png
+    out = io.BytesIO()
+    im.crop(box).save(out, format="JPEG", quality=85)
+    return out.getvalue()
 
 
 def _sample_gray(png: bytes, lat: float, lon: float) -> dict[str, Any] | None:
@@ -127,11 +160,8 @@ def downsample_sector(png: bytes, size: int = 80) -> list[list[float]] | None:
     return grid
 
 
-async def fetch_ir(lat: float, lon: float) -> dict[str, Any]:
-    ck = f"imd:insat:{round(lat, 2)}:{round(lon, 2)}"
-    hit = cache.get(ck)
-    if isinstance(hit, dict):
-        return hit
+async def fetch_jpeg() -> tuple[bytes | None, str | None, str]:
+    """Latest Asia-sector IR JPEG bytes and source URL."""
     last = "empty"
     for url in IR_URLS:
         if url.endswith(".php"):
@@ -152,20 +182,30 @@ async def fetch_ir(lat: float, lon: float) -> dict[str, Any]:
         if "html" in ctype:
             last = "html"
             continue
+        return crop_chrome(body), url, "ok"
+    return None, None, last
+
+
+async def fetch_ir(lat: float, lon: float) -> dict[str, Any]:
+    ck = f"imd:insat:{round(lat, 2)}:{round(lon, 2)}"
+    hit = cache.get(ck)
+    if isinstance(hit, dict):
+        return hit
+    body, url, last = await fetch_jpeg()
+    if body and url:
         sampled = _sample_gray(body, lat, lon)
-        if not sampled:
-            last = "decode"
-            continue
-        out = {
-            **sampled,
-            "source": "imd-insat-ir1",
-            "source_kind": "satellite-ir",
-            "url": url,
-            "product": "INSAT-3D/3DS Asia-sector IR1 (public JPEG)",
-        }
-        slim = {k: v for k, v in out.items() if k != "grid"}
-        cache.set(ck, slim, 180)
-        return out
+        if sampled:
+            out = {
+                **sampled,
+                "source": "imd-insat-ir1",
+                "source_kind": "satellite-ir",
+                "url": url,
+                "product": "INSAT-3D/3DS Asia-sector IR1 (public JPEG)",
+            }
+            slim = {k: v for k, v in out.items() if k != "grid"}
+            cache.set(ck, slim, 180)
+            return out
+        last = "decode"
     fail = {
         "ok": False,
         "source": "imd-insat-ir1",
@@ -184,36 +224,57 @@ async def fetch_sector() -> dict[str, Any]:
     hit = cache.get(ck)
     if isinstance(hit, dict) and hit.get("grid"):
         return hit
-    last = "empty"
-    for url in IR_URLS:
-        if url.endswith(".php"):
-            continue
-        try:
-            r = await client().get(url)
-        except Exception:
-            last = "error"
-            continue
-        if r.status_code >= 400 or len(r.content) < 400:
-            last = "http"
-            continue
-        if "html" in (r.headers.get("content-type") or "").lower():
-            last = "html"
-            continue
-        grid = downsample_india(r.content, 140) or downsample_sector(r.content, 80)
-        if not grid:
-            last = "decode"
-            continue
-        bounds = INDIA_BOUNDS if grid and len(grid) >= 100 else ASIA_BOUNDS
-        out = {
-            "ok": True,
-            "source": "imd-insat-ir1",
-            "source_kind": "satellite-ir",
-            "bounds": bounds,
-            "grid": grid,
-            "status": "ok",
-        }
-        cache.set(ck, out, 180)
-        return out
+    body, _url, last = await fetch_jpeg()
+    if body:
+        grid = downsample_india(body, 140) or downsample_sector(body, 80)
+        if grid:
+            bounds = INDIA_BOUNDS if len(grid) >= 100 else ASIA_BOUNDS
+            out = {
+                "ok": True,
+                "source": "imd-insat-ir1",
+                "source_kind": "satellite-ir",
+                "bounds": bounds,
+                "grid": grid,
+                "status": "ok",
+            }
+            cache.set(ck, out, 180)
+            return out
+        last = "decode"
     fail = {"ok": False, "source": "imd-insat-ir1", "status": last, "grid": None, "bounds": ASIA_BOUNDS}
     cache.set(ck, fail, 90)
     return fail
+
+
+async def fetch_channels(lat: float, lon: float) -> dict[str, Any]:
+    """Five INSAT imager bands (public JPEG). MOSDAC L1B replaces these when wired."""
+    import asyncio
+
+    async def one(name: str, urls: tuple[str, ...]) -> dict[str, Any]:
+        for url in urls:
+            if url.endswith(".php"):
+                continue
+            try:
+                r = await client().get(url)
+            except Exception:
+                continue
+            if r.status_code >= 400 or len(r.content) < 400:
+                continue
+            if "html" in (r.headers.get("content-type") or "").lower():
+                continue
+            sampled = _sample_gray(r.content, lat, lon)
+            if not sampled or not sampled.get("ok"):
+                continue
+            grid = downsample_india(r.content, size=48)
+            return {
+                "ok": True,
+                "channel": name,
+                "url": url,
+                "tb_k": sampled.get("tb_k"),
+                "gray": sampled.get("gray"),
+                "grid": grid,
+            }
+        return {"ok": False, "channel": name}
+
+    rows = await asyncio.gather(*[one(n, u) for n, u in CHANNELS])
+    ok = [r for r in rows if r.get("ok")]
+    return {"ok": bool(ok), "n": len(ok), "bands": list(rows), "c": 5}
