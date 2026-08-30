@@ -95,7 +95,11 @@ def extract_towns(text: str) -> list[str]:
             if re.search(rf"(?<![a-z]){re.escape(key)}(?![a-z])", blob):
                 found[t["name"]] = max(found.get(t["name"], 0), len(key))
     if not found:
+        from app.data.closed_class import is_closed_token
+
         for tok in tokens(text or ""):
+            if is_closed_token(tok):
+                continue
             for t in TOWNS:
                 names = [t["name"], *t.get("aliases", [])]
                 if any(close_enough(tok, n) for n in names if n):

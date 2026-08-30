@@ -11,6 +11,16 @@ def _pin() -> Location:
     return resolve_location(q="Haldia")
 
 
+@pytest.mark.asyncio
+async def test_tomorrow_does_not_geocode():
+    from app.services.location_svc import resolve_india_place, resolve_named_place
+
+    assert resolve_named_place("tomorrow") is None
+    assert resolve_named_place("today") is None
+    assert await resolve_india_place("tomorrow") is None
+    assert await resolve_india_place("and tomorrow") is None
+
+
 def test_unknown_does_not_become_haldia():
     assert resolve_named_place("Atlantis") is None
     assert resolve_named_place("Hogwarts") is None

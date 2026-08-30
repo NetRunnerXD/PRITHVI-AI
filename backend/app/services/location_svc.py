@@ -92,12 +92,13 @@ def location_from_geocode(raw: dict, query: str | None = None) -> Location:
 
 def resolve_named_place(q: str | None) -> Location | None:
     """Gazetteer town / district / state capital. None if not a local hit (no Haldia fallback)."""
+    from app.data.closed_class import is_closed_query
     from app.data.fuzzy import clean_place_query, match_rank, ratio
     from app.data.india_districts import extract_place, search_districts
     from app.data.india_towns import extract_town, search_towns
 
     needle = clean_place_query(q or "")
-    if not needle:
+    if not needle or is_closed_query(needle) or is_closed_query(q):
         return None
 
     from app.data.india_districts import is_state_name
@@ -151,10 +152,12 @@ def resolve_named_place(q: str | None) -> Location | None:
 
 async def resolve_india_place(q: str | None) -> Location | None:
     """Gazetteer, then Open-Meteo India geocode. Covers any real Indian town/district."""
+    from app.data.closed_class import is_closed_query
+
     needle = (q or "").strip()
     if not needle:
         return None
-    if is_blocked_name(needle):
+    if is_blocked_name(needle) or is_closed_query(needle):
         return None
     local = resolve_named_place(needle)
     if local:
@@ -170,14 +173,20 @@ async def resolve_india_place(q: str | None) -> Location | None:
     # Prefer an exact / fold-close name over a distant cousin OM ranked first.
     from app.data.fuzzy import fold, match_rank
 
-    def _score(row: dict) -> tuple[int, str]:
+    def _score(row: dict) -> tuple:
         name = str(row.get("name") or "")
         rank = match_rank(needle, name)
         exact = 0 if fold(needle) == fold(name) else 1
-        return (exact, 0 if rank == 0 else 1 if rank == 1 else 2, name.lower())
+        rkey = 0 if rank == 0 else 1 if rank == 1 else 9
+        return (exact, rkey, name.lower())
 
     ranked = sorted(raw, key=_score)
-    return location_from_geocode(ranked[0], needle)
+    best = ranked[0]
+    name = str(best.get("name") or "")
+    rank = match_rank(needle, name)
+    if rank not in {0, 1}:
+        return None
+    return location_from_geocode(best, needle)
 
 
 def resolve_location(loc: Location | None = None, q: str | None = None,

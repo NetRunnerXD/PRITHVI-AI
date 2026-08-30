@@ -312,7 +312,11 @@ def extract_places(text: str) -> list[str]:
             if re.search(rf"(?<![a-z]){re.escape(key)}(?![a-z])", blob):
                 found[d["district"]] = max(found.get(d["district"], 0), len(key))
     if not found:
+        from app.data.closed_class import is_closed_token
+
         for tok in tokens(text or ""):
+            if is_closed_token(tok):
+                continue
             for d in all_districts():
                 names = [d["district"], *d["aliases"]]
                 if any(close_enough(tok, n) for n in names if n):
