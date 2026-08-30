@@ -21,6 +21,7 @@ from app.agents.data_tool import (
     DataLib,
     attachments_for,
     parse_text_call,
+    strip_tool_syntax,
     suggestions_for,
 )
 from app.agents.dates import parse_window
@@ -31,6 +32,7 @@ from app.agents.facts import (
     fill_slots,
     is_dash_soup,
     is_pushback,
+    present_answer,
     prose_has_payload_number,
     quote_facts,
     rank_metric,
@@ -43,9 +45,11 @@ from app.agents.utterance import (
     interpret,
     is_blocked_name,
     is_followup_affirm,
+    is_time_followup,
     looks_like_bare_place,
     wants_catalog,
 )
+from app.data.closed_class import is_closed_query
 from app.agents.memory import TurnState, load as mem_load, save as mem_save
 from app.agents.prompts import SYSTEM
 from app.agents.views import strip_forbidden
@@ -96,11 +100,14 @@ def _iso_window(message: str) -> dict[str, str] | None:
     if not win:
         return None
     start, end = win.get("start"), win.get("end")
-    return {
+    out = {
         "start": start.isoformat() if hasattr(start, "isoformat") else str(start),
         "end": end.isoformat() if hasattr(end, "isoformat") else str(end),
         "kind": str(win.get("kind") or ""),
     }
+    if win.get("hour") is not None:
+        out["hour"] = str(win["hour"])
+    return out
 
 
 def _same_pin(a: Location | None, b: Location | dict | None) -> bool:
@@ -155,6 +162,15 @@ def _mt_kept_numbers(en: str, translated: str) -> bool:
 
 
 async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
+    llm_tok = ollama_client.use_provider(payload.llm)
+    try:
+        async for ev in _run_agent(payload):
+            yield ev
+    finally:
+        ollama_client.reset_provider(llm_tok)
+
+
+async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     pin_now: Location = payload.location or resolve_location(None)
     loc: Location = pin_now
     original = payload.message or ""
@@ -198,6 +214,11 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         }
         return
     place = plan.asked or mentioned_place(message_en) or mentioned_place(original)
+    if place and (is_closed_query(place) or is_time_followup(message_en)):
+        place = None
+        plan.asked = None
+        plan.needs_geocode = False
+        plan.follow = True
     resolved = resolve_named_place(place) if place else None
     prior_pin = None
     if prior and prior.pin:
@@ -215,6 +236,7 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             plan.follow
             or plan.catalog
             or is_followup_affirm(message_en)
+            or is_time_followup(message_en)
             or (
                 (_FOLLOW.search(message_en) or len(message_en.split()) <= 6)
                 and not place
@@ -227,6 +249,8 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         and not is_blocked_name(place)
         and not plan.follow
         and not is_followup_affirm(message_en)
+        and not is_time_followup(message_en)
+        and not is_closed_query(place)
         and (plan.needs_geocode or looks_like_bare_place(message_en) or plan.mode == "data")
     ):
         try:
@@ -256,7 +280,13 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         except Exception:
             inherit = False
 
-    window_hint = _iso_window(message_en) or _iso_window(original)
+    this_window = _iso_window(message_en) or _iso_window(original)
+    window_hint = this_window
+    if window_hint is None and inherit and prior and prior.window:
+        window_hint = dict(prior.window)
+    if this_window is None and resolved and prior and prior.window and not pin_moved:
+        # New place, same dates as last turn unless the user named new ones.
+        window_hint = dict(prior.window)
     gate = source_gate(message_en)
     if plan.mode == "refuse" and plan.refuse:
         gate.mode = "refuse"
@@ -281,7 +311,8 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         inherit
         and prior
         and not prior.last_refuse
-        and (plan.follow or plan.catalog or is_followup_affirm(message_en) or wants_catalog(message_en))
+        and not is_time_followup(message_en)
+        and (plan.catalog or is_followup_affirm(message_en) or wants_catalog(message_en))
         and (prior.asked or prior.collected_keys or prior.catalog)
     ):
         have = {str(k).split(":")[0] for k in (prior.collected_keys or [])}
@@ -291,6 +322,34 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         needed = list(gate.needs)
         plan.catalog = True
         plan.follow = True
+    if (
+        inherit
+        and prior
+        and is_time_followup(message_en)
+        and not needed
+    ):
+        prior_needs = list(prior.needs or [])
+        rainish = any(
+            n in prior_needs for n in ("rain_window", "forecast", "nowcast")
+        ) or any(w in message_en.lower() for w in ("rain", "mm", "how much", "shower"))
+        gate.mode = "data"
+        if rainish or this_window:
+            gate.needs = ["rain_window"]
+        else:
+            gate.needs = prior_needs or ["forecast"]
+        needed = list(gate.needs)
+        plan.follow = True
+    if (
+        resolved
+        and prior
+        and not this_window
+        and not needed
+        and prior.needs
+        and looks_like_bare_place(message_en)
+    ):
+        gate.mode = "data"
+        gate.needs = list(prior.needs)
+        needed = list(gate.needs)
     if plan.catalog and not needed and (resolved or inherit):
         gate.mode = "data"
         gate.needs = list(CATALOG_NEEDS)
@@ -415,6 +474,20 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             args.setdefault("start", window_hint.get("start"))
             args.setdefault("end", window_hint.get("end"))
         skip_clamp = need in {"rank", "states_weather", "place_search", "capability"}
+        if need == "mandi" and "mandi" not in needed:
+            return {
+                "start": {"type": "tool_start", "name": "data", "args": {"need": need, "skipped": "unasked"}},
+                "result": {"need": need, "skipped": True},
+                "ms": 0,
+                "loc": loc,
+            }
+        if need == "states_weather" and "states_weather" not in needed and "rank" in needed:
+            return {
+                "start": {"type": "tool_start", "name": "data", "args": {"need": need, "skipped": "unasked"}},
+                "result": {"need": need, "skipped": True},
+                "ms": 0,
+                "loc": loc,
+            }
         requested = str(args.get("place") or "").strip()
         clamped_from = None
         if not skip_clamp:
@@ -495,23 +568,40 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             hint_bits = []
             if window_hint:
                 hint_bits.append(f"Named dates (use only if you call rain_window): {window_hint['start']} to {window_hint['end']}.")
-            if needed or tri.kind == "data":
+            if "rank" in needed or "states_weather" in needed:
+                st = ", ".join(gate.states) if gate.states else "the named state"
+                hint_bits.append(
+                    f"This is a ranking for {st}. Write a short numbered list of districts. "
+                    "Do not mention the dashboard town. Do not list other Indian states. "
+                    "Do not mention mandi, crops, or markets. Do not paste the source block twice."
+                )
+            elif needed or tri.kind == "data":
                 hint_bits.append(
                     f"Answer only for {loc.label} "
                     f"(focus {loc.place_name or loc.district}, district {loc.district}). "
                     "Do not substitute Haldia or any other district unless the user named it in this question. "
-                    "Do not say you could not find data if figures are provided below."
+                    "Do not say you could not find data if figures are provided below. "
+                    "Do not invent dates or millimetres. Quote only the data() pack for this window. "
+                    "Do not mention mandi or farm prices unless the user asked."
                 )
-            else:
+            if window_hint:
+                hint_bits.append(
+                    f"Time window is {window_hint.get('start')} to {window_hint.get('end')}. "
+                    "Do not quote other days as if they were this window."
+                )
+            elif not needed and tri.kind != "data":
                 hint_bits.append(
                     "This is chit-chat. Do not fetch weather. Do not mention a town unless the user named one. "
-                    "Greet briefly and say you can look up Indian weather, flood, AQI, mandi, and nowcast when asked."
+                    "Greet briefly and say you can look up Indian weather, flood, AQI, and nowcast when asked. "
+                    "Do not mention mandi unless they ask."
                 )
             if place:
                 hint_bits.append(f"The user named {place}.")
-            pre_quote = quote_facts(collected)
+            pre_quote = present_answer(collected, window=window_hint)
             if pre_quote:
-                hint_bits.append("Already fetched:\n" + pre_quote)
+                hint_bits.append(
+                    "Already fetched (use these figures; do not repeat this block verbatim):\n" + pre_quote
+                )
             messages.append(
                 {
                     "role": "user",
@@ -644,6 +734,13 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             "message": f"Ollama not reachable ({ollama_msg}). Start `ollama serve` (qwen2.5:3b on 6 GB GPU).",
         }
 
+    leaked = parse_text_call(english_llm or "")
+    if leaked and leaked.get("need") and leaked["need"] not in collected:
+        pack = await exec_data(leaked)
+        yield pack["start"]
+        yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
+        english_llm = ""
+    english_llm = strip_tool_syntax(english_llm or "")
     if tri.kind == "chat" and not needed and parse_text_call(english_llm or ""):
         english_llm = ""
     if looks_like_dump(english_llm):
@@ -710,7 +807,7 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         }
 
     payloads = list(collected.values())
-    content_en, rejected = check_claims(english_llm, payloads)
+    content_en, rejected = check_claims(english_llm, payloads, window=window_hint)
     asked_name = place or (prior.asked if prior and inherit else None) or loc.place_name or loc.district
     pin_from_client = pin_now.label
     content_en = strip_unasked_pin(content_en, place, pin_from_client)
@@ -726,16 +823,22 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     content_en = strip_foreign_places(content_en, allowed, forbidden)
     content_en = fill_slots(content_en, collected)
     content_en = drop_false_shrug(content_en, collected)
-    quoted = quote_facts(collected)
-    if quoted and (not prose_has_payload_number(content_en, collected) or is_dash_soup(content_en)):
-        content_en = quoted if is_dash_soup(content_en) else f"{content_en}\n\n{quoted}".strip() if content_en else quoted
+    quoted = present_answer(collected, window=window_hint)
+    show_ev = bool(payload.show_evidence)
+    llm_ok = bool(content_en) and not is_dash_soup(content_en) and not rejected
+    if quoted and needed:
+        if not llm_ok or not prose_has_payload_number(content_en, collected):
+            content_en = quoted
+        elif show_ev and quoted not in content_en:
+            content_en = f"{content_en}\n\n---\nEvidence\n{quoted}".strip()
+    elif quoted and (not llm_ok or not prose_has_payload_number(content_en, collected) or is_dash_soup(content_en)):
+        content_en = quoted
     if not content_en:
         if collected:
             content_en = quoted or "Here is what Rituchakra has for that."
         else:
             content_en = (
-                "I can chat about Indian weather, flood, heat, air, marine, quake watches, mandi prices, "
-                "and field decisions — and I can look up real figures when you need them. "
+                "I can chat about Indian weather, flood, heat, air, marine, and field decisions. "
                 "What would you like to know?"
             )
     if beyond:
@@ -816,6 +919,8 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             pin=pin_now.model_dump(),
             plan_id=plan_id,
             evidence_root=led.get("root"),
+            window=window_hint,
+            needs=list(needed or (prior.needs if prior and inherit else [])),
         ),
     )
 

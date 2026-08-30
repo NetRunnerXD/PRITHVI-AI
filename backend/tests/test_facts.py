@@ -64,6 +64,40 @@ def test_source_gate_refuses_unsourced_visit():
     assert "Odisha" in g4.states
 
 
+def test_quote_facts_rank_once_no_india_when_state_rank_present():
+    from app.agents.facts import quote_facts
+
+    collected = {
+        "rank": {
+            "need": "rank",
+            "state": "West Bengal",
+            "metric": "flood",
+            "ranked": [
+                {"district": "South 24 Parganas", "flood_score": 73, "precip_3d_mm": 52.6},
+                {"district": "Purulia", "flood_score": 72, "precip_3d_mm": 51.3},
+            ],
+        },
+        "rank:West Bengal": {
+            "need": "rank",
+            "state": "West Bengal",
+            "metric": "flood",
+            "ranked": [
+                {"district": "South 24 Parganas", "flood_score": 73, "precip_3d_mm": 52.6},
+                {"district": "Purulia", "flood_score": 72, "precip_3d_mm": 51.3},
+            ],
+        },
+        "states_weather": {
+            "metric": "flood",
+            "ranked": [{"state": "Chhattisgarh", "district": "Raipur", "flood_score": 86, "precip_3d_mm": 171.2, "temp_max_c": 30}],
+        },
+    }
+    q = quote_facts(collected)
+    assert q.count("South 24 Parganas") == 1
+    assert "Chhattisgarh" not in q
+    assert "1." in q
+    assert "rank 1:" not in q
+
+
 def test_quote_facts_uses_payload_only():
     from app.agents.facts import prose_has_payload_number, quote_facts
 
@@ -78,10 +112,34 @@ def test_quote_facts_uses_payload_only():
     }
     q = quote_facts(collected)
     assert "12.2" in q
+
+
+def test_quote_facts_single_day_does_not_lead_with_3d():
+    from app.agents.facts import quote_facts
+
+    collected = {
+        "rain_window": {
+            "location": {"place_name": "Haldia"},
+            "start": "2026-08-29",
+            "end": "2026-08-29",
+            "total_mm": 4.2,
+            "days": [{"date": "2026-08-29", "precip_mm": 4.2}],
+        },
+        "forecast": {
+            "place": "Haldia",
+            "precip_next_3d_mm": 18.0,
+            "precip_7d_mm": 40.0,
+            "outlook_days": [
+                {"date": "2026-08-29", "precip_mm": 4.2, "temp_max_c": 32},
+                {"date": "2026-08-30", "precip_mm": 9.0},
+            ],
+        },
+    }
+    q = quote_facts(collected, window={"start": "2026-08-29", "end": "2026-08-29"})
     assert "4.2" in q
-    assert "Haldia" in q
-    assert prose_has_payload_number(q, collected)
-    assert not prose_has_payload_number("Nice weather coming.", collected)
+    assert "next 3 days" not in q
+    assert "7 days" not in q
+    assert "2026-08-30" not in q
 
 
 def test_fill_slots_from_forecast():

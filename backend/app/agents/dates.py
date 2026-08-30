@@ -24,6 +24,33 @@ _MONTHS = {
 }
 
 _ORD = re.compile(r"(\d{1,2})(?:st|nd|rd|th)?", re.I)
+_HOUR = re.compile(
+    r"\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b"
+    r"|\b(?:at\s+)?([01]?\d|2[0-3]):([0-5]\d)\b",
+    re.I,
+)
+
+
+def parse_hour(text: str) -> int | None:
+    """IST clock hour 0–23, or None."""
+    raw = " ".join((text or "").lower().split())
+    m = _HOUR.search(raw)
+    if not m:
+        return None
+    if m.group(3):
+        h = int(m.group(1))
+        ap = m.group(3).replace(".", "")
+        if h == 12:
+            h = 0 if ap.startswith("a") else 12
+        elif ap.startswith("p"):
+            h += 12
+        if 0 <= h <= 23:
+            return h
+        return None
+    if m.group(4) is not None:
+        h = int(m.group(4))
+        return h if 0 <= h <= 23 else None
+    return None
 
 
 def today_ist() -> date:
@@ -53,6 +80,13 @@ def parse_window(text: str, today: date | None = None) -> dict[str, Any] | None:
     raw = " ".join((text or "").lower().replace("—", " ").replace("–", "-").split())
     if not raw:
         return None
+    hour = parse_hour(raw)
+
+    def _stamp(d: dict[str, Any]) -> dict[str, Any]:
+        if hour is not None:
+            d = dict(d)
+            d["hour"] = hour
+        return d
 
     m = re.search(
         r"(?:next|coming|upcoming)\s+(\d{1,2})\s+days?",
@@ -132,14 +166,17 @@ def parse_window(text: str, today: date | None = None) -> dict[str, Any] | None:
         else:
             sat = today + timedelta(days=(5 - wd))
             sun = sat + timedelta(days=1)
-        return {"start": sat, "end": sun, "kind": "weekend"}
+        return _stamp({"start": sat, "end": sun, "kind": "weekend"})
 
     if re.search(r"\btomorrow\b", raw):
         d = today + timedelta(days=1)
-        return {"start": d, "end": d, "kind": "day"}
+        return _stamp({"start": d, "end": d, "kind": "day"})
 
     if re.search(r"\b(today|tonight)\b", raw):
-        return {"start": today, "end": today, "kind": "day"}
+        return _stamp({"start": today, "end": today, "kind": "day"})
+
+    if hour is not None:
+        return _stamp({"start": today, "end": today, "kind": "day"})
 
     return None
 

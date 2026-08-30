@@ -64,6 +64,8 @@ def test_pick_output_locale():
     assert pick_output_locale(output_locale="bn", locale_hint="bn", detected="en") == "bn"
     # Tamil (or any other language) typed in an English UI comes back in Tamil
     assert pick_output_locale(output_locale="en", locale_hint="en", detected="ta") == "ta"
+    assert pick_output_locale(output_locale="auto", locale_hint="en", detected="ta") == "ta"
+    assert pick_output_locale(output_locale="auto", locale_hint="hi", detected="en") == "en"
 
 
 @pytest.mark.asyncio

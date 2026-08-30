@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from app.agents.dates import parse_window
 from app.data.blocked_places import FOREIGN, FICTION, is_blocked_name
+from app.data.closed_class import is_closed_query, is_closed_token, is_time_only
 from app.data.india_districts import is_state_name, match_states
 from app.services.location_svc import resolve_named_place
 
@@ -26,6 +27,16 @@ _VISIT = ("visit", "tourist", "tourism", "holiday", "vacation", "trip", "best pl
 _PET = ("pet", "dog", "cat", "elephant", "tiger", "puppy", "animal")
 _PET_ACT = ("take", "island", "islands", "outing", "walk", "zoo", "safari", "bring")
 _WX_NOW = ("weather", "temperature", "temp ", "how is the sky", "current condition", "conditions in")
+_OUTDOOR = (
+    "skydive", "sky div", "sky-div", "paraglid", "hang glid", "glide",
+    "hike", "hiking", "trek", "picnic", "cricket match", "play cricket",
+    "football", "soccer", "swim", "beach", "fishing", "cycle", "cycling",
+    "outdoor", "go out", "going out", "good day for", "safe to go",
+    "can i go", "should i go", "may i go", "can we go", "should we go",
+    "kite", "sailing", "boating", "surf", "marathon", "run outside",
+    "fly", "plane", "flight", "pilot", "aviation", "drone", "take off",
+    "landing", "aircraft", "aeroplane", "airplane",
+)
 _OFF = (
     "recipe", "poem", "world cup", "cricket score",
     "movie", "joke", "capital of france", "hello", "hi there", "who are you",
@@ -65,6 +76,10 @@ _STOP_HEAD = {
     "next", "last", "past", "coming", "few", "some", "any",
     "india", "indian", "weather", "rain", "aqi", "flood",
     "hours", "hour", "days", "day", "week", "mm",
+    "today", "tomorrow", "tonight", "yesterday", "weekend",
+    "now", "morning", "evening", "night", "forecast", "outlook",
+    "sky", "diving", "skydive", "hike", "hiking", "picnic", "cricket",
+    "swim", "swimming", "cycle", "cycling", "outdoor", "go", "going",
 }
 
 # Place-level packs Rituchakra can actually compute. Used for "all metrics".
@@ -127,17 +142,26 @@ def wants_catalog(text: str) -> bool:
     return False
 
 
+def is_time_followup(text: str) -> bool:
+    """Tomorrow / and tomorrow / what about tomorrow — keep the last town, change the window."""
+    return is_time_only(text)
+
+
 def looks_like_bare_place(text: str) -> bool:
     """A 1–3 token utterance that is probably just a place name."""
     raw = (text or "").strip()
     if not raw or len(raw) > 48:
         return False
-    if is_followup_affirm(raw) or wants_catalog(raw):
+    if is_followup_affirm(raw) or wants_catalog(raw) or is_time_followup(raw):
+        return False
+    if is_closed_query(raw):
+        return False
+    if parse_window(raw):
         return False
     words = re.findall(r"[A-Za-z]+", raw)
     if not words or len(words) > 3:
         return False
-    if all(w.lower() in _FOLLOW_WORDS for w in words):
+    if all(w.lower() in _FOLLOW_WORDS or is_closed_token(w) for w in words):
         return False
     blob = raw.lower()
     if any(w in blob for w in _OFF + _PET + _VISIT + _RAIN + _AQI + _NOW + _FORE + _WARN + _RANK + _MANDI + _WX_NOW):
@@ -161,7 +185,13 @@ def unknown_refuse(name: str) -> str:
 def _usable_span(span: str | None) -> str | None:
     if not span:
         return None
-    words = [w for w in re.findall(r"[A-Za-z]+", span) if w.lower() not in _STOP_HEAD]
+    if is_closed_query(span) or is_time_only(span):
+        return None
+    words = [
+        w
+        for w in re.findall(r"[A-Za-z]+", span)
+        if w.lower() not in _STOP_HEAD and not is_closed_token(w)
+    ]
     if not words:
         return None
     return " ".join(words)
@@ -230,8 +260,10 @@ def interpret(text: str) -> Plan:
     rain = any(w in t for w in _RAIN)
     visit = any(w in t for w in _VISIT)
     pet = any(w in t for w in _PET)
+    outdoor = any(w in t for w in _OUTDOOR)
     wx = (
         rain
+        or outdoor
         or any(w in t for w in _AQI + _NOW + _FORE + _WARN + _RANK + _MANDI + _WX_NOW)
         or "flood" in t
         or "heat" in t
@@ -239,8 +271,15 @@ def interpret(text: str) -> Plan:
 
     catalog = wants_catalog(text)
     follow = is_followup_affirm(text)
+    time_follow = is_time_followup(text)
 
     asked = extract_asked_span(text) or mentioned_place(text)
+    if asked and (is_closed_query(asked) or is_closed_token(asked)):
+        asked = None
+    if asked and any(w in asked.lower() for w in _OUTDOOR):
+        asked = None
+    if asked and all(w.lower() in _STOP_HEAD for w in re.findall(r"[A-Za-z]+", asked)):
+        asked = None
     if asked is None and looks_like_bare_place(text):
         asked = (text or "").strip()
     resolved = resolve_named_place(asked) if asked else None
@@ -249,6 +288,13 @@ def interpret(text: str) -> Plan:
     )
     blocked = is_blocked_name(asked)
 
+    if time_follow:
+        return Plan(
+            mode="data",
+            needs=["rain_window"],
+            asked=None,
+            follow=True,
+        )
     if follow or (catalog and not asked and not resolved):
         needs = list(CATALOG_NEEDS) if catalog else []
         return Plan(
@@ -363,8 +409,24 @@ def interpret(text: str) -> Plan:
 
     needs: list[str] = []
     win = parse_window(text)
-    if rain and win:
+    if win and (
+        rain
+        or outdoor
+        or any(w in t for w in ("forecast", "prediction", "how much", "mm "))
+    ):
         needs.append("rain_window")
+    if outdoor and "forecast" not in needs:
+        needs.append("forecast")
+    if asked and win and "rain_window" not in needs:
+        needs.append("rain_window")
+        if "forecast" not in needs:
+            needs.append("forecast")
+    if win and win.get("hour") is not None:
+        from app.agents.dates import today_ist
+
+        start = win.get("start")
+        if start == today_ist() and "nowcast" not in needs:
+            needs.append("nowcast")
     if any(w in t for w in _FORE) or any(w in t for w in _WX_NOW) or (
         rain and any(w in t for w in ("how much", "how many", "prediction", "forecast")) and not win
     ):
@@ -407,7 +469,8 @@ def interpret(text: str) -> Plan:
                 ),
                 states=states,
             )
-        if "states_weather" not in needs:
+        # Named-state district list is rank, not an all-India HQ table.
+        if not states and "rank" not in needs and "states_weather" not in needs:
             needs.append("states_weather")
 
     # Named place + weather words, or a geocode candidate with no other need

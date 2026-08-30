@@ -38,6 +38,16 @@ def test_single_day():
     assert w["end"] == date(2026, 8, 25)
 
 
+def test_tomorrow_at_ten():
+    from app.agents.dates import parse_hour
+
+    today = date(2026, 8, 18)
+    w = parse_window("In Haldia tomorrow at 10 am", today=today)
+    assert w["start"] == date(2026, 8, 19)
+    assert w.get("hour") == 10
+    assert parse_hour("at 10:30 pm") == 22
+
+
 def test_tomorrow_today_weekend():
     today = date(2026, 8, 18)  # Tuesday
     tmr = parse_window("rain tomorrow", today=today)

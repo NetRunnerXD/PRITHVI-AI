@@ -1,7 +1,28 @@
 """Utterance planner: every class of human line and its contradiction."""
 
+from app.agents.data_tool import parse_text_call, strip_tool_syntax
 from app.agents.facts import source_gate
 from app.agents.utterance import extract_asked_span, interpret, looks_like_bare_place
+
+
+def test_tomorrow_is_not_a_place():
+    from app.agents.utterance import extract_asked_span, interpret, is_time_followup, looks_like_bare_place
+
+    assert extract_asked_span("forecast for tomorrow") is None
+    assert extract_asked_span("and tomorrow") is None
+    assert extract_asked_span("what about tomorrow") is None
+    assert not looks_like_bare_place("tomorrow")
+    assert not looks_like_bare_place("and tomorrow")
+    assert is_time_followup("and tomorrow")
+    assert is_time_followup("what about tomorrow")
+    p = interpret("and tomorrow")
+    assert p.follow
+    assert p.asked is None or p.asked.lower() != "tomorrow"
+    assert "rain_window" in p.needs
+    p2 = interpret("forecast for tomorrow")
+    assert p2.asked is None or p2.asked.lower() != "tomorrow"
+    p3 = interpret("How much rain tomorrow in Haldia?")
+    assert p3.asked and p3.asked.lower() == "haldia"
 
 
 def test_extract_spans():
@@ -54,6 +75,15 @@ def test_pet_and_pushback_topics():
     assert visit.mode == "refuse"
 
 
+def test_wb_flood_list_is_rank_not_india_hq():
+    p = interpret("Which districts in West Bengal are more likely to get flooded? List them.")
+    assert p.mode == "data"
+    assert "rank" in p.needs
+    assert "states_weather" not in p.needs
+    assert "West Bengal" in p.states
+    assert "mandi" not in p.needs
+
+
 def test_rank_and_compare_still_data():
     r = interpret("Flood ranking of Odisha")
     assert r.mode == "data"
@@ -72,6 +102,38 @@ def test_garbage_and_punctuation():
     assert q.mode in {"chat", "refuse", "data"}
     n = interpret("12345")
     assert n.mode in {"chat", "refuse", "data"}
+
+
+def test_leaked_data_call_is_parsed_and_stripped():
+    args = parse_text_call("data(need=rain_window, place=Haldia).")
+    assert args is not None
+    assert args["need"] == "rain_window"
+    assert args["place"] == "Haldia"
+    assert strip_tool_syntax("data(need=rain_window, place=Haldia).") == ""
+    assert "Haldia" in strip_tool_syntax("Haldia looks wet.\ndata(need=forecast, place=Haldia)")
+
+
+def test_fly_plane_tomorrow_is_weather():
+    p = interpret("can I fly my plane tomorrow?")
+    assert p.mode == "data"
+    assert "rain_window" in p.needs or "forecast" in p.needs
+
+
+def test_outdoor_and_place_time_fragments():
+    p = interpret("Can I go for sky diving tomorrow?")
+    assert p.mode == "data"
+    assert "rain_window" in p.needs or "forecast" in p.needs
+    assert not p.asked or "div" not in p.asked.lower()
+    p2 = interpret("In Haldia tomorrow at 10 am")
+    assert p2.mode == "data"
+    assert p2.asked and p2.asked.lower() == "haldia"
+    assert "rain_window" in p2.needs
+    assert extract_asked_span("In Haldia tomorrow at 10 am").lower() == "haldia"
+    refuse = interpret("Can I take my elephant to the islands?")
+    assert refuse.mode == "refuse"
+    hi = interpret("Hi")
+    assert hi.mode == "chat"
+    assert hi.needs == []
 
 
 def test_pin_only_weather_still_fetches():

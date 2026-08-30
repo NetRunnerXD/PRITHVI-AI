@@ -67,18 +67,47 @@ HOLES = {
 
 
 def parse_text_call(text: str) -> dict[str, Any] | None:
-    """If Ollama dropped tools, accept a single line: data: rain_window start=2026-08-23 end=2026-08-28 place=Haldia"""
+    """If Ollama dropped tools, accept data: rain_window … or data(need=rain_window, place=Haldia)."""
     raw = (text or "").strip()
+    m = re.search(
+        r"\bdata\s*\(\s*need\s*=\s*['\"]?([a-z_]+)['\"]?\s*(?:,(?P<rest>[^)]*))?\)",
+        raw,
+        re.I,
+    )
+    if m:
+        need = m.group(1).lower()
+        if need not in NEEDS:
+            return None
+        args: dict[str, Any] = {"need": need}
+        rest = m.group("rest") or ""
+        for km in re.finditer(r"\b(place|start|end|other|metric|question)\s*=\s*['\"]?([^,'\"\s)]+)", rest, re.I):
+            args[km.group(1).lower()] = km.group(2).strip("\"'")
+        return args
     m = re.search(r"\bdata\s*:?\s*([a-z_]+)\b(.*)$", raw, re.I | re.M)
     if not m:
         return None
     need = m.group(1).lower()
     if need not in NEEDS:
         return None
-    args: dict[str, Any] = {"need": need}
+    args = {"need": need}
     for km in re.finditer(r"\b(place|start|end|other|metric|question)=(\S+)", m.group(2) or ""):
         args[km.group(1)] = km.group(2).strip("\"',")
     return args
+
+
+_TOOL_LINE = re.compile(
+    r"^\s*(?:data\s*\([^)]*\)|data\s*:?\s*[a-z_]+[^\n]*)\s*$",
+    re.I | re.M,
+)
+
+
+def strip_tool_syntax(text: str) -> str:
+    """Drop leaked function-call lines so the user never sees data(need=…)."""
+    blob = text or ""
+    cleaned = _TOOL_LINE.sub("", blob)
+    cleaned = re.sub(r"\bdata\s*\([^)]*\)", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip(" \t\r\n.,;:")
+    return cleaned.strip()
 
 
 class DataLib:
@@ -150,20 +179,35 @@ class DataLib:
             snap = await self._snap(loc if place else None)
             p = snap.predictive.model_dump()
             cur = snap.descriptive.current
-            return strip_forbidden(
-                {
-                    "need": "forecast",
-                    "place": loc.place_name or loc.district,
-                    "label": loc.label,
-                    "temp_c": cur.temp_c,
-                    "precip_1h_mm": cur.precip_1h_mm,
-                    "sky_label": cur.sky_label,
-                    "precip_next_3d_mm": p.get("precip_next_3d_mm"),
-                    "precip_7d_mm": p.get("precip_7d_mm"),
-                    "water_balance_7d_mm": p.get("water_balance_7d_mm"),
-                    "outlook_days": (p.get("outlook_days") or [])[:7],
-                }
-            )
+            days = list((p.get("outlook_days") or [])[:7])
+            a = str(args.get("start") or "")[:10]
+            b = str(args.get("end") or "")[:10]
+            if a and b:
+                sliced = [
+                    row
+                    for row in days
+                    if isinstance(row, dict) and a <= str(row.get("date") or "")[:10] <= b
+                ]
+                if sliced:
+                    days = sliced
+            out = {
+                "need": "forecast",
+                "place": loc.place_name or loc.district,
+                "label": loc.label,
+                "temp_c": cur.temp_c,
+                "precip_1h_mm": cur.precip_1h_mm,
+                "sky_label": cur.sky_label,
+                "outlook_days": days,
+            }
+            if not (a and b and a == b):
+                out["precip_next_3d_mm"] = p.get("precip_next_3d_mm")
+                out["precip_7d_mm"] = p.get("precip_7d_mm")
+                out["water_balance_7d_mm"] = p.get("water_balance_7d_mm")
+            elif days:
+                out["precip_window_mm"] = sum(
+                    float(r.get("precip_mm") or 0) for r in days if isinstance(r, dict)
+                )
+            return strip_forbidden(out)
         if need == "aqi":
             from app.providers import datagov
 

@@ -21,6 +21,8 @@ class TurnState:
     pin: dict[str, Any] | None = None
     plan_id: str | None = None
     evidence_root: str | None = None
+    window: dict[str, str] | None = None
+    needs: list[str] = field(default_factory=list)
 
 
 _STORE: dict[str, TurnState] = {}

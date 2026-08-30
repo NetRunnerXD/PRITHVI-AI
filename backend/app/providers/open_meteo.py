@@ -330,6 +330,10 @@ def _slice_forecast_daily(lat: float, lon: float, start: str, end: str) -> dict[
         "temperature_2m_max",
         "temperature_2m_min",
         "weather_code",
+        "wind_speed_10m_max",
+        "wind_speed_10m_mean",
+        "wind_gusts_10m_max",
+        "wind_direction_10m_dominant",
     )
     merged: dict[str, list] = {k: [] for k in ("time",) + keys}
     for i, t in enumerate(times):
@@ -368,7 +372,10 @@ async def daily_window(lat: float, lon: float, start: str, end: str) -> dict[str
         if end_d < start_d:
             start_d, end_d = end_d, start_d
         horizon = today + timedelta(days=16)
-        daily_keys = "precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min,weather_code"
+        daily_keys = (
+            "precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min,"
+            "weather_code,wind_speed_10m_max,wind_speed_10m_mean,wind_gusts_10m_max,wind_direction_10m_dominant"
+        )
         merged: dict[str, list] = {
             "time": [],
             "precipitation_sum": [],
@@ -376,6 +383,10 @@ async def daily_window(lat: float, lon: float, start: str, end: str) -> dict[str
             "temperature_2m_max": [],
             "temperature_2m_min": [],
             "weather_code": [],
+            "wind_speed_10m_max": [],
+            "wind_speed_10m_mean": [],
+            "wind_gusts_10m_max": [],
+            "wind_direction_10m_dominant": [],
         }
 
         async def _pull(url: str, a: date, b: date) -> None:

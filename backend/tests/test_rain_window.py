@@ -48,6 +48,43 @@ async def test_fetch_window_formats_days(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_missing_precip_is_not_zero(monkeypatch):
+    async def fake_daily(lat, lon, start, end):
+        return {
+            "daily": {
+                "time": ["2026-08-30"],
+                "precipitation_sum": [None],
+                "precipitation_probability_max": [None],
+                "temperature_2m_max": [31.0],
+                "temperature_2m_min": [26.0],
+                "weather_code": [1],
+                "wind_speed_10m_max": [18.2],
+                "wind_gusts_10m_max": [32.0],
+                "wind_direction_10m_dominant": [180],
+            }
+        }
+
+    from app.providers import open_meteo
+    from app.schemas.location import Location
+
+    monkeypatch.setattr(open_meteo, "daily_window", fake_daily)
+    loc = Location(
+        id="t",
+        label="Haldia, West Bengal",
+        state="West Bengal",
+        district="Purba Medinipur",
+        lat=22.07,
+        lon=88.07,
+        place_kind="city",
+        place_name="Haldia",
+    )
+    pack = await fetch_window(loc, date(2026, 8, 30), date(2026, 8, 30))
+    assert pack["days"][0]["precip_mm"] is None
+    assert pack["total_mm"] is None
+    assert pack["days"][0]["wind_speed_max_kmh"] == 18.2
+
+
+@pytest.mark.asyncio
 async def test_daily_window_uses_cached_forecast(monkeypatch):
     from app import cache
     from app.providers import open_meteo

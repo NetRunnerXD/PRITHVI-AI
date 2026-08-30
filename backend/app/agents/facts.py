@@ -185,29 +185,54 @@ def rank_metric(text: str) -> str:
 
 
 def _fmt(v: Any) -> str:
+    if v is None:
+        return "not reported"
     if isinstance(v, float):
         return f"{v:g}"
     return str(v)
 
 
-def quote_facts(collected: dict[str, Any]) -> str:
+def quote_facts(collected: dict[str, Any], window: dict[str, str] | None = None) -> str:
     """Deterministic lines from this turn's data() payloads. Never invent missing AQI as 0."""
     lines: list[str] = []
+    wstart = str((window or {}).get("start") or "")[:10]
+    wend = str((window or {}).get("end") or "")[:10]
     win = collected.get("rain_window") or {}
+    has_rain_days = isinstance(win, dict) and bool(win.get("days") or win.get("total_mm") is not None)
+    single_day = bool(wstart and wend and wstart == wend and has_rain_days)
     if isinstance(win, dict) and (win.get("days") or win.get("total_mm") is not None):
         loc = win.get("location") or {}
         name = loc.get("place_name") or loc.get("district") or loc.get("label") or "this place"
         start, end = win.get("start"), win.get("end")
-        total = win.get("total_mm")
-        lines.append(
-            f"{name} {start} to {end}: {_fmt(total)} mm total (Open-Meteo daily, not a gauge)."
-        )
-        for row in (win.get("days") or [])[:8]:
-            if not isinstance(row, dict):
-                continue
-            bit = f"{row.get('date')}: {_fmt(row.get('precip_mm'))} mm"
+        days = [r for r in (win.get("days") or []) if isinstance(r, dict)]
+        if single_day:
+            days = [r for r in days if str(r.get("date") or "")[:10] == wstart] or days
+            known = [float(r["precip_mm"]) for r in days if r.get("precip_mm") is not None]
+            total = sum(known) if known else None
+            clock = (window or {}).get("hour")
+            clock_bit = f" (asked hour {clock}:00 IST; model is daily, not a {clock}:00 gauge)" if clock not in (None, "") else ""
+            lines.append(
+                f"{name} {wstart}: {_fmt(total)} mm (Open-Meteo daily, not a gauge).{clock_bit}"
+            )
+        else:
+            total = win.get("total_mm")
+            lines.append(
+                f"{name} {start} to {end}: {_fmt(total)} mm total (Open-Meteo daily, not a gauge)."
+            )
+        for row in days[:8]:
+            bit = f"{row.get('date')}: rain {_fmt(row.get('precip_mm'))} mm"
             if row.get("precip_prob_pct") is not None:
                 bit += f" ({row.get('precip_prob_pct')}%)"
+            if row.get("sky_label"):
+                bit += f", {row.get('sky_label')}"
+            if row.get("temp_max_c") is not None:
+                bit += f", tmax {_fmt(row.get('temp_max_c'))}°C"
+            if row.get("wind_speed_max_kmh") is not None:
+                bit += f", wind max {_fmt(row.get('wind_speed_max_kmh'))} km/h"
+            else:
+                bit += ", wind not reported"
+            if row.get("wind_gust_max_kmh") is not None:
+                bit += f", gust {_fmt(row.get('wind_gust_max_kmh'))} km/h"
             lines.append(bit)
         missing = win.get("missing") or []
         if missing:
@@ -242,12 +267,15 @@ def quote_facts(collected: dict[str, Any]) -> str:
             now_bits.append(f"this hour {_fmt(fc['precip_1h_mm'])} mm")
         if now_bits:
             lines.append(f"{place} now: " + ", ".join(now_bits) + " (Open-Meteo).")
-        if fc.get("precip_next_3d_mm") is not None:
+        if not single_day and not (isinstance(win, dict) and win.get("days")) and fc.get("precip_next_3d_mm") is not None:
             lines.append(
                 f"{place} next 3 days {_fmt(fc.get('precip_next_3d_mm'))} mm, "
                 f"7 days {_fmt(fc.get('precip_7d_mm'))} mm."
             )
-        for row in (fc.get("outlook_days") or [])[:7]:
+        outlook = list((fc.get("outlook_days") or [])[:7])
+        if single_day:
+            outlook = [r for r in outlook if isinstance(r, dict) and str(r.get("date") or "")[:10] == wstart]
+        for row in outlook:
             if not isinstance(row, dict):
                 continue
             day = row.get("date")
@@ -292,6 +320,7 @@ def quote_facts(collected: dict[str, Any]) -> str:
     delta = (cmp.get("delta_a_minus_b") if isinstance(cmp, dict) else None) or {}
     if delta.get("rain_3d_mm") is not None:
         lines.append(f"Compare 3-day rain delta {_fmt(delta.get('rain_3d_mm'))} mm.")
+    seen_rank: set[str] = set()
     for key, rank in collected.items():
         if not (key == "rank" or str(key).startswith("rank:")):
             continue
@@ -300,19 +329,22 @@ def quote_facts(collected: dict[str, Any]) -> str:
         ranked = rank.get("ranked")
         if not ranked:
             continue
-        top = ranked[0]
-        lines.append(
-            f"{rank.get('state')} {rank.get('metric')} rank 1: {top.get('district')} "
-            f"score {_fmt(top.get('flood_score'))}, 3d rain {_fmt(top.get('precip_3d_mm'))} mm."
-        )
-        for i, r in enumerate(ranked[1:6], 2):
+        st = str(rank.get("state") or "")
+        if st.lower() in seen_rank:
+            continue
+        seen_rank.add(st.lower())
+        metric = rank.get("metric") or "flood"
+        lines.append(f"{st} {metric} ranking (3-day rain, Open-Meteo + local-ml):")
+        for i, r in enumerate(ranked[:8], 1):
+            if not isinstance(r, dict):
+                continue
             lines.append(
-                f"{i}. {r.get('district')} flood {_fmt(r.get('flood_score'))}, "
-                f"{_fmt(r.get('precip_3d_mm'))} mm / 3d"
+                f"{i}. {r.get('district')} — score {_fmt(r.get('flood_score'))}, "
+                f"{_fmt(r.get('precip_3d_mm'))} mm"
             )
     sw = collected.get("states_weather") or {}
     srows = sw.get("ranked") if isinstance(sw, dict) else None
-    if srows:
+    if srows and not seen_rank:
         lines.append(
             f"India state HQ ranking by {sw.get('metric')} "
             f"({sw.get('note') or 'weather/flood, not tourism'}):"
@@ -356,6 +388,11 @@ def quote_facts(collected: dict[str, Any]) -> str:
         else:
             lines.append(f"No Agmarknet arrivals in Rituchakra for {mandi.get('place') or 'this district'} today.")
     return "\n".join(lines).strip()
+
+
+def present_answer(collected: dict[str, Any], window: dict[str, str] | None = None) -> str:
+    """One clean user-facing block (no duplicated rank dump, no extra India HQ unless fetched)."""
+    return quote_facts(collected, window=window)
 
 
 def prose_has_payload_number(text: str, collected: dict[str, Any]) -> bool:

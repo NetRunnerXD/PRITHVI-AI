@@ -19,6 +19,13 @@ def _f(v: Any, default: float | None = None) -> float | None:
         return default
 
 
+def _round(v: Any, n: int = 1) -> float | None:
+    fv = _f(v)
+    if fv is None:
+        return None
+    return round(fv, n)
+
+
 async def fetch_window(loc: Location, start: date, end: date) -> dict[str, Any]:
     if end < start:
         start, end = end, start
@@ -32,19 +39,41 @@ async def fetch_window(loc: Location, start: date, end: date) -> dict[str, Any]:
     tmax = list(daily.get("temperature_2m_max") or [])
     tmin = list(daily.get("temperature_2m_min") or [])
     codes = list(daily.get("weather_code") or [])
+    wmax = list(daily.get("wind_speed_10m_max") or [])
+    wmean = list(daily.get("wind_speed_10m_mean") or [])
+    wgust = list(daily.get("wind_gusts_10m_max") or [])
+    wdir = list(daily.get("wind_direction_10m_dominant") or [])
     days: list[dict[str, Any]] = []
     have: set[str] = set()
+    from app.ml.sky import sky_label
+
+    def _at(seq: list, i: int) -> Any:
+        return seq[i] if i < len(seq) else None
+
     for i, t in enumerate(times):
-        p = _f(precip[i] if i < len(precip) else None, 0.0) or 0.0
-        pr = _f(probs[i] if i < len(probs) else None)
+        p = _round(_at(precip, i))
+        pr = _f(_at(probs, i))
+        code = _at(codes, i)
+        sky = None
+        try:
+            if code is not None:
+                sky, _ = sky_label(int(code))
+        except (TypeError, ValueError):
+            sky = None
         days.append(
             {
                 "date": str(t)[:10],
-                "precip_mm": round(p, 1),
+                "precip_mm": p,
                 "precip_prob_pct": int(pr) if pr is not None else None,
-                "temp_max_c": None if tmax[i] is None and i < len(tmax) else (round(float(tmax[i]), 1) if i < len(tmax) and tmax[i] is not None else None),
-                "temp_min_c": None if i >= len(tmin) or tmin[i] is None else round(float(tmin[i]), 1),
-                "weather_code": int(codes[i]) if i < len(codes) and codes[i] is not None else None,
+                "temp_max_c": _round(_at(tmax, i)),
+                "temp_min_c": _round(_at(tmin, i)),
+                "weather_code": int(code) if code is not None else None,
+                "sky_label": sky,
+                "wind_speed_max_kmh": _round(_at(wmax, i)),
+                "wind_speed_mean_kmh": _round(_at(wmean, i)),
+                "wind_gust_max_kmh": _round(_at(wgust, i)),
+                "wind_dir_deg": _round(_at(wdir, i), 0),
+                "visibility": "not reported",
             }
         )
         have.add(str(t)[:10])
@@ -55,7 +84,8 @@ async def fetch_window(loc: Location, start: date, end: date) -> dict[str, Any]:
         wanted.append(cur.isoformat())
         cur += timedelta(days=1)
     missing = [d for d in wanted if d not in have]
-    total = round(sum(float(r["precip_mm"]) for r in days), 1)
+    known = [float(r["precip_mm"]) for r in days if r.get("precip_mm") is not None]
+    total = round(sum(known), 1) if known else None
     today = _now().date()
     horizon = today + timedelta(days=16)
     return {

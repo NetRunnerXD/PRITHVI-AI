@@ -60,5 +60,6 @@
   {"id": "pin-howrah-weather", "q": "What's the weather today?", "focus": "Howrah", "place": "Howrah", "needs": ["forecast"], "weather": true, "forbidden": ["Haldia", "Malda", "Chhattisgarh"]},
   {"id": "pin-howrah-irrigate", "q": "Should I irrigate?", "focus": "Howrah", "place": "Howrah", "needs": ["nowcast"], "weather": true, "forbidden": ["Haldia", "Malda"]},
   {"id": "pin-malda-rain", "q": "Will it rain today?", "focus": "Malda", "place": "Malda", "needs": ["rain_window"], "weather": true, "forbidden": ["Haldia", "Howrah"]},
-  {"id": "pin-haldia-how-about-malda", "q": "How about malda", "focus": "Haldia", "place": "Malda", "needs": ["forecast"], "weather": true, "forbidden": ["Haldia", "Chhattisgarh"]}
+  {"id": "pin-haldia-how-about-malda", "q": "How about malda", "focus": "Haldia", "place": "Malda", "needs": ["forecast"], "weather": true, "forbidden": ["Haldia", "Chhattisgarh"]},
+  {"id": "wx-forecast-tomorrow-haldia", "q": "forecast for tomorrow in Haldia", "place": "Haldia", "needs": ["rain_window"], "weather": true, "forbidden": ["tomorrow"]}
 ]

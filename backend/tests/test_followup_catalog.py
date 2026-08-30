@@ -156,6 +156,170 @@ async def test_contradiction_all_of_them_first_turn_does_not_fetch_pin(monkeypat
     assert "gazetteer" not in (final.get("content_en") or "").lower()
 
 
+@pytest.mark.asyncio
+async def test_chain_haldia_then_tomorrow_stays_haldia(monkeypatch):
+    from app.agents import orchestrator
+    from app.llm import ollama_client
+
+    fetched: list[tuple[str, str]] = []
+
+    async def fake_ping():
+        return True, "qwen2.5"
+
+    async def fake_chat(messages, tools=None):
+        return {"content": "Here are the millimetres.", "tool_calls": [], "tools_stripped": False}
+
+    async def fake_call(self, args):
+        loc = self.loc
+        fetched.append((str(args.get("need") or ""), loc.place_name or loc.district, str(args.get("start") or "")))
+        return {
+            "need": args.get("need"),
+            "place": loc.place_name,
+            "label": loc.label,
+            "location": {"place_name": loc.place_name, "district": loc.district},
+            "start": args.get("start"),
+            "end": args.get("end"),
+            "total_mm": 4.2,
+            "days": [{"date": str(args.get("start") or "2026-08-29")[:10], "precip_mm": 4.2}],
+        }
+
+    monkeypatch.setattr(ollama_client, "ping", fake_ping)
+    monkeypatch.setattr(ollama_client, "chat", fake_chat)
+    monkeypatch.setattr("app.agents.data_tool.DataLib.call", fake_call)
+
+    pin = resolve_location(q="Haldia")
+    cid = "tmr-chain"
+
+    async def turn(q: str):
+        events = []
+        async for ev in orchestrator.run_agent(ChatRequest(message=q, location=pin, conversation_id=cid)):
+            events.append(ev)
+        return next(e for e in events if e["type"] == "final")["message"]
+
+    first = await turn("How much rain in Haldia?")
+    assert any(place == "Haldia" for _, place, _ in fetched)
+    fetched.clear()
+    second = await turn("and tomorrow?")
+    body = second.get("content_en") or ""
+    assert "Haldia" in body or "4.2" in body
+    assert "Malda" not in body
+    assert all(place == "Haldia" for _, place, _ in fetched)
+    assert any(need == "rain_window" for need, _, _ in fetched)
+
+
+@pytest.mark.asyncio
+async def test_chain_haldia_then_malda_switches(monkeypatch):
+    from app.agents import orchestrator
+    from app.llm import ollama_client
+
+    places: list[str] = []
+
+    async def fake_ping():
+        return True, "qwen2.5"
+
+    async def fake_chat(messages, tools=None):
+        return {"content": "ok", "tool_calls": [], "tools_stripped": False}
+
+    async def fake_call(self, args):
+        loc = self.loc
+        places.append(loc.place_name or loc.district)
+        return {
+            "need": args.get("need") or "forecast",
+            "place": loc.place_name,
+            "label": loc.label,
+            "temp_c": 30.0,
+            "precip_next_3d_mm": 1.0,
+        }
+
+    monkeypatch.setattr(ollama_client, "ping", fake_ping)
+    monkeypatch.setattr(ollama_client, "chat", fake_chat)
+    monkeypatch.setattr("app.agents.data_tool.DataLib.call", fake_call)
+
+    pin = resolve_location(q="Haldia")
+    cid = "malda-chain"
+
+    async def turn(q: str):
+        events = []
+        async for ev in orchestrator.run_agent(ChatRequest(message=q, location=pin, conversation_id=cid)):
+            events.append(ev)
+        return next(e for e in events if e["type"] == "final")["message"]
+
+    await turn("How much rain in Haldia?")
+    places.clear()
+    msg = await turn("How about malda")
+    assert any("Malda" in p for p in places)
+    assert not any(p == "Haldia" for p in places)
+    assert "Haldia" not in (msg.get("content_en") or "")
+
+
+@pytest.mark.asyncio
+async def test_hi_skydive_then_haldia_ten_does_not_leak_tool(monkeypatch):
+    from app.agents import orchestrator
+    from app.llm import ollama_client
+
+    fetched: list[str] = []
+    calls = {"n": 0}
+
+    async def fake_ping():
+        return True, "qwen2.5"
+
+    async def fake_chat(messages, tools=None):
+        calls["n"] += 1
+        if tools:
+            return {
+                "content": "data(need=rain_window, place=Haldia).",
+                "tool_calls": [],
+                "tools_stripped": False,
+            }
+        return {"content": "Haldia tomorrow has rain in the pack.", "tool_calls": [], "tools_stripped": False}
+
+    async def fake_call(self, args):
+        fetched.append(str(args.get("need") or ""))
+        loc = self.loc
+        return {
+            "need": args.get("need"),
+            "place": loc.place_name,
+            "label": loc.label,
+            "location": {"place_name": loc.place_name},
+            "start": args.get("start"),
+            "end": args.get("end"),
+            "total_mm": 2.7,
+            "days": [{"date": str(args.get("start") or "2026-08-30")[:10], "precip_mm": 2.7}],
+            "temp_c": 31.0,
+            "sky_label": "Partly cloudy",
+            "precip_next_3d_mm": 8.0,
+        }
+
+    monkeypatch.setattr(ollama_client, "ping", fake_ping)
+    monkeypatch.setattr(ollama_client, "chat", fake_chat)
+    monkeypatch.setattr("app.agents.data_tool.DataLib.call", fake_call)
+
+    pin = resolve_location(q="Howrah")
+    cid = "skydive-chain"
+
+    async def turn(q: str):
+        events = []
+        async for ev in orchestrator.run_agent(ChatRequest(message=q, location=pin, conversation_id=cid)):
+            events.append(ev)
+        return next(e for e in events if e["type"] == "final")["message"]
+
+    hi = await turn("Hi")
+    assert "data(" not in (hi.get("content_en") or "")
+    fetched.clear()
+    sk = await turn("Can I go for sky diving tomorrow?")
+    body = sk.get("content_en") or ""
+    assert "data(" not in body
+    assert "data(need" not in body
+    assert fetched
+    fetched.clear()
+    loc = await turn("In Haldia tomorrow at 10 am")
+    body3 = loc.get("content_en") or ""
+    assert "data(" not in body3
+    assert "Haldia" in body3
+    assert "2.7" in body3
+    assert any(n == "rain_window" for n in fetched)
+
+
 def test_suggestions_carry_the_discussed_place():
     loc = resolve_named_place("Puruliya")
     assert loc

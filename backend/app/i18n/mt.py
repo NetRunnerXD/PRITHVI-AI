@@ -31,6 +31,19 @@ _GOOGLE_CODE = {
     "zh": "zh-CN",
     "he": "iw",
     "jw": "jw",
+    "or": "or",
+    "pa": "pa",
+    "as": "as",
+    "sa": "sa",
+    "sd": "sd",
+    "ur": "ur",
+    "mni": "mni",
+    "mai": "mai",
+    "kok": "gom",
+    "ks": "ks",
+    "brx": "brx",
+    "doi": "doi",
+    "sat": "sat",
 }
 
 # Longest first so NAQI is not split by AQI.

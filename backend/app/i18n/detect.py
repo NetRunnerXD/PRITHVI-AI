@@ -46,6 +46,12 @@ _SCRIPT_ALIAS = {
     "zh-tw": "zh",
 }
 
+# Eighth Schedule + English. Auto replies in the detected code when it is here.
+SCHEDULED_22 = {
+    "as", "bn", "brx", "doi", "gu", "hi", "kn", "ks", "kok", "mai",
+    "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur",
+}
+
 _LD_MAP = {
     "bn": "bn",
     "hi": "hi",
@@ -61,6 +67,16 @@ _LD_MAP = {
     "or": "or",
     "ur": "ur",
     "as": "as",
+    "brx": "brx",
+    "doi": "doi",
+    "kok": "kok",
+    "mai": "mai",
+    "mni": "mni",
+    "sa": "sa",
+    "sat": "sat",
+    "sd": "sd",
+    "ks": "ks",
+    "auto": "auto",
     "fr": "fr",
     "es": "es",
     "de": "de",
@@ -161,9 +177,12 @@ def pick_output_locale(
     Otherwise a non-English question is answered in that language so Hindi/Bengali
     (or Tamil, French, …) typed into an English UI still come back translated.
     """
+    raw_out = (output_locale or "").strip().lower()
+    detected_n = normalize_lang(detected) or "en"
+    if raw_out in {"auto", ""}:
+        return detected_n
     explicit = normalize_lang(output_locale)
     hint = normalize_lang(locale_hint)
-    detected_n = normalize_lang(detected) or "en"
     if explicit and hint and explicit != hint:
         return explicit
     if detected_n != "en":

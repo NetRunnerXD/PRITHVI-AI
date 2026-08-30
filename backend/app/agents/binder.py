@@ -38,6 +38,10 @@ def looks_like_dump(text: str) -> bool:
         return False
     if re.search(r"\b(prose|table|metrics|decision)\s*\{", low):
         return True
+    if re.search(r"\bdata\s*\(\s*need\s*=", low):
+        return True
+    if re.match(r"^data\s*:?\s*[a-z_]+", low) and len(t) < 160:
+        return True
     return False
 
 
