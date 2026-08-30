@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5:3b"
     ollama_triage_model: str = "qwen2.5:0.5b"
     ollama_api_key: str = "ollama"
+    # Home PC reverse-connects with this token; cloud then dispatches Ollama jobs.
+    llm_worker_token: str = ""
+    llm_worker_timeout_s: float = 120.0
 
     # Hosted OpenAI-compat narrators. Keys stay on the server.
     llm_provider: str = "ollama"
