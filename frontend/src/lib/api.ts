@@ -237,7 +237,9 @@ export async function streamChat(
   onEvent: SseHandler,
   outputLocale?: string,
   regenerate?: boolean,
-  conversationId?: string
+  conversationId?: string,
+  llm?: string,
+  showEvidence?: boolean
 ): Promise<ChatMsg | null> {
   const r = await fetch(apiUrl("/chat"), {
     method: "POST",
@@ -250,6 +252,8 @@ export async function streamChat(
       history: history.slice(-6),
       regenerate: Boolean(regenerate),
       conversation_id: conversationId || undefined,
+      llm: llm || undefined,
+      show_evidence: Boolean(showEvidence),
     }),
   });
   if (!r.ok) throw new Error(`chat ${r.status}`);

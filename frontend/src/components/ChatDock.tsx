@@ -27,6 +27,7 @@ export function ChatDock() {
     pendingAsk,
     setPendingAsk,
     applyUi,
+    settings,
   } = useApp();
   const t = COPY[locale];
   const [text, setText] = useState("");
@@ -82,7 +83,9 @@ export function ChatDock() {
         },
         outputLocale,
         opts?.regenerate,
-        conversationId
+        conversationId,
+        settings.llmProvider,
+        settings.showEvidence
       );
       if (final) {
         if (opts?.regenerate) replaceLastAssistant(final);
@@ -110,7 +113,7 @@ export function ChatDock() {
           ) : null}
         </div>
         <div className="flex flex-wrap gap-1">
-          {(["en", "hi", "bn"] as Locale[]).map((l) => (
+          {(["en", "hi", "bn", "auto"] as const).map((l) => (
             <button
               key={l}
               type="button"
@@ -118,7 +121,7 @@ export function ChatDock() {
               onClick={() => setOutputLocale(l)}
               data-testid={`locale-${l}`}
             >
-              {l.toUpperCase()}
+              {l === "auto" ? t.replyAuto : l.toUpperCase()}
             </button>
           ))}
           <button

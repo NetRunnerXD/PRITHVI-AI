@@ -1,16 +1,34 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
-import { API_BASE } from "@/lib/config";
+import { API_BASE, apiUrl } from "@/lib/config";
 import { DEFAULT_SETTINGS, useApp } from "@/lib/store";
 import type { Density, TabId, ThemeId, UnitSys } from "@/types/dashboard";
 
 const THEMES: ThemeId[] = ["sand", "monsoon", "midnight", "ocean", "contrast"];
 const TABS: TabId[] = ["overview", "nowcast", "alerts", "map", "forecast", "predicted", "risks", "market", "advisor"];
 
+type LlmRow = { id: string; model: string; ok?: boolean };
+
 export function SettingsPanel() {
   const { locale, setLocale, outputLocale, setOutputLocale, settings, setSettings, resetSettings } = useApp();
   const t = COPY[locale];
+  const [llms, setLlms] = useState<LlmRow[]>([{ id: "ollama", model: "qwen2.5:3b" }]);
+  useEffect(() => {
+    let stop = false;
+    fetch(apiUrl("/health"))
+      .then((r) => r.json())
+      .then((body) => {
+        if (stop) return;
+        const rows = (body?.llm?.available || []) as LlmRow[];
+        if (rows.length) setLlms(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      stop = true;
+    };
+  }, []);
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <section className="neo space-y-3 p-4">
@@ -59,11 +77,35 @@ export function SettingsPanel() {
             </button>
           ))}
         </div>
+        <label className="block text-sm">
+          {t.advisorModel}
+          <select
+            className="neo-in mt-1 w-full px-3 py-2"
+            value={settings.llmProvider || "ollama"}
+            onChange={(e) => setSettings({ llmProvider: e.target.value })}
+          >
+            {llms.map((row) => (
+              <option key={row.id} value={row.id}>
+                {row.id} ({row.model})
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="text-xs text-neo-muted">{t.advisorModelHint}</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={Boolean(settings.showEvidence)}
+            onChange={(e) => setSettings({ showEvidence: e.target.checked })}
+          />
+          {t.showEvidence}
+        </label>
+        <p className="text-xs text-neo-muted">{t.showEvidenceHint}</p>
         <p className="text-xs text-neo-muted">{t.replyIn}</p>
         <div className="flex gap-2">
-          {(["en", "hi", "bn"] as Locale[]).map((l) => (
+          {(["en", "hi", "bn", "auto"] as const).map((l) => (
             <button key={l} className={`neo-btn flex-1 ${outputLocale === l ? "neo-btn-on" : ""}`} onClick={() => setOutputLocale(l)}>
-              {l.toUpperCase()}
+              {l === "auto" ? t.replyAuto : l.toUpperCase()}
             </button>
           ))}
         </div>

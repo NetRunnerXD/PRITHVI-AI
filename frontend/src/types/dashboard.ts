@@ -165,6 +165,23 @@ export type Prescription = {
   who?: string;
 };
 
+export type HourlySlot = {
+  t: string;
+  date: string;
+  hour: string;
+  precip_mm?: number | null;
+  precip_prob_pct?: number | null;
+  temp_c?: number | null;
+  wind_kmh?: number | null;
+  wind_gust_kmh?: number | null;
+  wind_dir_deg?: number | null;
+  rh_pct?: number | null;
+  cloud_pct?: number | null;
+  weather_code?: number | null;
+  sky_label?: string | null;
+  visibility_km?: number | null;
+};
+
 export type OutlookDay = {
   date: string;
   precip_mm: number;
@@ -231,6 +248,7 @@ export type DashboardSnapshot = {
     irrigate_dates?: string[];
     flood_watch_dates?: string[];
     outlook_days?: OutlookDay[];
+    hourly?: HourlySlot[];
     model: string;
   };
   prescriptive: { warnings: EarlyWarning[]; actions: Prescription[] };

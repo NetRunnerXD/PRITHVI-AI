@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import type { ChatMsg, DashboardSnapshot, Density, Location, TabId, ThemeId, UiAction, UnitSys } from "@/types/dashboard";
 import type { Locale } from "@/i18n/copy";
+
+export type ReplyLocale = Locale | "auto";
 import { fetchDashboard } from "./api";
 
 const FAV_KEY = "rituchakra.favs";
@@ -17,6 +19,8 @@ export type AppSettings = {
   defaultTab: TabId;
   showHints: boolean;
   locale?: Locale;
+  llmProvider?: string;
+  showEvidence?: boolean;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -29,6 +33,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultTab: "overview",
   showHints: false,
   locale: "en",
+  llmProvider: "ollama",
+  showEvidence: false,
 };
 
 export function readSettings(): AppSettings {
@@ -79,7 +85,7 @@ type State = {
   highlight: string | null;
   mapFocus: { center: [number, number]; zoom?: number } | null;
   windowPack: Record<string, unknown> | null;
-  outputLocale: Locale;
+  outputLocale: ReplyLocale;
   sidebarOpen: boolean;
   pendingAsk: string | null;
   favorites: Location[];
@@ -90,7 +96,7 @@ type State = {
   setSidebarOpen: (v: boolean) => void;
   setPendingAsk: (q: string | null) => void;
   setLocale: (l: Locale) => void;
-  setOutputLocale: (l: Locale) => void;
+  setOutputLocale: (l: ReplyLocale) => void;
   setTab: (t: TabId) => void;
   setLocation: (l: Location) => Promise<void>;
   toggleFavorite: (l: Location) => void;
@@ -166,7 +172,8 @@ export const useApp = create<State>((set, get) => ({
     const settings = { ...get().settings, locale };
     if (typeof window !== "undefined") window.localStorage.setItem(SET_KEY, JSON.stringify(settings));
     applyTheme(settings, locale);
-    set({ locale, outputLocale: locale, settings });
+    const keepAuto = get().outputLocale === "auto";
+    set({ locale, outputLocale: keepAuto ? "auto" : locale, settings });
   },
   setOutputLocale: (outputLocale) => set({ outputLocale }),
   setTab: (tab) => set({ tab }),
