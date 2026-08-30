@@ -1,22 +1,65 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+
+const COL = {
+  ensemble: "#146b7a",
+  blend: "#8e44ad",
+  om: "#c45c26",
+  ai: "#d35400",
+  nwp: "#2c7fb8",
+};
+
+function familyOf(id: string): "ai" | "nwp" | "blend" | "ensemble" | "om" {
+  const s = id.toLowerCase();
+  if (s === "ensemble") return "ensemble";
+  if (s === "moe" || s === "blend") return "blend";
+  if (s === "om" || s === "open-meteo" || s === "website") return "om";
+  if (["graphcast", "pangu", "fourcast", "aifs"].some((k) => s.includes(k))) return "ai";
+  return "nwp";
+}
+
+function strokeOf(id: string): string {
+  const f = familyOf(id);
+  if (f === "ensemble") return COL.ensemble;
+  if (f === "blend") return COL.blend;
+  if (f === "om") return COL.om;
+  if (f === "ai") return COL.ai;
+  return COL.nwp;
+}
+
+function familyLabel(id: string): string {
+  const f = familyOf(id);
+  if (f === "ensemble") return "Ensemble (IR + NWP)";
+  if (f === "blend") return "Blend (gated mix)";
+  if (f === "om") return "Open-Meteo / website";
+  if (f === "ai") return "AI forecast";
+  return "NWP (physics)";
+}
 import { COPY, type Locale } from "@/i18n/copy";
-import type { DashboardSnapshot, PredictionPack } from "@/types/dashboard";
+import type { DashboardSnapshot, PredictionPack, VeraPack } from "@/types/dashboard";
+const SatProcessMap = dynamic(() => import("./SatProcessMap").then((m) => m.SatProcessMap), { ssr: false });
 
 export function PredictionsPanel({ dash, locale }: { dash: DashboardSnapshot; locale: Locale }) {
   const t = COPY[locale];
   const [src, setSrc] = useState<"ours" | "trusted">("ours");
+  const [sec, setSec] = useState<"hourly" | "sat" | "blend" | "extremes" | "compare" | "perf" | "outlook">("hourly");
   const pack: PredictionPack | undefined = src === "ours" ? dash.predictions?.ours : dash.predictions?.trusted;
   const other = src === "ours" ? dash.predictions?.trusted : dash.predictions?.ours;
   const chart = useMemo(() => {
@@ -34,8 +77,39 @@ export function PredictionsPanel({ dash, locale }: { dash: DashboardSnapshot; lo
     return <p className="text-sm text-neo-muted">{t.loading}</p>;
   }
 
+  const vera = dash.predictions?.vera;
+  const secs = [
+    ["hourly", t.secHourly],
+    ["sat", t.secSat],
+    ["blend", t.secBlend],
+    ["extremes", t.secExtremes],
+    ["compare", t.secCompare],
+    ["perf", t.secPerf],
+    ["outlook", t.secOutlook],
+  ] as const;
+
   return (
     <div className="space-y-4">
+      <nav className="neo sticky top-0 z-20 flex flex-wrap gap-1 p-2">
+        {secs.map(([id, label]) => (
+          <button key={id} type="button" className={`neo-btn text-[11px] ${sec === id ? "neo-btn-on" : ""}`} onClick={() => setSec(id)}>
+            {label}
+          </button>
+        ))}
+      </nav>
+      {vera && sec === "hourly" ? <HourlySec vera={vera} t={t} /> : null}
+      {vera && sec === "sat" ? (
+        <section className="neo p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.secSat}</p>
+          <SatProcessMap vera={vera} lat={dash.location.lat} lon={dash.location.lon} />
+        </section>
+      ) : null}
+      {vera && sec === "blend" ? <BlendSec vera={vera} t={t} /> : null}
+      {vera && sec === "extremes" ? <ExtremesSec vera={vera} /> : null}
+      {vera && sec === "compare" ? <CompareSec vera={vera} /> : null}
+      {vera && sec === "perf" ? <PerfSec vera={vera} t={t} /> : null}
+      {sec === "outlook" ? (
+      <>
       <div className="neo flex flex-wrap items-center gap-2 p-3">
         <button className={`neo-btn ${src === "ours" ? "neo-btn-on" : ""}`} onClick={() => setSrc("ours")}>
           {t.ours}
@@ -149,6 +223,199 @@ export function PredictionsPanel({ dash, locale }: { dash: DashboardSnapshot; lo
           </tbody>
         </table>
       </section>
+      </>
+      ) : null}
+    </div>
+  );
+}
+
+function VeraBoard({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
+  const [node, setNode] = useState("cv");
+  const pdf = (vera.fusion?.pdf_x || []).map((x, i) => ({ x, y: vera.fusion?.pdf_y?.[i] || 0 }));
+  const hourly = (vera.temporal?.hourly_0_48 || []).map((v, i) => ({ h: i, mm: v }));
+  const seam = vera.temporal?.seamless || [];
+  const w = Object.entries(vera.gate?.weights || {}).map(([k, v]) => ({ k, v: Math.round(v * 100) }));
+  const frames = vera.cv?.frames || [];
+
+  return (
+    <div className="space-y-4">
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.veraTitle}</p>
+        <p className="text-sm font-semibold">{vera.title}</p>
+        <div className="mt-3 flex flex-wrap gap-1">
+          {(vera.graph?.nodes || []).map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              className={`neo-btn text-[11px] ${node === n.id ? "neo-btn-on" : ""}`}
+              onClick={() => setNode(n.id)}
+            >
+              {n.title}
+            </button>
+          ))}
+        </div>
+        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-neo-muted">
+          {JSON.stringify((vera.node_detail || {})[node] ?? vera.cv?.input?.note, null, 2)}
+        </pre>
+      </section>
+      {(vera.api_needed || []).length ? (
+        <section className="neo space-y-2 p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">API keys to add</p>
+          {(vera.api_needed || []).map((a) => (
+            <div key={a.id} className="neo-in p-3 text-xs">
+              <p className="font-semibold">
+                {a.id}
+                {a.locked ? " · locked" : ""}
+              </p>
+              {a.env?.length ? <p className="font-mono text-[11px]">{a.env.join(", ")}</p> : null}
+              <p className="mt-1 text-neo-muted">{a.prompt}</p>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.veraSat}</p>
+        <p className="text-[11px] text-neo-muted">
+          {vera.cv?.source} · N={vera.cv?.input?.n} C={vera.cv?.input?.c} · Tb {vera.cv?.tb_k ?? "—"} K · cells {vera.cv?.n_cells ?? 0}
+        </p>
+        <div className="mt-3 flex gap-2 overflow-x-auto">
+          {frames.map((f, i) => (
+            <div key={i} className="w-28 shrink-0">
+              {f.heatmap ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={f.heatmap} alt="INSAT IR" className="h-28 w-28 rounded-lg object-cover" />
+              ) : f.url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={f.url} alt="INSAT IR" className="h-28 w-28 rounded-lg object-cover" />
+              ) : (
+                <div className="flex h-28 w-28 items-center justify-center rounded-lg bg-black/20 text-[10px]">IR</div>
+              )}
+              <p className="mt-1 font-mono text-[10px] text-neo-muted">{f.channel}</p>
+            </div>
+          ))}
+          {vera.cv?.insat_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={vera.cv.insat_url} alt="INSAT full disk IR" className="h-28 w-40 rounded-lg object-cover" />
+          ) : null}
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-4 font-mono text-[11px]">
+          <div className="neo-in p-2">CNN {JSON.stringify(vera.cv?.stage1_cnn?.shape)}</div>
+          <div className="neo-in p-2">ConvLSTM {JSON.stringify(vera.cv?.stage2_convlstm?.shape)}</div>
+          <div className="neo-in p-2">U-Net {JSON.stringify(vera.cv?.stage3_unet?.spatial_shape)}</div>
+          <div className="neo-in p-2">
+            CI {String(vera.cv?.derived?.convective_initiation)} · {String(vera.cv?.derived?.precip_est_mmh)} mm/h
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <section className="neo p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.veraHist}</p>
+          <p className="text-xs">
+            Clim {vera.historical?.climatology?.mean ?? "—"} mm · p95 {vera.historical?.climatology?.p95 ?? "—"} · regime{" "}
+            {vera.regime?.top}
+          </p>
+          <ul className="mt-2 space-y-1 text-xs">
+            {(vera.historical?.analogues || []).slice(0, 5).map((a, i) => (
+              <li key={i}>
+                {a.date || "analogue"} · {a.mm} mm · {a.synoptic}
+              </li>
+            ))}
+          </ul>
+        </section>
+        <section className="neo p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.veraGate}</p>
+          {vera.gate?.weight_map_rgb ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={vera.gate.weight_map_rgb} alt="RGB weight map" className="mb-2 h-24 w-24 rounded-lg" />
+          ) : null}
+          <div className="h-40">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={w}>
+                <CartesianGrid stroke="#cfe0dd" vertical={false} />
+                <XAxis dataKey="k" stroke="#4d6b70" fontSize={9} interval={0} angle={-25} height={48} />
+                <YAxis stroke="#4d6b70" fontSize={10} width={28} />
+                <Tooltip />
+                <Bar dataKey="v" fill="#146b7a" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <section className="neo p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.veraFusion}</p>
+          <p className="text-xs">
+            q10 {vera.fusion?.q10} · q25 {vera.fusion?.q25} · q50 {vera.fusion?.q50} · q75 {vera.fusion?.q75} · q90{" "}
+            {vera.fusion?.q90} mm · P(≥64.5){" "}
+            {vera.fusion?.extremes?.p_ge_64_5} · P(≥115.6) {vera.fusion?.extremes?.p_ge_115_6}
+          </p>
+          <div className="mt-2 h-40">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={pdf}>
+                <CartesianGrid stroke="#cfe0dd" vertical={false} />
+                <XAxis dataKey="x" stroke="#4d6b70" fontSize={10} />
+                <YAxis stroke="#4d6b70" fontSize={10} width={32} />
+                <Tooltip />
+                <Area dataKey="y" fill="#4aa3b5" stroke="#146b7a" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+        <section className="neo p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.veraTime}</p>
+          <div className="grid grid-cols-3 gap-2 text-[11px]">
+            {Object.entries(vera.temporal?.windows || {}).map(([k, v]) => (
+              <div key={k} className="neo-in p-2">
+                <p className="font-semibold">{k}</p>
+                <p>{v.mm} mm</p>
+                <p className="text-neo-muted">{v.dominant}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 h-36">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={seam}>
+                <XAxis dataKey="lead_h" stroke="#4d6b70" fontSize={10} />
+                <YAxis stroke="#4d6b70" fontSize={10} width={28} />
+                <Tooltip />
+                <Line dataKey="sat_w" stroke="#146b7a" dot={false} />
+                <Line dataKey="nwp_w" stroke="#c45c26" dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      </div>
+
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Hourly 0–48 h</p>
+        <div className="h-44">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={hourly}>
+              <CartesianGrid stroke="#cfe0dd" vertical={false} />
+              <XAxis dataKey="h" stroke="#4d6b70" fontSize={10} />
+              <YAxis stroke="#4d6b70" fontSize={10} width={28} />
+              <Tooltip />
+              <Area dataKey="mm" fill="#146b7a" stroke="#146b7a" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.veraMlops}</p>
+        <p className="text-xs">
+          registry v{vera.mlops?.registry?.current?.version ?? "—"} · drift {String(vera.mlops?.drift?.flag)} z=
+          {vera.mlops?.drift?.z ?? "—"}
+        </p>
+        <ol className="mt-2 list-decimal pl-4 text-xs">
+          {(vera.mlops?.loop || []).map((s) => (
+            <li key={s}>{s}</li>
+          ))}
+        </ol>
+      </section>
     </div>
   );
 }
@@ -159,6 +426,347 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub?: string
       <p className="text-[10px] uppercase tracking-widest text-neo-muted">{label}</p>
       <p className="font-mono text-2xl font-bold text-neo-accent">{value}</p>
       {sub ? <p className="text-[11px] text-neo-muted">{sub}</p> : null}
+    </div>
+  );
+}
+
+function HourlySec({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
+  const rows = (vera.hourly || []).filter((r) => (r.lead_h ?? 0) < 24);
+  const chart = rows.map((r) => ({
+    h: r.lead_h ?? 0,
+    t: (r.t || "").slice(11, 16),
+    ensemble: r.ensemble,
+    blend: r.moe,
+    om: r.om,
+  }));
+  return (
+    <section className="neo space-y-3 p-4">
+      <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.secHourly}</p>
+      <p className="text-xs text-neo-muted">Next 24 hours (IST). Ensemble = satellite + NWP mix. Blend = gated member mix. Open-Meteo = website reference.</p>
+      <div className="flex flex-wrap gap-2 text-[10px]">
+        <span style={{ color: COL.ensemble }}>● Ensemble</span>
+        <span style={{ color: COL.blend }}>● Blend</span>
+        <span style={{ color: COL.om }}>● Open-Meteo</span>
+      </div>
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chart}>
+            <CartesianGrid stroke="#cfe0dd" vertical={false} />
+            <XAxis dataKey="t" stroke="#4d6b70" fontSize={10} />
+            <YAxis stroke="#4d6b70" fontSize={10} width={32} />
+            <Tooltip />
+            <Legend />
+            <Line type="monotone" dataKey="ensemble" name="Ensemble" stroke={COL.ensemble} strokeWidth={2.5} dot={false} />
+            <Line type="monotone" dataKey="blend" name="Blend" stroke={COL.blend} strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="om" name="Open-Meteo" stroke={COL.om} strokeDasharray="4 3" strokeWidth={2} dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="overflow-auto">
+        <table className="w-full text-left text-[11px]">
+          <thead className="text-neo-muted">
+            <tr>
+              <th className="py-1">Lead h</th>
+              <th>Time</th>
+              <th style={{ color: COL.ensemble }}>Ensemble mm</th>
+              <th style={{ color: COL.blend }}>Blend mm</th>
+              <th style={{ color: COL.om }}>Open-Meteo mm</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={`${r.t}-${r.lead_h}`} className="border-t border-neo-line">
+                <td className="py-1 font-mono">{r.lead_h}</td>
+                <td className="font-mono">{(r.t || "").slice(11, 16)}</td>
+                <td className="font-mono" style={{ color: COL.ensemble }}>{r.ensemble}</td>
+                <td className="font-mono" style={{ color: COL.blend }}>{r.moe ?? "—"}</td>
+                <td className="font-mono" style={{ color: COL.om }}>{r.om ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function BlendSec({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
+  const w = Object.entries(vera.gate?.weights || {}).map(([k, v]) => ({
+    k,
+    v: Math.round(v * 100),
+    conf: vera.gate?.confidence?.[k],
+    family: vera.gate?.family?.[k] || familyOf(k),
+  }));
+  return (
+    <div className="space-y-3">
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.secBlend}</p>
+        <p className="text-[11px] text-neo-muted">Teal NWP · orange AI. Confidence is how sure the gate is about each share, not a rain-gauge score.</p>
+        <div className="h-44">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={w}>
+              <CartesianGrid stroke="#cfe0dd" vertical={false} />
+              <XAxis dataKey="k" stroke="#4d6b70" fontSize={9} interval={0} angle={-25} height={48} />
+              <YAxis stroke="#4d6b70" fontSize={10} width={28} />
+              <Bar dataKey="v" radius={[6, 6, 0, 0]}>
+                {w.map((d) => (
+                  <Cell key={d.k} fill={d.family === "ai" ? COL.ai : COL.nwp} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {w.map((d) => (
+            <div key={d.k} className="neo-in p-3">
+              <p className="text-[10px] uppercase tracking-widest" style={{ color: d.family === "ai" ? COL.ai : COL.nwp }}>
+                {familyLabel(d.k)}
+              </p>
+              <p className="font-mono text-sm font-bold">{d.k}</p>
+              <p className="text-xs">Share {d.v}% · confidence {d.conf ?? "—"}%</p>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Why these weights</p>
+        <ul className="mt-2 space-y-3 text-xs leading-relaxed">
+          {Object.entries(vera.gate?.reasons || {}).map(([k, v]) => (
+            <li key={k} className="border-t border-neo-line pt-2">
+              <span className="font-semibold" style={{ color: strokeOf(k) }}>{k}</span>
+              <p className="mt-1 text-neo-muted">{v}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+function ExtremesSec({ vera }: { vera: VeraPack }) {
+  const x = vera.extremes;
+  const cards = [
+    { k: "Heat", v: x?.heat_wave },
+    { k: "Wind", v: x?.high_wind },
+    { k: "Heavy rain", v: x?.heavy_rain },
+  ];
+  const rain = (x?.heavy_rain?.hourly_mm || []).map((mm, i) => ({
+    h: i,
+    rain: mm,
+    temp: x?.heat_wave?.hourly_temp_c?.[i],
+    wind: x?.high_wind?.hourly_kmh?.[i],
+  }));
+  const cmp = x?.compare?.hourly || [];
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 md:grid-cols-3">
+        {cards.map((c) => (
+          <div key={c.k} className="neo p-4">
+            <p className="text-[10px] uppercase tracking-widest text-neo-muted">{c.k}</p>
+            <p className="text-lg font-bold text-neo-accent">{c.v?.level || "—"}</p>
+            <p className="font-mono text-sm">chance {c.v?.p != null ? Math.round((c.v.p || 0) * 100) : "—"}%</p>
+            <p className="mt-1 text-[11px] text-neo-muted">{c.v?.rule}</p>
+          </div>
+        ))}
+      </div>
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Next 48 h (website)</p>
+        <div className="h-48">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={rain}>
+              <CartesianGrid stroke="#cfe0dd" vertical={false} />
+              <XAxis dataKey="h" fontSize={10} stroke="#4d6b70" />
+              <YAxis fontSize={10} stroke="#4d6b70" width={28} />
+              <Tooltip />
+              <Legend />
+              <Line dataKey="rain" stroke={COL.om} dot={false} />
+              <Line dataKey="temp" stroke="#c45c26" dot={false} />
+              <Line dataKey="wind" stroke={COL.nwp} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+      <section className="neo overflow-auto p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Blend vs weather website</p>
+        <p className="text-[11px] text-neo-muted">{x?.compare?.note}</p>
+        <div className="mt-2 h-44">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={cmp}>
+              <CartesianGrid stroke="#cfe0dd" vertical={false} />
+              <XAxis dataKey="h" fontSize={10} stroke="#4d6b70" />
+              <YAxis fontSize={10} stroke="#4d6b70" width={28} />
+              <Tooltip />
+              <Legend />
+              <Line dataKey="blend_mm" name="Blend rain" stroke={COL.blend} dot={false} />
+              <Line dataKey="website_mm" name="Website rain" stroke={COL.om} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <table className="mt-2 w-full text-left text-[11px]">
+          <thead className="text-neo-muted">
+            <tr>
+              <th className="py-1">h</th>
+              <th style={{ color: COL.blend }}>Blend mm</th>
+              <th style={{ color: COL.om }}>Website mm</th>
+              <th>Website °C</th>
+              <th>Website km/h</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cmp.map((r) => (
+              <tr key={r.h} className="border-t border-neo-line">
+                <td className="py-1 font-mono">{r.h}</td>
+                <td className="font-mono">{r.blend_mm ?? "—"}</td>
+                <td className="font-mono">{r.website_mm ?? "—"}</td>
+                <td className="font-mono">{r.website_temp_c ?? "—"}</td>
+                <td className="font-mono">{r.website_wind_kmh ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+}
+
+function CompareSec({ vera }: { vera: VeraPack }) {
+  const hours = (vera.hourly || []).filter((r) => (r.lead_h ?? 0) < 24);
+  const ids = Object.keys(hours[0]?.members || {});
+  const [on, setOn] = useState<string[]>(["ensemble", "blend", "om", ...ids]);
+  const data = hours.map((r) => ({ t: (r.t || "").slice(11, 16), ensemble: r.ensemble, blend: r.moe, om: r.om, ...(r.members || {}) }));
+  const keys = ["ensemble", "blend", "om", ...ids];
+  function tog(id: string) {
+    setOn((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  }
+  return (
+    <section className="neo p-4">
+      <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Compare 24 h</p>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {keys.map((id) => (
+          <button key={id} type="button" className={`neo-btn text-[11px] ${on.includes(id) ? "neo-btn-on" : ""}`} onClick={() => tog(id)} style={{ borderColor: strokeOf(id) }}>
+            {id === "blend" ? "Blend" : id === "om" ? "Open-Meteo" : id} · {familyLabel(id)}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data}>
+            <CartesianGrid stroke="#cfe0dd" vertical={false} />
+            <XAxis dataKey="t" fontSize={10} stroke="#4d6b70" />
+            <YAxis fontSize={10} stroke="#4d6b70" width={32} />
+            <Tooltip />
+            <Legend />
+            {keys.filter((id) => on.includes(id)).map((id) => (
+              <Line key={id} dataKey={id} stroke={strokeOf(id)} dot={false} strokeWidth={id === "ensemble" || id === "blend" ? 2.5 : 1.4} />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+  );
+}
+
+function PerfSec({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
+  const [mode, setMode] = useState<"live" | "cv" | "hist">("live");
+  const p = vera.performance;
+  const agr = p?.agreement;
+  const ensA = agr?.ensemble;
+  const moeA = agr?.moe;
+  const mem = Object.entries(agr?.members || p?.scores?.members || {}).map(([k, v]) => ({ k, mae: v.mae, family: familyOf(k) }));
+  const bars = [
+    { k: "ensemble", mae: ensA?.mae, family: "ensemble" },
+    { k: "blend", mae: moeA?.mae, family: "blend" },
+    ...mem,
+  ];
+  const hist = (p?.history || []).map((h) => ({ d: h.date.slice(5), ensemble: h.ensemble_mae, ...h.members }));
+  const hh = (p?.hourly_history || []).map((r) => ({
+    t: (r.t || "").slice(5, 16),
+    ensemble: r.ensemble,
+    blend: r.moe,
+    om: r.om,
+  }));
+  return (
+    <div className="space-y-3">
+      <div className="neo flex flex-wrap gap-2 p-3">
+        {(["live", "cv", "hist"] as const).map((m) => (
+          <button key={m} type="button" className={`neo-btn ${mode === m ? "neo-btn-on" : ""}`} onClick={() => setMode(m)}>
+            {m === "live" ? t.perfLive : m === "cv" ? t.perfCv : t.perfHist}
+          </button>
+        ))}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Kpi label="Ensemble vs website MAE" value={ensA?.mae != null ? `${ensA.mae}` : "—"} sub={`${ensA?.n ?? agr?.n ?? 0} hours`} />
+        <Kpi label="Blend vs website MAE" value={moeA?.mae != null ? `${moeA.mae}` : "—"} sub="gated mix vs Open-Meteo" />
+        <Kpi
+          label={p?.independent_obs ? "Skill vs website (gauges/IMERG)" : "Independent skill"}
+          value={p?.independent_obs && p?.scores?.skill_vs_om != null ? `${p.scores.skill_vs_om}` : "—"}
+          sub={p?.note || "IMERG/HEM needed for true skill"}
+        />
+      </div>
+      {mode === "live" ? (
+        <section className="neo p-4">
+          <p className="text-[11px] text-neo-muted">Lower MAE = closer to Open-Meteo. Orange = AI, blue = NWP, purple = blend, teal = ensemble. Not a rain-gauge score.</p>
+          <div className="mt-2 h-52">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={bars}>
+                <CartesianGrid stroke="#cfe0dd" vertical={false} />
+                <XAxis dataKey="k" fontSize={9} interval={0} angle={-20} height={48} stroke="#4d6b70" />
+                <YAxis fontSize={10} width={32} stroke="#4d6b70" />
+                <Tooltip />
+                <Bar dataKey="mae" radius={[6, 6, 0, 0]}>
+                  {bars.map((d) => (
+                    <Cell key={d.k} fill={strokeOf(d.k)} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      ) : null}
+      {mode === "cv" ? (
+        <section className="neo p-4">
+          <p className="text-sm font-semibold">Walk-forward (frozen weights)</p>
+          <p className="text-xs text-neo-muted">{p?.cv?.method || p?.cv?.note}</p>
+          <p className="mt-2 font-mono text-2xl text-neo-accent">MAE {p?.cv?.mae_mean ?? "—"} ± {p?.cv?.mae_std ?? "—"}</p>
+          <p className="text-xs">{p?.cv?.folds ?? 0} folds</p>
+        </section>
+      ) : null}
+      {mode === "hist" ? (
+        <div className="space-y-3">
+          <section className="neo p-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Hourly history</p>
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={hh}>
+                  <CartesianGrid stroke="#cfe0dd" vertical={false} />
+                  <XAxis dataKey="t" fontSize={9} stroke="#4d6b70" />
+                  <YAxis fontSize={10} width={32} stroke="#4d6b70" />
+                  <Tooltip />
+                  <Legend />
+                  <Line dataKey="ensemble" stroke={COL.ensemble} strokeWidth={2} dot={false} />
+                  <Line dataKey="blend" stroke={COL.blend} strokeWidth={2} dot={false} />
+                  <Line dataKey="om" stroke={COL.om} strokeDasharray="4 3" dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+          <section className="neo p-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Daily MAE history</p>
+            <div className="h-44">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={hist}>
+                  <CartesianGrid stroke="#cfe0dd" vertical={false} />
+                  <XAxis dataKey="d" fontSize={10} stroke="#4d6b70" />
+                  <YAxis fontSize={10} width={32} stroke="#4d6b70" />
+                  <Tooltip />
+                  <Legend />
+                  <Line dataKey="ensemble" stroke={COL.ensemble} strokeWidth={2.5} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
