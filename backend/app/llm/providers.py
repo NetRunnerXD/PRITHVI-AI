@@ -84,4 +84,8 @@ def resolve(requested: str | None = None, s: Settings | None = None) -> Provider
 def fallback_ids(s: Settings | None = None) -> list[str]:
     s = s or get_settings()
     raw = [x.strip().lower() for x in (s.llm_fallback or "").split(",") if x.strip()]
-    return [x for x in raw if spec(x, s) and spec(x, s).keyed]
+    out = [x for x in raw if spec(x, s) and spec(x, s).keyed]
+    groq = spec("groq", s)
+    if groq and groq.keyed and "groq" not in out:
+        out.append("groq")
+    return out

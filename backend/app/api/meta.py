@@ -80,6 +80,11 @@ async def health():
         "model": settings.ollama_model,
         "home": hub.status(),
     }
+    llm["groq"] = {
+        "keyed": bool((settings.groq_api_key or "").strip()),
+        "model": settings.groq_model,
+        "ok": bool(ollama_ok and str(ollama_msg).startswith("groq")),
+    }
     return {
         **service_card(),
         "default_location": loc.model_dump(),
@@ -91,6 +96,7 @@ async def health():
             "home": hub.status(),
         },
         "keys": {
+            "groq_api_key": bool((settings.groq_api_key or "").strip()),
             "imd_api_key": bool(settings.imd_api_key),
             "aikosh_api_key": bool(settings.aikosh_api_key),
             "data_gov_in_api_key": bool(settings.data_gov_in_api_key),

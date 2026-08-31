@@ -127,7 +127,7 @@ $env:PRITHVI_API="https://your-api.example"
 python scripts/ollama_worker.py
 ```
 
-`GET /api/health` then shows `ollama.home.online: true` and `detail: home-online:…`. When this process stops, chat uses `LLM_FALLBACK` (e.g. Groq) if configured.
+`GET /api/health` then shows `ollama.home.online: true` and `detail: home-online:…`. When this process stops, chat uses Groq if `GROQ_API_KEY` is set (or `LLM_FALLBACK`). Snapshots refresh every 10 minutes and stay valid up to 1 hour. The dashboard asks for device GPS and falls back to Haldia.
 
 ---
 

@@ -29,4 +29,10 @@ services:
       - key: LLM_WORKER_TOKEN
         sync: false
       - key: LLM_FALLBACK
+        value: groq
+      - key: GROQ_API_KEY
         sync: false
+      - key: SNAPSHOT_TTL_S
+        value: "600"
+      - key: SNAPSHOT_SWR_S
+        value: "3600"

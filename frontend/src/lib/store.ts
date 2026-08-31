@@ -4,11 +4,12 @@ import { resolveTab } from "@/types/dashboard";
 import type { Locale } from "@/i18n/copy";
 
 export type ReplyLocale = Locale | "auto";
-import { fetchDashboard } from "./api";
+import { fetchDashboard, reverseGeocode } from "./api";
 
 const FAV_KEY = "prithvi.favs";
 const REC_KEY = "prithvi.recent";
 const SET_KEY = "prithvi.settings";
+const LOC_KEY = "prithvi.loc";
 
 export type AppSettings = {
   theme: ThemeId;
@@ -30,7 +31,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   density: "comfortable",
   reduceMotion: false,
   fontScale: 100,
-  refreshSec: 300,
+  refreshSec: 600,
   defaultTab: "home",
   showHints: false,
   locale: "en",
@@ -73,6 +74,36 @@ function readList(key: string): Location[] {
 function writeList(key: string, rows: Location[]) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(key, JSON.stringify(rows.slice(0, 8)));
+}
+
+function readSavedLoc(): Location | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(LOC_KEY);
+    return raw ? (JSON.parse(raw) as Location) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSavedLoc(loc: Location) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(LOC_KEY, JSON.stringify(loc));
+}
+
+function askGps(): Promise<Location | null> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        void reverseGeocode(pos.coords.latitude, pos.coords.longitude)
+          .then((loc) => resolve(loc))
+          .catch(() => resolve(null));
+      },
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
+    );
+  });
 }
 
 type State = {
@@ -178,6 +209,7 @@ export const useApp = create<State>((set, get) => ({
     set({ favorites: next });
   },
   setLocation: async (location) => {
+    writeSavedLoc(location);
     set({ location, status: "loading" });
     try {
       const dashboard = await fetchDashboard(location);
@@ -197,7 +229,11 @@ export const useApp = create<State>((set, get) => ({
   refresh: async () => {
     set({ status: "loading" });
     try {
-      const dashboard = await fetchDashboard(get().location || undefined);
+      let loc = get().location || readSavedLoc();
+      if (!loc) loc = await askGps();
+      if (loc) writeSavedLoc(loc);
+      const dashboard = await fetchDashboard(loc || undefined);
+      writeSavedLoc(dashboard.location);
       set({
         dashboard,
         location: dashboard.location,
@@ -211,7 +247,7 @@ export const useApp = create<State>((set, get) => ({
   },
   quietRefresh: async () => {
     try {
-      const dashboard = await fetchDashboard(get().location || undefined);
+      const dashboard = await fetchDashboard(get().location || readSavedLoc() || undefined);
       set({ dashboard, location: dashboard.location, status: "ready" });
     } catch (e) {
       if (!get().dashboard) set({ status: "error", error: String(e) });
