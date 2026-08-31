@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     # Home PC reverse-connects with this token; cloud then dispatches Ollama jobs.
     llm_worker_token: str = ""
     llm_worker_timeout_s: float = 120.0
+    om_worker_token: str = ""
+    open_meteo_api_key: str | None = None
+    open_meteo_cooldown_s: float = 1200.0
+    open_meteo_ttl_s: float = 600.0
+    open_meteo_swr_s: float = 2700.0
+    snapshot_ttl_s: float = 600.0
+    snapshot_swr_s: float = 3600.0
 
     # Hosted OpenAI-compat narrators. Keys stay on the server.
     llm_provider: str = "ollama"

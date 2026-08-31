@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import Any
 
 from app import cache
-from app.config import ROOT
+from app.config import ROOT, get_settings
 from app.providers.http import client
+from app.providers.om_hub import OmWorkerOffline
+from app.providers.om_hub import hub as om_hub
 
 FORECAST = "https://api.open-meteo.com/v1/forecast"
 _GOOD = ROOT / ".cache" / "om_last"
@@ -15,6 +18,81 @@ AIR = "https://air-quality-api.open-meteo.com/v1/air-quality"
 MARINE = "https://marine-api.open-meteo.com/v1/marine"
 ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 GEO = "https://geocoding-api.open-meteo.com/v1/search"
+
+_KINDS = {
+    "forecast": FORECAST,
+    "flood": FLOOD,
+    "air": AIR,
+    "marine": MARINE,
+    "archive": ARCHIVE,
+    "geocode": GEO,
+}
+_CUSTOMER = {
+    "forecast": "https://customer-api.open-meteo.com/v1/forecast",
+    "flood": "https://customer-flood-api.open-meteo.com/v1/flood",
+    "air": "https://customer-air-quality-api.open-meteo.com/v1/air-quality",
+    "marine": "https://customer-marine-api.open-meteo.com/v1/marine",
+    "archive": "https://customer-archive-api.open-meteo.com/v1/archive",
+    "geocode": "https://customer-geocoding-api.open-meteo.com/v1/search",
+}
+_cooldown_until = 0.0
+
+
+def circuit_open() -> bool:
+    return time.time() < _cooldown_until
+
+
+def trip_circuit() -> None:
+    global _cooldown_until
+    s = get_settings()
+    _cooldown_until = time.time() + max(60.0, float(s.open_meteo_cooldown_s or 1200))
+
+
+def reset_circuit() -> None:
+    global _cooldown_until
+    _cooldown_until = 0.0
+
+
+def _kind_url(kind: str) -> str:
+    key = (get_settings().open_meteo_api_key or "").strip()
+    if key:
+        return _CUSTOMER[kind]
+    return _KINDS[kind]
+
+
+def _with_key(params: dict[str, Any]) -> dict[str, Any]:
+    key = (get_settings().open_meteo_api_key or "").strip()
+    if not key:
+        return params
+    out = dict(params)
+    out["apikey"] = key
+    return out
+
+
+async def om_json(kind: str, params: dict[str, Any]) -> dict[str, Any]:
+    """GET an Open-Meteo endpoint; on 429 use device relays, else last caller handles miss."""
+    if kind not in _KINDS:
+        raise ValueError(kind)
+    url = _kind_url(kind)
+    q = _with_key(params)
+    if not circuit_open():
+        r = await client().get(url, params=q)
+        if r.status_code == 429:
+            trip_circuit()
+        elif r.status_code < 400:
+            data = r.json()
+            return data if isinstance(data, dict) else {}
+        else:
+            r.raise_for_status()
+    if om_hub.online():
+        try:
+            pack = await om_hub.submit({"kind": kind, "url": url, "params": q}, timeout=25.0)
+            body = pack.get("json") if isinstance(pack, dict) else None
+            if isinstance(body, dict):
+                return body
+        except OmWorkerOffline:
+            pass
+    raise RuntimeError("open-meteo-429")
 
 # Deterministic Open-Meteo members for hybrid blending (no local GPU).
 BLEND_MODELS: tuple[tuple[str, str], ...] = (
@@ -98,8 +176,47 @@ def _merge_om(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _current_thin(data: dict[str, Any] | None) -> bool:
+    """Last-good blobs saved before extra current vars lack dew/pressure/visibility."""
+    cur = (data or {}).get("current") or {}
+    return cur.get("dew_point_2m") is None or cur.get("pressure_msl") is None
+
+
+async def _slim_current(lat: float, lon: float) -> dict[str, Any] | None:
+    """Tiny Open-Meteo current-only request — more likely to succeed under 429."""
+    try:
+        r = await client().get(
+            FORECAST,
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "current": _FC_CURRENT,
+                "timezone": "Asia/Kolkata",
+            },
+        )
+        if r.status_code >= 400:
+            return None
+        data = r.json()
+        if isinstance(data, dict) and (data.get("current") or {}).get("temperature_2m") is not None:
+            return data
+    except Exception:
+        return None
+    return None
+
+
+async def _stale_pack(lat: float, lon: float, reason: str) -> dict[str, Any] | None:
+    good = _load_good("fc5", lat, lon) or _load_good("fc", lat, lon)
+    if not good and not circuit_open():
+        good = await _archive_fallback(lat, lon)
+    if not good:
+        return None
+    good["_stale"] = True
+    good["_stale_reason"] = reason
+    return good
+
+
 async def forecast(lat: float, lon: float) -> dict[str, Any]:
-    key = f"om:fc4:{round(lat, 3)}:{round(lon, 3)}"
+    key = f"om:fc5:{round(lat, 3)}:{round(lon, 3)}"
 
     async def factory() -> dict[str, Any]:
         params = {
@@ -121,41 +238,29 @@ async def forecast(lat: float, lon: float) -> dict[str, Any]:
             "timezone": "Asia/Kolkata",
         }
         try:
-            r = await client().get(FORECAST, params=params)
-            if r.status_code == 429:
-                good = _load_good("fc", lat, lon) or await _archive_fallback(lat, lon)
-                if good:
-                    good["_stale"] = True
-                    good["_stale_reason"] = "open-meteo-429"
-                    return good
-                r.raise_for_status()
-            r.raise_for_status()
-            data = r.json()
+            data = await om_json("forecast", params)
             if isinstance(data, dict) and not data.get("error"):
-                try:
-                    r2 = await client().get(FORECAST, params=extra_params)
-                    if r2.status_code < 400:
-                        extra = r2.json()
+                if not circuit_open():
+                    try:
+                        extra = await om_json("forecast", extra_params)
                         if isinstance(extra, dict) and not extra.get("error"):
                             data = _merge_om(data, extra)
-                except Exception:
-                    pass
-                _save_good("fc", lat, lon, data)
+                    except Exception:
+                        pass
+                _save_good("fc5", lat, lon, data)
                 return data
-            good = _load_good("fc", lat, lon)
-            if good:
-                good["_stale"] = True
-                return good
+            pack = await _stale_pack(lat, lon, "open-meteo-error")
+            if pack:
+                return pack
             return data if isinstance(data, dict) else {}
-        except Exception:
-            good = _load_good("fc", lat, lon) or await _archive_fallback(lat, lon)
-            if good:
-                good["_stale"] = True
-                good["_stale_reason"] = "open-meteo-error"
-                return good
+        except Exception as exc:
+            pack = await _stale_pack(lat, lon, "open-meteo-429" if "429" in str(exc) else "open-meteo-error")
+            if pack:
+                return pack
             raise
 
-    return await cache.aget(key, factory, ttl_s=90, swr_s=600)
+    s = get_settings()
+    return await cache.aget(key, factory, ttl_s=float(s.open_meteo_ttl_s or 600), swr_s=float(s.open_meteo_swr_s or 2700))
 
 
 async def forecast_models(lat: float, lon: float) -> dict[str, Any]:
@@ -179,22 +284,26 @@ async def forecast_models(lat: float, lon: float) -> dict[str, Any]:
             "models": models,
         }
         try:
-            r = await client().get(FORECAST, params=params)
-            if r.status_code == 429:
-                await asyncio.sleep(0.4)
-                r = await client().get(FORECAST, params=params)
-            if r.status_code >= 400:
-                return sid, None
-            data = r.json()
+            data = await om_json("forecast", params)
             if isinstance(data, dict) and not data.get("error") and data.get("daily"):
                 cache.set(key, data, 900)
                 return sid, data
             return sid, None
         except Exception:
-            return sid, None
+            return sid, "_429_"
 
-    rows = await asyncio.gather(*[one(sid, m) for sid, m in BLEND_MODELS])
-    return {sid: payload for sid, payload in rows if payload}
+    if circuit_open() and not om_hub.online():
+        return {}
+    out: dict[str, Any] = {}
+    for sid, m in BLEND_MODELS:
+        sid2, payload = await one(sid, m)
+        if payload == "_429_":
+            break
+        if payload:
+            out[sid2] = payload
+        if circuit_open() and not om_hub.online():
+            break
+    return out
 
 
 async def _archive_fallback(lat: float, lon: float) -> dict[str, Any] | None:
@@ -202,10 +311,12 @@ async def _archive_fallback(lat: float, lon: float) -> dict[str, Any] | None:
     from datetime import date, timedelta
 
     today = date.today()
+    if circuit_open() and not om_hub.online():
+        return None
     try:
-        r = await client().get(
-            ARCHIVE,
-            params={
+        data = await om_json(
+            "archive",
+            {
                 "latitude": lat,
                 "longitude": lon,
                 "start_date": (today - timedelta(days=1)).isoformat(),
@@ -219,9 +330,6 @@ async def _archive_fallback(lat: float, lon: float) -> dict[str, Any] | None:
                 "timezone": "Asia/Kolkata",
             },
         )
-        if r.status_code >= 400:
-            return None
-        data = r.json()
         hourly = data.get("hourly") or {}
         temps = hourly.get("temperature_2m") or []
         last = None
@@ -267,6 +375,8 @@ async def era5_context(lat: float, lon: float) -> dict[str, Any]:
     hit = cache.get(key)
     if isinstance(hit, dict):
         return hit
+    if circuit_open() and not om_hub.online():
+        return {"ok": False, "status": "circuit-open"}
     today = date.today()
     start = (today - timedelta(days=16)).isoformat()
     end = (today - timedelta(days=1)).isoformat()
@@ -281,13 +391,11 @@ async def era5_context(lat: float, lon: float) -> dict[str, Any]:
         "models": "era5_seamless",
     }
     try:
-        r = await client().get(ARCHIVE, params=params)
-        if r.status_code >= 400:
+        try:
+            data = await om_json("archive", params)
+        except Exception:
             params.pop("models", None)
-            r = await client().get(ARCHIVE, params=params)
-        if r.status_code >= 400:
-            return {"ok": False, "status": f"http_{r.status_code}"}
-        data = r.json()
+            data = await om_json("archive", params)
         hourly = data.get("hourly") or {}
         z = [float(x) for x in (hourly.get("geopotential_height_500hPa") or []) if x is not None]
         p = [float(x) for x in ((data.get("daily") or {}).get("precipitation_sum") or []) if x is not None]
@@ -309,21 +417,24 @@ async def flood(lat: float, lon: float) -> dict[str, Any]:
     key = f"om:fl2:{round(lat, 3)}:{round(lon, 3)}"
 
     async def _pull(a: float, b: float) -> dict[str, Any]:
-        r = await client().get(
-            FLOOD,
-            params={
+        return await om_json(
+            "flood",
+            {
                 "latitude": a,
                 "longitude": b,
                 "daily": "river_discharge,river_discharge_mean,river_discharge_max",
                 "forecast_days": 7,
             },
         )
-        r.raise_for_status()
-        return r.json()
 
     async def factory() -> dict[str, Any]:
-        data = await _pull(lat, lon)
+        try:
+            data = await _pull(lat, lon)
+        except Exception:
+            data = {}
         if _flood_has_discharge(data):
+            return data
+        if circuit_open() and not om_hub.online():
             return data
         for dlat, dlon in ((0.6, -0.4), (0.8, 0.0), (-0.5, 0.3), (1.1, -0.7), (0.0, -0.8)):
             try:
@@ -359,9 +470,7 @@ async def air_quality(lat: float, lon: float) -> dict[str, Any]:
             "past_days": 7,
             "timezone": "Asia/Kolkata",
         }
-        r = await client().get(AIR, params=params)
-        r.raise_for_status()
-        return r.json()
+        return await om_json("air", params)
 
     return await cache.aget(key, factory, ttl_s=5 * 60, swr_s=20 * 60)
 
@@ -387,10 +496,10 @@ async def marine(lat: float, lon: float) -> dict[str, Any]:
             "forecast_days": 3,
             "timezone": "Asia/Kolkata",
         }
-        r = await client().get(MARINE, params=params)
-        if r.status_code >= 400:
+        try:
+            data = await om_json("marine", params)
+        except Exception:
             return {"inland": True, "reason": "no marine grid cell at this point"}
-        data = r.json()
         cur = data.get("current") or {}
         if cur.get("wave_height") is None and not any((data.get("hourly") or {}).get("wave_height") or []):
             data["inland"] = True
@@ -401,7 +510,9 @@ async def marine(lat: float, lon: float) -> dict[str, Any]:
 
 def _slice_forecast_daily(lat: float, lon: float, start: str, end: str) -> dict[str, Any] | None:
     """Reuse a warm Open-Meteo forecast pack instead of a second HTTP call."""
-    fc = cache.get(f"om:fc4:{round(lat, 3)}:{round(lon, 3)}") or cache.peek(f"om:fc4:{round(lat, 3)}:{round(lon, 3)}")
+    k5 = f"om:fc5:{round(lat, 3)}:{round(lon, 3)}"
+    k4 = f"om:fc4:{round(lat, 3)}:{round(lon, 3)}"
+    fc = cache.get(k5) or cache.peek(k5) or cache.get(k4) or cache.peek(k4)
     if not isinstance(fc, dict):
         return None
     daily = fc.get("daily") or {}
@@ -498,9 +609,8 @@ async def daily_window(lat: float, lon: float, start: str, end: str) -> dict[str
                 "end_date": b.isoformat(),
                 "timezone": "Asia/Kolkata",
             }
-            r = await client().get(url, params=params)
-            r.raise_for_status()
-            block = (r.json().get("daily") or {})
+            kind = "archive" if url == ARCHIVE else "forecast"
+            block = ((await om_json(kind, params)).get("daily") or {})
             times = list(block.get("time") or [])
             for i, t in enumerate(times):
                 if t in merged["time"]:
@@ -537,8 +647,7 @@ async def geocode_india(name: str) -> list[dict[str, Any]]:
 
     async def factory() -> list[dict[str, Any]]:
         params = {"name": name, "count": 8, "language": "en", "countryCode": "IN"}
-        r = await client().get(GEO, params=params)
-        r.raise_for_status()
-        return r.json().get("results") or []
+        data = await om_json("geocode", params)
+        return data.get("results") or []
 
     return await cache.aget(key, factory, ttl_s=24 * 3600, swr_s=7 * 86400)

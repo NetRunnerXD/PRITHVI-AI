@@ -114,3 +114,36 @@ def test_hourly_now_index_and_soil_not_yesterday(monkeypatch):
     recent = past_window(f["hourly_precip"], f["hourly_now_i"], 6)
     assert len(recent) <= 6
     assert all(x == 0.0 for x in recent)
+
+
+def test_extract_fills_quality_from_hourly_when_current_thin(monkeypatch):
+    """Stale last-good OM often has temp/RH current but no dew/pressure/visibility."""
+    from app.ml import features as feat
+
+    monkeypatch.setattr(feat, "hourly_now_index", lambda times, now=None: 1)
+    om = {
+        "current": {"temperature_2m": 27.0, "relative_humidity_2m": 90},
+        "hourly": {
+            "time": ["2026-08-31T19:00", "2026-08-31T20:00"],
+            "dew_point_2m": [25.0, 26.1],
+            "pressure_msl": [1001.0, 1000.4],
+            "apparent_temperature": [31.0, 32.7],
+            "visibility": [4000, 3780],
+            "precipitation": [0, 0.8],
+            "temperature_2m": [27, 27.1],
+            "soil_moisture_0_to_7cm": [0.4, 0.4],
+        },
+        "daily": {
+            "time": ["2026-08-31"],
+            "precipitation_sum": [2.0],
+            "precipitation_probability_max": [40],
+            "temperature_2m_max": [31],
+            "temperature_2m_min": [25],
+            "et0_fao_evapotranspiration": [3],
+        },
+    }
+    f = extract(om, {}, [])
+    assert f["dew_point_c"] == 26.1
+    assert f["pressure_msl_hpa"] == 1000.4
+    assert f["apparent_temp_c"] == 32.7
+    assert f["visibility_m"] == 3780
