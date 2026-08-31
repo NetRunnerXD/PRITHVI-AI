@@ -77,6 +77,11 @@ def test_fallback_skips_empty_keys():
     assert registry.fallback_ids(s) == ["gemini"]
 
 
+def test_fallback_auto_appends_groq_when_keyed():
+    s = _s(llm_fallback="", groq_api_key="gsk")
+    assert registry.fallback_ids(s) == ["groq"]
+
+
 def _s(**over):
     from app.config import Settings
 

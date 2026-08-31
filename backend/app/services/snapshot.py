@@ -649,7 +649,38 @@ async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot
     async def factory() -> DashboardSnapshot:
         return await _assemble_snapshot(loc, locale)
 
-    return await cache.aget(key, factory, ttl_s=60, swr_s=300)
+    from app.config import get_settings
+
+    s = get_settings()
+    return await cache.aget(key, factory, ttl_s=float(s.snapshot_ttl_s or 600), swr_s=float(s.snapshot_swr_s or 3600))
+
+
+async def refresh_recent_snapshots(limit: int = 8) -> int:
+    """Rebuild cached pins so OM is hit on a timer, not per browser poll."""
+    from app.config import get_settings
+    from app.services.location_svc import resolve_location
+
+    keys = cache.keys_prefix("snap8:")
+    pins: list[tuple[float, float]] = []
+    for k in keys:
+        parts = str(k).split(":")
+        if len(parts) >= 3:
+            try:
+                pins.append((float(parts[1]), float(parts[2])))
+            except ValueError:
+                continue
+    s = get_settings()
+    if not pins:
+        pins.append((float(s.default_lat), float(s.default_lon)))
+    n = 0
+    ttl = float(s.snapshot_ttl_s or 600)
+    swr = float(s.snapshot_swr_s or 3600)
+    for lat, lon in pins[:limit]:
+        loc = resolve_location(lat=lat, lon=lon)
+        snap = await _assemble_snapshot(loc)
+        cache.set(f"snap8:{round(lat, 3)}:{round(lon, 3)}", snap, ttl, swr)
+        n += 1
+    return n
 
 
 async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot:

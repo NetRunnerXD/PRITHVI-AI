@@ -80,6 +80,11 @@ def set(key: str, value: Any, ttl_s: float, swr_s: float = 0) -> None:
             _store.popitem(last=False)
 
 
+def keys_prefix(prefix: str) -> list[str]:
+    with _lock:
+        return [k for k in _store if str(k).startswith(prefix)]
+
+
 def clear() -> None:
     global _alo, _alo_loop
     with _lock:

@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -9,10 +10,32 @@ from app.config import get_settings
 from app.providers.http import aclose
 
 
+async def _snapshot_loop() -> None:
+    from app.services.snapshot import refresh_recent_snapshots
+
+    s = get_settings()
+    wait = max(120.0, float(s.snapshot_ttl_s or 600))
+    await asyncio.sleep(45)
+    while True:
+        try:
+            await refresh_recent_snapshots()
+        except Exception:
+            pass
+        await asyncio.sleep(wait)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    yield
-    await aclose()
+    task = asyncio.create_task(_snapshot_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+        await aclose()
 
 
 settings = get_settings()

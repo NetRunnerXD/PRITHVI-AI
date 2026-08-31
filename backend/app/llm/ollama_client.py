@@ -97,6 +97,9 @@ async def chat(
                     "via": "home-worker",
                 }
                 return parsed
+            if pid == "ollama" and not hub.online() and registry.fallback_ids():
+                last_err = WorkerOffline("home ollama offline")
+                continue
             try:
                 resp = await client().chat.completions.create(**kwargs)
             except Exception:
@@ -126,13 +129,27 @@ async def chat(
 
 
 async def ping() -> tuple[bool, str]:
-    """Local Ollama liveness only. Hosted keys are not probed (no quota burn)."""
+    """Ollama/home liveness. Groq is probed only when the home worker is down."""
     s = get_settings()
     p = _resolved()
     if p.id != "ollama":
         return True, f"{p.id}:{p.model}"
     if hub.online():
         return True, f"home-online:{p.model}"
+    groq = registry.spec("groq", s)
+    if groq and groq.keyed:
+        try:
+            from app.providers.http import client as http_client
+
+            r = await http_client().get(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {groq.api_key}"},
+            )
+            if r.status_code < 400:
+                return True, f"groq-fallback:{groq.model}"
+            return False, f"groq-http-{r.status_code}"
+        except Exception as exc:
+            return False, f"groq:{exc}"[:160]
     try:
         await client().models.list()
         return True, p.model
@@ -158,5 +175,9 @@ def catalog() -> dict[str, Any]:
             "ok": True,
             "model": s.ollama_model,
             "home": home,
+        },
+        "groq": {
+            "keyed": bool((s.groq_api_key or "").strip()),
+            "model": s.groq_model,
         },
     }
