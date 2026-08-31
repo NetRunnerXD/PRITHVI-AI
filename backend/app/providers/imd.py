@@ -97,7 +97,66 @@ def alerts_for_location(alerts: list[dict], location) -> list[dict]:
         blob = f"{a['title']} {a['body']}".lower()
         if any(k and k in blob for k in keys):
             matched.append(a)
-    return matched or alerts[:2]
+    return matched
+
+
+def is_national_severe(title: str, body: str = "") -> bool:
+    t = f"{title} {body}".lower()
+    return any(
+        x in t
+        for x in (
+            "extreme",
+            "red alert",
+            "very heavy",
+            "extremely heavy",
+            "cyclone",
+            "depression",
+            "severe thunderstorm",
+            "heat wave",
+            "heatwave",
+            "tsunami warning",
+        )
+    )
+
+
+def national_severe(alerts: list[dict]) -> list[dict]:
+    """IMD CAP items that are severe anywhere in India (not just the pin)."""
+    out = []
+    seen: set[str] = set()
+    for a in alerts:
+        title = a.get("title") or ""
+        if not is_national_severe(title, a.get("body") or ""):
+            continue
+        key = title.lower()[:96]
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(a)
+        if len(out) >= 10:
+            break
+    return out
+
+
+INDIAN_REGIONS = (
+    "Andaman and Nicobar", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar",
+    "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli", "Daman and Diu", "Delhi",
+    "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand",
+    "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra",
+    "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab",
+    "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh",
+    "Uttarakhand", "West Bengal", "Konkan", "Vidarbha", "Marathwada", "Madhya Maharashtra",
+    "Saurashtra", "Kutch", "Rayalaseema", "Coastal Andhra", "North Interior Karnataka",
+    "South Interior Karnataka", "Coastal Karnataka", "Malabar", "Gangetic West Bengal",
+    "Sub-Himalayan West Bengal"
+)
+
+
+def extract_region_hint(title: str, body: str = "") -> str:
+    blob = f"{title} {body}".lower()
+    for reg in INDIAN_REGIONS:
+        if reg.lower() in blob:
+            return reg
+    return ""
 
 
 def severity_from_title(title: str) -> str:
@@ -118,10 +177,12 @@ def humanize_cap_title(title: str, body: str = "", place: str = "") -> str:
     where = f" — {place}" if place else ""
     if "cyclone" in low or "depression" in low:
         kind = "Cyclone / depression bulletin"
-    elif "thunderstorm" in low or "squall" in low:
-        kind = "Thunderstorm warning"
+    elif "severe thunderstorm" in low or "squall" in low:
+        kind = "Severe thunderstorm warning"
+    elif "thunderstorm" in low or "lightning" in low:
+        kind = "Thunderstorm & lightning warning"
     elif "heat" in low:
-        kind = "Heat-wave warning"
+        kind = "Heatwave warning"
     elif "flood" in low:
         kind = "Flood warning"
     elif "extremely heavy" in low or ("extreme" in low and "rain" in low):
@@ -134,6 +195,7 @@ def humanize_cap_title(title: str, body: str = "", place: str = "") -> str:
         kind = "Rainfall warning"
     else:
         cleaned = " ".join(raw.split())
+        cleaned = re.sub(r"^(imd\s*(alert|bulletin|warning)?\s*[:\-–—]\s*)+", "", cleaned, flags=re.I).strip()
         if len(cleaned) > 72:
             cleaned = cleaned[:69] + "…"
         return f"{cleaned}{where}" if cleaned else f"IMD weather bulletin{where}"
@@ -152,7 +214,7 @@ def clean_cap_body(body: str, *, title: str = "", raw_title: str = "") -> str:
     text = html.unescape(text)
     text = " ".join(text.split())
     for drop in (raw_title, title):
-        if drop:
+        if drop and len(drop) > 5:
             text = re.sub(re.escape(drop), " ", text, flags=re.I)
     keep: list[str] = []
     for part in re.split(r"(?<=[.!?])\s+", text):
@@ -164,6 +226,8 @@ def clean_cap_body(body: str, *, title: str = "", raw_title: str = "") -> str:
         low = chunk.lower()
         if re.fullmatch(r"(heavy|very heavy|extremely heavy)(\s+(to|with)\s+(very heavy|extremely heavy))*(\s+rainfall)?", low):
             continue
+        if low in {"warning", "alert", "watch", "imd alert", "nil", "none"}:
+            continue
         keep.append(chunk)
     out = ". ".join(keep).strip(" .")
     if len(out) > 220:
@@ -173,3 +237,4 @@ def clean_cap_body(body: str, *, title: str = "", raw_title: str = "") -> str:
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+

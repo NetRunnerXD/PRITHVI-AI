@@ -17,6 +17,7 @@ class EarlyWarning(BaseModel):
     hazard: str = "weather"
     issued_at: str | None = None
     distance_km: float | None = None
+    scope: str | None = None
 
 
 class CurrentConditions(BaseModel):

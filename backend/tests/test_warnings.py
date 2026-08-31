@@ -44,10 +44,37 @@ def test_warnings_multi_hazard_sources():
     assert "imd-cap" in sources
     assert "data.gov.in / CPCB" in sources
     assert "usgs-fdsn" in sources
-    assert "incois-itews" in sources
+    assert "incois-itews" not in sources
     assert "open-meteo-marine" in sources
-    assert {"weather", "flood", "air", "marine", "seismic", "tsunami"} <= hazards
+    assert {"weather", "flood", "air", "marine", "seismic"} <= hazards
     assert any(w.severity == "warning" for w in out)
+
+
+def test_national_severe_included_for_other_state():
+    caps = [
+        {
+            "id": "od1",
+            "title": "Extremely heavy rainfall warning — Odisha",
+            "body": "Red alert for several Odisha districts.",
+            "published": "Mon, 31 Aug 2026",
+        }
+    ]
+    out = _warnings(_loc(), caps, 10, {"weather_code": 1}, [], [], None)
+    assert any(w.scope == "india" and "India" in w.title for w in out)
+    assert any("rainfall" in (w.title or "").lower() for w in out)
+
+
+def test_tsunami_threat_is_listed():
+    out = _warnings(
+        _loc(),
+        [],
+        10,
+        {"weather_code": 1},
+        [],
+        [{"title": "ITEWS tsunami warning for Andaman", "body": "Threat exists.", "threat": True}],
+        None,
+    )
+    assert any(w.hazard == "tsunami" for w in out)
 
 
 def test_warnings_quiet_when_nothing_fires():

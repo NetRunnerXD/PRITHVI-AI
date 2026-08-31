@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -297,13 +298,14 @@ def _warnings(
     local = imd.alerts_for_location(caps, loc)
     out: list[EarlyWarning] = []
     seen_titles: set[str] = set()
+    local_ids = {str(a.get("id")) for a in local}
     for a in local[:8]:
         raw_title = a.get("title") or "IMD alert"
         title = imd.humanize_cap_title(raw_title, a.get("body") or "", loc.place_name or loc.district)
-        key = raw_title.lower()[:96]
-        if key in seen_titles:
+        norm_key = re.sub(r"[^a-z0-9]", "", title.lower())
+        if norm_key in seen_titles:
             continue
-        seen_titles.add(key)
+        seen_titles.add(norm_key)
         if sum(1 for w in out if w.source == "imd-cap") >= 3:
             break
         body = imd.clean_cap_body(a.get("body") or "", title=title, raw_title=raw_title)
@@ -318,6 +320,35 @@ def _warnings(
                 source="imd-cap",
                 hazard="weather",
                 issued_at=a.get("published"),
+                scope="local",
+            )
+        )
+    for a in imd.national_severe(caps):
+        if str(a.get("id")) in local_ids:
+            continue
+        raw_title = a.get("title") or "IMD alert"
+        loc_hint = imd.extract_region_hint(raw_title, a.get("body") or "")
+        tag = f"{loc_hint} (India)" if loc_hint and loc_hint.lower() != "india" else "India"
+        title = imd.humanize_cap_title(raw_title, a.get("body") or "", tag)
+        norm_key = re.sub(r"[^a-z0-9]", "", title.lower())
+        if norm_key in seen_titles:
+            continue
+        seen_titles.add(norm_key)
+        sev = imd.severity_from_title(raw_title + " " + title)
+        if sev not in {"extreme", "warning", "alert"}:
+            continue
+        body = imd.clean_cap_body(a.get("body") or "", title=title, raw_title=raw_title)
+        out.append(
+            EarlyWarning(
+                id=f"in_{str(a.get('id'))[:56]}",
+                severity=sev,
+                title=title,
+                body=body,
+                lenses=["predictive"],
+                source="imd-cap",
+                hazard="weather",
+                issued_at=a.get("published"),
+                scope="india",
             )
         )
     if flood_score >= 70 and not any(w.hazard == "flood" or "rain" in (w.title or "").lower() for w in out):
@@ -379,18 +410,23 @@ def _warnings(
         mag = float(q.get("mag") or 0)
         dist = q.get("distance_km")
         near = dist is not None and float(dist) <= 500
-        if mag >= 4.5 and near:
+        if mag >= 6.0 or (mag >= 4.5 and near):
             out.append(
                 EarlyWarning(
                     id=str(q.get("id") or f"usgs_{mag}"),
                     severity="warning" if mag >= 6 else "alert",
-                    title=f"M{mag:.1f} earthquake {int(dist)} km from {loc.district}",
+                    title=(
+                        f"M{mag:.1f} earthquake {int(dist)} km from {loc.district}"
+                        if near and dist is not None
+                        else f"M{mag:.1f} earthquake — {q.get('place') or 'India region'}"
+                    ),
                     body=q.get("place") or "USGS FDSN event in the India–Indian Ocean box.",
                     lenses=["predictive"],
                     source="usgs-fdsn",
                     hazard="seismic",
                     issued_at=q.get("time_iso"),
                     distance_km=float(dist) if dist is not None else None,
+                    scope="local" if near else "india",
                 )
             )
         elif q.get("tsunami_flag") and mag >= 6:
@@ -406,17 +442,15 @@ def _warnings(
                     issued_at=q.get("time_iso"),
                 )
             )
-    for i, item in enumerate((tsunami or [])[:2]):
+    for i, item in enumerate((tsunami or [])[:4]):
         title = item.get("title") or "INCOIS ITEWS bulletin"
         low = title.lower() + " " + (item.get("body") or "").lower()
-        if item.get("threat"):
-            sev = "warning"
-        elif any(x in low for x in ("no threat", "no tsunami", "does not exist", "all clear", "nil")):
-            sev = "watch"
-        elif any(x in low for x in ("warning", "alert", "threat")):
+        if any(x in low for x in ("no threat", "no tsunami", "does not exist", "all clear", "nil")) and not item.get("threat"):
+            continue
+        if item.get("threat") or any(x in low for x in ("warning", "alert", "threat")):
             sev = "warning"
         else:
-            sev = "watch"
+            continue
         out.append(
             EarlyWarning(
                 id=f"incois_{i}",
@@ -426,6 +460,7 @@ def _warnings(
                 lenses=["predictive", "prescriptive"],
                 source="incois-itews",
                 hazard="tsunami",
+                scope="india",
             )
         )
     code = int(f.get("weather_code") or 0)
@@ -779,6 +814,29 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
             ),
         )
     warnings = _warnings(loc, obs["caps"], flood.score_pct, f, obs.get("quakes") or [], obs.get("tsunami") or [], obs.get("naqi"))
+    for g in obs.get("gdacs") or []:
+        et = str(g.get("event_type") or "").upper()
+        lvl = str(g.get("alert_level") or "").lower()
+        if et not in {"TC", "TS", "EQ"}:
+            continue
+        if et == "EQ" and lvl not in {"orange", "red"}:
+            continue
+        if et == "TC" and lvl in {"green"}:
+            continue
+        if any(w.id == f"gdacs_{g.get('id')}" for w in warnings):
+            continue
+        warnings.append(
+            EarlyWarning(
+                id=f"gdacs_{g.get('id')}",
+                severity="warning" if lvl in {"orange", "red"} or et in {"TC", "TS"} else "alert",
+                title=str(g.get("title") or f"GDACS {et}")[:160],
+                body=str(g.get("body") or g.get("alert_level") or "")[:280],
+                lenses=["predictive"],
+                source="gdacs",
+                hazard="weather" if et == "TC" else ("tsunami" if et == "TS" else "seismic"),
+                scope="india",
+            )
+        )
     for a in warnings:
         if a.source in {"imd-cap", "IMD CAP"} or "imd" in (a.source or "").lower():
             act = next((x for x in actions if x.template_id and str(x.template_id).startswith("nowcast_")), None)
