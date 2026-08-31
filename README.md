@@ -127,7 +127,15 @@ $env:PRITHVI_API="https://your-api.example"
 python scripts/ollama_worker.py
 ```
 
-`GET /api/health` then shows `ollama.home.online: true` and `detail: home-online:…`. When this process stops, chat uses `LLM_FALLBACK` (e.g. Groq) if configured.
+`GET /api/health` then shows `ollama.home.online: true` and `detail: home-online:…`. When this process stops, chat uses Groq if `GROQ_API_KEY` is set (or `LLM_FALLBACK`).
+
+Open-Meteo from this IP when Render is 429'd:
+
+```powershell
+python scripts/om_worker.py
+```
+
+(Same `LLM_WORKER_TOKEN` / `PRITHVI_API`.) Dashboard Settings can store the token so an open browser tab also relays fetches. Snapshots refresh every 10 minutes and stay valid up to 1 hour.
 
 ---
 

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND = (process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000").replace(/\/+$/, "");
+const BACKEND = (
+  process.env.NEXT_PUBLIC_API_BASE ||
+  (process.env.VERCEL ? "https://rituchakra-api.onrender.com" : "http://127.0.0.1:8000")
+).replace(/\/+$/, "");
 
 async function proxy(req: NextRequest) {
   const url = new URL("/api/nowcast/live", BACKEND || "http://127.0.0.1:8000");

@@ -16,6 +16,7 @@ import { SettingsPanel } from "@/components/SettingsPanel";
 import { Sidebar } from "@/components/Sidebar";
 import { SquareMap } from "@/components/SquareMap";
 import { ThemeBoot } from "@/components/ThemeBoot";
+import { OmRelay } from "@/components/OmRelay";
 import { Collapse, SourcesBox } from "@/components/ui";
 import { COPY } from "@/i18n/copy";
 import { fetchCompare, searchPlaces } from "@/lib/api";
@@ -112,6 +113,7 @@ export default function Page() {
   return (
     <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col gap-3 p-2 sm:p-3 lg:flex-row lg:p-4">
       <ThemeBoot />
+      <OmRelay />
       <Sidebar />
       <div className="min-w-0 flex-1 space-y-3">
         <header className="neo flex flex-wrap items-center gap-2 px-3 py-2 sm:px-4">

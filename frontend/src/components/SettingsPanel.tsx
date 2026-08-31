@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
 import { API_BASE, apiUrl } from "@/lib/config";
 import { DEFAULT_SETTINGS, useApp } from "@/lib/store";
+import { OM_TOKEN_KEY } from "@/lib/omRelay";
 import type { Density, TabId, ThemeId, UnitSys } from "@/types/dashboard";
 
 const THEMES: ThemeId[] = ["sand", "monsoon", "midnight", "ocean", "contrast"];
@@ -15,6 +16,14 @@ export function SettingsPanel() {
   const { locale, setLocale, outputLocale, setOutputLocale, settings, setSettings, resetSettings } = useApp();
   const t = COPY[locale];
   const [llms, setLlms] = useState<LlmRow[]>([{ id: "ollama", model: "qwen2.5:3b" }]);
+  const [omToken, setOmToken] = useState("");
+  useEffect(() => {
+    try {
+      setOmToken(window.localStorage.getItem(OM_TOKEN_KEY) || "");
+    } catch {
+      /* ignore */
+    }
+  }, []);
   useEffect(() => {
     let stop = false;
     fetch(apiUrl("/health"))
@@ -92,6 +101,21 @@ export function SettingsPanel() {
           </select>
         </label>
         <p className="text-xs text-neo-muted">{t.advisorModelHint}</p>
+        <label className="block text-sm">
+          {t.omRelayToken}
+          <input
+            className="neo-in mt-1 w-full px-3 py-2"
+            type="password"
+            autoComplete="off"
+            value={omToken}
+            onChange={(e) => {
+              const v = e.target.value;
+              setOmToken(v);
+              window.localStorage.setItem(OM_TOKEN_KEY, v);
+            }}
+          />
+        </label>
+        <p className="text-xs text-neo-muted">{t.omRelayHint}</p>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -132,6 +156,7 @@ export function SettingsPanel() {
               [60, "1 minute"],
               [120, "2 minutes"],
               [300, "5 minutes"],
+              [600, "10 minutes"],
             ].map(([s, label]) => (
               <option key={s} value={s}>
                 {label}

@@ -25,6 +25,8 @@ URL after the first deploy: `https://rituchakra-api.onrender.com` (Render may ad
    - `CORS_ORIGINS=*` is already in the Blueprint
    - `LLM_WORKER_TOKEN` — same secret you set on the home PC worker (`python scripts/ollama_worker.py`). Restart the service after adding it. Without this (and without a deploy that includes `/api/llm/worker`), the worker gets HTTP 403.
 
+Also set `GROQ_API_KEY` (Advisor when the home Ollama worker is offline) and `LLM_FALLBACK=groq`. Snapshots rebuild every 10 minutes (`SNAPSHOT_TTL_S=600`). Optional: run `python scripts/om_worker.py` on a laptop so Open-Meteo is fetched from a home IP when Render is 429'd.
+
 Pushes to `main` / `master` that change `backend/` redeploy. Free instances sleep after ~15 minutes idle; the first request can take up to a minute.
 
 ## Clients
