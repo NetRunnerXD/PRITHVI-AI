@@ -14,7 +14,6 @@ import {
 import type { DashboardSnapshot } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
 import { useApp } from "@/lib/store";
-import { todayStory } from "@/lib/plain";
 import { dist, rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
 
 function hhmm(t: string) {
@@ -108,7 +107,7 @@ const alertDot: Record<string, string> = {
   watch: "text-neo-accent",
 };
 
-export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale: Locale }) {
+export function OverviewLive({ dash, locale, onNavigateData }: { dash: DashboardSnapshot; locale: Locale; onNavigateData?: (subTab: string) => void }) {
   const t = COPY[locale];
   const units = useApp((s) => s.settings.units);
   const live = dash.live;
@@ -133,7 +132,6 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
   }));
   const days = (dash.predictive.outlook_days || []).slice(0, 7);
 
-  const story = todayStory(dash, locale);
   const sixHour = (dash.predictive.hourly || []).slice(0, 6).map((h) => ({
     t: h.hour || hhmm(h.t),
     rain: h.precip_mm ?? 0,
@@ -143,28 +141,54 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
   const sixFromSeries = hourly.slice(0, 6);
   const six = sixHour.length ? sixHour : sixFromSeries;
 
-  // All warnings + actions for the alerts panel
-  const allAlerts = [
-    ...dash.prescriptive.warnings.slice(0, 24),
-    ...dash.prescriptive.actions.slice(0, 8).map((a) => ({
-      id: a.id,
-      severity: "watch" as const,
-      title: a.action,
-      body: a.when || "",
-      hazard: "weather",
-      source: "",
-      issued_at: null,
-    })),
-  ];
+  const allAlerts = (() => {
+    const raw = dash.prescriptive.warnings || [];
+    const seen = new Set<string>();
+    const out: typeof raw = [];
+
+    for (const w of raw) {
+      const lowTitle = (w.title || "").toLowerCase().trim();
+      const lowBody = (w.body || "").toLowerCase().trim();
+      const combined = `${lowTitle} ${lowBody}`;
+
+      // Filter out negative non-threat bulletins
+      if (w.hazard === "tsunami" && /no threat|does not exist|all clear|nil/.test(combined)) continue;
+      if (w.hazard === "seismic" && /no damage|no threat|all clear/.test(combined)) continue;
+      if (!["extreme", "warning", "alert", "watch"].includes(w.severity)) continue;
+
+      // Normalize key for deduplication
+      const normTitle = lowTitle.replace(/[^a-z0-9]/g, "");
+      const normBody = lowBody.slice(0, 40).replace(/[^a-z0-9]/g, "");
+      const key = `${w.hazard || "gen"}_${normTitle}_${normBody}`;
+
+      if (seen.has(key) || seen.has(normTitle)) continue;
+      seen.add(key);
+      seen.add(normTitle);
+
+      // Clean up body so it doesn't just duplicate the title verbatim
+      let cleanBody = (w.body || "").trim();
+      if (cleanBody.toLowerCase() === lowTitle || cleanBody.length < 3) {
+        cleanBody = "";
+      }
+
+      out.push({
+        ...w,
+        body: cleanBody,
+      });
+    }
+
+    return out.slice(0, 24);
+  })();
 
   return (
     <div className="space-y-3">
-      {story ? <p className="text-sm text-neo-muted">{story}</p> : null}
-
       {/* ── Row 1: Sky + Rain — Extended full width ── */}
       <div className="grid gap-3 lg:grid-cols-12">
         {/* Sky card */}
-        <section className="neo sky-card relative overflow-hidden p-5 lg:col-span-7">
+        <section 
+          className="neo sky-card relative overflow-hidden p-5 lg:col-span-7 cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
+          onClick={() => onNavigateData?.('meteorology')}
+        >
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.sky}</p>
           <div className="mt-3 flex items-center gap-4">
             <SkyGlyph kind={sky.kind || cur.sky_kind || "cloud"} day={sky.is_day !== false} />
@@ -189,7 +213,10 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
         </section>
 
         {/* Rain panel */}
-        <section className="neo p-5 lg:col-span-5">
+        <section 
+          className="neo p-5 lg:col-span-5 cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
+          onClick={() => onNavigateData?.('meteorology')}
+        >
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.rainToday}</p>
           <p className="mt-3 font-mono text-4xl font-extrabold text-neo-accent">
             {todayRain != null ? rain(todayRain, units) : "—"}
@@ -214,7 +241,10 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
           {/* Wind + Next 6h */}
           <div className="grid gap-3 sm:grid-cols-12">
             {/* Wind panel */}
-            <section className="neo p-4 sm:col-span-5">
+            <section 
+              className="neo p-4 sm:col-span-5 cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
+              onClick={() => onNavigateData?.('meteorology')}
+            >
               <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.windProfile}</p>
               <div className="flex items-center gap-3">
                 <WindRose
@@ -263,7 +293,10 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
             </section>
 
             {/* Next 6h */}
-            <section className="neo p-4 sm:col-span-7 flex flex-col justify-between">
+            <section 
+              className="neo p-4 sm:col-span-7 flex flex-col justify-between cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
+              onClick={() => onNavigateData?.('meteorology')}
+            >
               <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.next6h}</p>
               {six.length ? (
                 <div className="mt-2 grid grid-cols-6 gap-1">
@@ -296,7 +329,10 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
           </div>
 
           {/* 7-day Forecast */}
-          <section className="neo p-4">
+          <section 
+            className="neo p-4 cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
+            onClick={() => onNavigateData?.('meteorology')}
+          >
             <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.forecast7}</p>
             <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
               {days.map((d) => (
@@ -314,7 +350,10 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
         </div>
 
         {/* Alerts sidebar — expanded height with scrollable list */}
-        <aside className="neo flex flex-col lg:col-span-4 h-[25.5rem] max-h-[25.5rem] overflow-hidden">
+        <aside 
+          className="neo flex flex-col lg:col-span-4 h-[25.5rem] max-h-[25.5rem] overflow-hidden cursor-pointer hover:ring-2 hover:ring-[var(--danger)] transition-all"
+          onClick={() => onNavigateData?.('risks')}
+        >
           {/* Header */}
           <div className="flex shrink-0 items-center gap-2 border-b border-[var(--line)] px-3.5 py-2.5">
             <span className="live-dot" aria-hidden />
@@ -339,8 +378,12 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
                     <p className={`text-[9px] font-bold uppercase tracking-widest ${alertDot[w.severity] ?? "text-neo-muted"}`}>
                       {w.severity}
                     </p>
-                    {w.hazard ? (
-                      <span className="chip ml-auto text-[9px] px-1.5 py-0">{w.hazard}</span>
+                    {w.scope === "india" ? (
+                      <span className="chip ml-auto text-[9px] px-1.5 py-0">India</span>
+                    ) : w.hazard ? (
+                      <span className="chip ml-auto text-[9px] px-1.5 py-0 capitalize">
+                        {w.hazard === "seismic" ? "Earthquake" : w.hazard === "air" ? "Air Quality" : w.hazard}
+                      </span>
                     ) : null}
                   </div>
                   <p className="mt-0.5 text-xs font-semibold leading-snug">{w.title}</p>
@@ -369,7 +412,7 @@ export function OverviewLive({ dash, locale }: { dash: DashboardSnapshot; locale
         </aside>
       </div>
 
-      <HomeHazardStrip dash={dash} locale={locale} />
+      <HomeHazardStrip dash={dash} locale={locale} onNavigateData={onNavigateData} />
     </div>
   );
 }
@@ -383,7 +426,7 @@ function AlertStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function HomeHazardStrip({ dash, locale }: { dash: DashboardSnapshot; locale: Locale }) {
+function HomeHazardStrip({ dash, locale, onNavigateData }: { dash: DashboardSnapshot; locale: Locale; onNavigateData?: (subTab: string) => void }) {
   const t = COPY[locale];
   const q = dash.quality || {};
   const air = (q.air || {}) as Record<string, unknown>;
@@ -457,24 +500,175 @@ function HomeHazardStrip({ dash, locale }: { dash: DashboardSnapshot; locale: Lo
     },
   ];
 
-  const suggestions: { id: string; label: string; v: string }[] = [
-    { id: "lightning", label: "Lightning", v: String(conv?.lightning?.level ?? conv?.lightning?.score_pct ?? "quiet") },
-    { id: "cloudburst", label: "Cloudburst", v: String(conv?.cloudburst?.level ?? "quiet") },
-    { id: "cyclone", label: "Cyclone", v: String(gdacs[0]?.event_type || gdacs.length ? `${gdacs.length}` : "quiet") },
-    { id: "flood", label: "Flood", v: `${risk("flood")?.score_pct ?? flood.score_pct ?? "—"}` },
-    { id: "drought", label: "Drought", v: `${risk("drought")?.score_pct ?? "—"}` },
-    { id: "heat", label: "Heat Wave", v: String(vera?.extremes?.heat_wave?.level ?? risk("heat")?.score_pct ?? "—") },
-    { id: "fire", label: "Forest Fire", v: String(climate.temp_max != null && Number(climate.temp_max) >= 38 && Number(climate.rh_now || 50) < 30 ? "watch" : "quiet") },
-    { id: "slide", label: "Landslide", v: String(Number(dash.predictive.precip_next_3d_mm) > 80 ? "watch" : "quiet") },
-    { id: "heavy", label: "Heavy Rainfall", v: String(vera?.extremes?.heavy_rain?.level ?? "—") },
-    { id: "snow", label: "Heavy Snowfall", v: String(climate.snowfall_now ?? climate.snowfall_sum ?? "0") },
-    { id: "uv", label: "High UV Radiation", v: String(air.uv_index ?? climate.uv_index_max ?? "—") },
-    { id: "fog", label: "Fog / Low Visibility", v: String(dash.descriptive.current.visibility_km != null && Number(dash.descriptive.current.visibility_km) < 1 ? "watch" : "quiet") },
-    { id: "agri", label: "Agriculture", v: dash.prescriptive.actions[0]?.action || "—" },
-    { id: "urban", label: "Urban Flooding", v: String(dash.science?.nowcast?.ponding?.mm_60 ?? "—") },
-    { id: "aviation", label: "Aviation", v: String(dash.science?.nowcast?.squall?.watch ? "squall" : dash.descriptive.current.visibility_km ?? "—") },
-    { id: "fish", label: "Marine Fishing", v: String(marine.wave_height_m ?? "inland") },
-    { id: "lp", label: "Low Pressure", v: String(climate.pressure_msl_hpa ?? "—") },
+  const aqiVal = dash.descriptive.current.aqi ?? air.us_aqi;
+  const floodPct = Number(risk("flood")?.score_pct ?? flood.score_pct ?? 0);
+  const droughtPct = Number(risk("drought")?.score_pct ?? 0);
+  const heatLvl = String(vera?.extremes?.heat_wave?.level ?? "");
+  const tmax = climate.temp_max ?? dash.descriptive.current.temp_c;
+  const vis = dash.descriptive.current.visibility_km;
+  const uv = Number(air.uv_index ?? climate.uv_index_max ?? climate.uv_index ?? 0);
+  const waveM = Number(marine.wave_height_m);
+  const pond = dash.science?.nowcast?.ponding?.mm_60;
+  const light = conv?.lightning;
+  const suggestions: { id: string; label: string; status: string; metric: string; raw: string; tab: string }[] = [
+    {
+      id: "lightning",
+      label: "Lightning",
+      status: String(light?.level || "quiet") === "quiet" ? "All clear" : Number(light?.score_pct) >= 50 ? "Active storm" : "Isolated strikes",
+      metric: light?.score_pct != null ? `${light.score_pct}% of recent cells` : "No strikes scored",
+      raw: String(light?.level ?? light?.score_pct ?? "quiet"),
+      tab: "meteorology",
+    },
+    {
+      id: "cloudburst",
+      label: "Cloudburst",
+      status: String(conv?.cloudburst?.level ?? "quiet") === "quiet" ? "Unlikely" : "Watch this hour",
+      metric: conv?.cloudburst?.score_pct != null ? `${conv.cloudburst.score_pct}% nowcast score` : "Local nowcast",
+      raw: String(conv?.cloudburst?.level ?? "quiet"),
+      tab: "meteorology",
+    },
+    {
+      id: "cyclone",
+      label: "Cyclone",
+      status: gdacs.some((g) => String(g.event_type) === "TC") ? "System in basin" : "No cyclone",
+      metric: gdacs.filter((g) => String(g.event_type) === "TC")[0]
+        ? String(gdacs.filter((g) => String(g.event_type) === "TC")[0]?.title || "GDACS")
+        : "Bay / Arabian Sea quiet",
+      raw: gdacs.some((g) => String(g.event_type) === "TC") ? "watch" : "quiet",
+      tab: "hydrology",
+    },
+    {
+      id: "flood",
+      label: "Flood",
+      status: floodPct >= 70 ? "High risk" : floodPct >= 40 ? "Rising" : "Low risk",
+      metric: `${Number.isFinite(floodPct) ? Math.round(floodPct) : "—"}% model score`,
+      raw: String(floodPct),
+      tab: "hydrology",
+    },
+    {
+      id: "drought",
+      label: "Drought",
+      status: droughtPct >= 60 ? "Dry spell" : droughtPct >= 35 ? "Below normal" : "Soil OK",
+      metric: `${Number.isFinite(droughtPct) ? Math.round(droughtPct) : "—"}% deficit score`,
+      raw: String(droughtPct),
+      tab: "risks",
+    },
+    {
+      id: "heat",
+      label: "Heat",
+      status: /warning|watch/i.test(heatLvl) ? heatLvl : Number(tmax) >= 40 ? "Heat stress" : "Comfortable",
+      metric: tmax != null ? `Tmax ${Number(tmax).toFixed(0)}°C` : "No heat wave flag",
+      raw: heatLvl || String(tmax ?? "quiet"),
+      tab: "risks",
+    },
+    {
+      id: "aqi",
+      label: "Air quality",
+      status:
+        aqiVal == null
+          ? "No reading"
+          : Number(aqiVal) <= 50
+            ? "Good"
+            : Number(aqiVal) <= 100
+              ? "Moderate"
+              : Number(aqiVal) <= 200
+                ? "Unhealthy"
+                : "Very poor",
+      metric: aqiVal != null ? `AQI ${aqiVal}` : "CPCB / Open-Meteo",
+      raw: String(aqiVal ?? "—"),
+      tab: "environment",
+    },
+    {
+      id: "tsunami",
+      label: "Tsunami",
+      status: tsunami.some((x) => x.threat) ? "Threat bulletin" : "No threat",
+      metric: String((tsunami[0] as { title?: string } | undefined)?.title ?? "INCOIS ITEWS quiet"),
+      raw: tsunami.some((x) => x.threat) ? "alert" : "quiet",
+      tab: "hydrology",
+    },
+    {
+      id: "quake",
+      label: "Earthquake",
+      status: seismic[0]?.mag != null && Number(seismic[0].mag) >= 4.5 ? "Recent quake" : "Quiet",
+      metric: seismic[0]?.mag != null ? `M${seismic[0].mag} · ${seismic[0].place || "region"}` : "No nearby event",
+      raw: String(seismic[0]?.mag ?? "quiet"),
+      tab: "seismology",
+    },
+    {
+      id: "fire",
+      label: "Forest fire",
+      status: climate.temp_max != null && Number(climate.temp_max) >= 38 && Number(climate.rh_now || 50) < 30 ? "Dry-hot" : "Low risk",
+      metric: tmax != null ? `${Number(tmax).toFixed(0)}°C · RH ${climate.rh_now ?? "—"}%` : "—",
+      raw: climate.temp_max != null && Number(climate.temp_max) >= 38 && Number(climate.rh_now || 50) < 30 ? "watch" : "quiet",
+      tab: "risks",
+    },
+    {
+      id: "slide",
+      label: "Landslide",
+      status: Number(dash.predictive.precip_next_3d_mm) > 80 ? "Wet-slope watch" : "Stable",
+      metric: `Next 3 days ${Number(dash.predictive.precip_next_3d_mm).toFixed(0)} mm`,
+      raw: Number(dash.predictive.precip_next_3d_mm) > 80 ? "watch" : "quiet",
+      tab: "risks",
+    },
+    {
+      id: "heavy",
+      label: "Heavy rain",
+      status: /warning|watch/i.test(String(vera?.extremes?.heavy_rain?.level)) ? String(vera?.extremes?.heavy_rain?.level) : "No heavy rain",
+      metric:
+        vera?.extremes?.heavy_rain?.next_24h_mm != null
+          ? `${vera.extremes.heavy_rain.next_24h_mm} mm / 24 h`
+          : `${dash.predictive.precip_next_3d_mm} mm / 3 d`,
+      raw: String(vera?.extremes?.heavy_rain?.level ?? "quiet"),
+      tab: "meteorology",
+    },
+    {
+      id: "uv",
+      label: "UV",
+      status: uv >= 8 ? "Very high" : uv >= 3 ? "Moderate" : "Low",
+      metric: `Index ${uv || "—"}`,
+      raw: String(uv),
+      tab: "environment",
+    },
+    {
+      id: "fog",
+      label: "Visibility",
+      status: vis != null && Number(vis) < 1 ? "Dense fog" : vis != null && Number(vis) < 4 ? "Haze" : "Clear",
+      metric: vis != null ? `${Number(vis).toFixed(1)} km` : "—",
+      raw: vis != null && Number(vis) < 1 ? "watch" : "quiet",
+      tab: "meteorology",
+    },
+    {
+      id: "urban",
+      label: "Street flooding",
+      status: pond != null && Number(pond) >= 5 ? "Ponding" : "Dry streets",
+      metric: pond != null ? `${Number(pond).toFixed(1)} mm / 60 min` : "No ponding",
+      raw: String(pond ?? "0"),
+      tab: "hydrology",
+    },
+    {
+      id: "aviation",
+      label: "Aviation",
+      status: dash.science?.nowcast?.squall?.watch ? "Squall watch" : vis != null && Number(vis) < 3 ? "Low vis" : "Open",
+      metric: vis != null ? `Vis ${Number(vis).toFixed(1)} km` : "No squall flag",
+      raw: dash.science?.nowcast?.squall?.watch ? "alert" : "quiet",
+      tab: "meteorology",
+    },
+    {
+      id: "fish",
+      label: "Fishing",
+      status: !Number.isFinite(waveM) ? "Inland" : waveM >= 2.5 ? "Stay in harbour" : waveM >= 1.5 ? "Choppy" : "Calm seas",
+      metric: Number.isFinite(waveM) ? `${waveM.toFixed(1)} m waves` : "No marine grid",
+      raw: Number.isFinite(waveM) ? String(waveM) : "quiet",
+      tab: "hydrology",
+    },
+    {
+      id: "agri",
+      label: "Farm",
+      status: dash.prescriptive.actions[0]?.action ? "Action listed" : "No field action",
+      metric: dash.prescriptive.actions[0]?.action || "Hold irrigation if rain is coming",
+      raw: dash.prescriptive.actions[0]?.action || "quiet",
+      tab: "agriculture",
+    },
   ];
 
   return (
@@ -482,7 +676,16 @@ function HomeHazardStrip({ dash, locale }: { dash: DashboardSnapshot; locale: Lo
       {/* Hazard info cards */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((c) => (
-          <section key={c.title} className="neo p-3">
+          <section 
+            key={c.title} 
+            className="neo p-3 cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
+            onClick={() => {
+              if (c.title === t.aqi || c.title === t.allergen) onNavigateData?.('environment');
+              else if (c.title === t.landWeather) onNavigateData?.('meteorology');
+              else if (c.title === t.marineWeather || c.title === t.cyclone || c.title === t.tsunami) onNavigateData?.('hydrology');
+              else if (c.title === t.earthquake) onNavigateData?.('seismology');
+            }}
+          >
             <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{c.title}</p>
             <dl className="mt-2 space-y-1.5 text-sm">
               {c.rows.map(([k, v]) => (
@@ -496,31 +699,33 @@ function HomeHazardStrip({ dash, locale }: { dash: DashboardSnapshot; locale: Lo
         ))}
       </div>
 
-      {/* ── Suggestions — improved with color-coded status ── */}
       <section className="neo p-4">
         <div className="mb-3 flex items-center gap-2">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.suggestions}</p>
           <div className="ml-auto flex items-center gap-2 text-[10px] text-neo-muted">
-            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--accent)]" />Quiet</span>
-            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--warn)]" />Watch</span>
-            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--danger)]" />Alert</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--accent)]" />All clear</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--warn)]" />Caution</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--danger)]" />Warning</span>
           </div>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {suggestions.map((s) => {
-            const level = suggestionLevel(s.id, s.v);
+            const level = suggestionLevel(s.id, s.raw);
             const style = suggLevel[level];
             return (
-              <div
+              <button
+                type="button"
                 key={s.id}
-                className={`flex items-center gap-2.5 rounded-2xl px-3 py-2.5 ${style.bg}`}
+                className={`flex items-center gap-2.5 rounded-2xl px-3 py-2.5 text-left ${style.bg}`}
+                onClick={() => onNavigateData?.(s.tab)}
               >
                 <span className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
                 <div className="min-w-0">
                   <p className="text-[10px] font-medium uppercase tracking-widest text-neo-muted">{s.label}</p>
-                  <p className={`mt-0.5 truncate font-mono text-sm font-bold ${style.text}`}>{s.v}</p>
+                  <p className={`mt-0.5 truncate text-sm font-bold ${style.text}`}>{s.status}</p>
+                  <p className="truncate font-mono text-[10px] text-neo-muted">{s.metric}</p>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -544,27 +749,35 @@ export function OverviewPlots({ dash, locale }: { dash: DashboardSnapshot; local
     t: `d+${i}`,
     v,
   }));
+  const rh = (series.rh_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }));
+  const soil = (series.soil_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }));
+  const cloud = (series.cloud_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }));
+  const dust = (series.dust_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }));
+  const sst = (series.sst_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }));
+  const swell = (series.swell_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: units === "imperial" ? p.value * 3.281 : p.value }));
+  const rainD = (series.precip_daily || []).slice(0, 7).map((p) => ({ t: (p.t || "").slice(5), v: p.value }));
+  const tmax = (series.tmax_daily || []).slice(0, 7).map((p) => ({ t: (p.t || "").slice(5), v: units === "imperial" ? (p.value * 9) / 5 + 32 : p.value }));
+  const et0 = (series.et0_daily || []).slice(0, 7).map((p) => ({ t: (p.t || "").slice(5), v: p.value }));
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <Spark title={`${t.tabForecast} · 24h`} data={rainH} color="var(--rain)" unit={rainUnit(units)} kind="bar" />
-      <Spark title="24h" data={tempH} color="var(--gold)" unit={tempUnit(units)} />
+      <Spark title="Temperature · 24h" data={tempH} color="var(--gold)" unit={tempUnit(units)} />
       <Spark title={t.windSpeed} data={wspd} color="var(--accent)" unit={units === "imperial" ? "mph" : "km/h"} />
+      <Spark title={t.humidity} data={rh} color="var(--accent)" unit="%" />
+      <Spark title={t.cloud} data={cloud} color="#7aa2a8" unit="%" />
+      <Spark title={t.soil} data={soil} color="#8d6e63" unit="m³/m³" />
       <Spark title={t.discharge} data={discharge} color="var(--flood)" unit="m³/s" />
       <Spark title={t.omAqi} data={aqi} color="var(--accent2)" unit="US AQI" />
       <Spark title={t.histAqi} data={aqiHist.length ? aqiHist : aqi} color="var(--accent2)" unit={aqiHist.length ? "µg/m³" : "US AQI"} />
+      <Spark title="PM10" data={(series.pm10_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }))} color="var(--accent2)" unit="µg/m³" />
+      <Spark title="Dust" data={dust} color="#a1887f" unit="µg/m³" />
+      <Spark title="UV" data={(series.uv_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }))} color="var(--gold)" unit="UV" />
       <Spark title={t.waves} data={wave} color="var(--rain)" unit={units === "imperial" ? "ft" : "m"} />
-      <Spark
-        title="UV"
-        data={(series.uv_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }))}
-        color="var(--gold)"
-        unit="UV"
-      />
-      <Spark
-        title="PM10"
-        data={(series.pm10_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }))}
-        color="var(--accent2)"
-        unit="µg/m³"
-      />
+      <Spark title="Swell" data={swell} color="#1565c0" unit={units === "imperial" ? "ft" : "m"} />
+      <Spark title="Sea surface" data={sst} color="#00838f" unit={tempUnit(units)} />
+      <Spark title="Daily rain" data={rainD} color="var(--rain)" unit={rainUnit(units)} kind="bar" />
+      <Spark title="Daily Tmax" data={tmax} color="var(--gold)" unit={tempUnit(units)} />
+      <Spark title={t.et0} data={et0} color="#5d8a66" unit="mm" />
     </div>
   );
 }

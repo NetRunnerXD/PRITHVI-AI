@@ -1,12 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { COPY, type Locale } from "@/i18n/copy";
+import { COPY } from "@/i18n/copy";
 import { presetsFor } from "@/i18n/presets";
 import { streamChat } from "@/lib/api";
+import {
+  SCHEDULED_LANGS,
+  defaultSpeechLang,
+  speakText,
+  speechSupported,
+  startDictation,
+  stopSpeaking,
+} from "@/lib/speech";
 import { useApp } from "@/lib/store";
 import type { ChatMsg, ChatSuggestion, DashboardSnapshot } from "@/types/dashboard";
 import { ChatBlocks } from "./ChatBlocks";
+import { IconChevronDown, IconMic, IconRefresh, IconVolume, IconVolumeOff } from "./Icons";
 
 export function ChatDock({ compact = false }: { compact?: boolean }) {
   const {
@@ -34,11 +43,22 @@ export function ChatDock({ compact = false }: { compact?: boolean }) {
   const [preset, setPreset] = useState("");
   const [showEn, setShowEn] = useState(false);
   const [answerFor, setAnswerFor] = useState("");
+  const [presetsOpen, setPresetsOpen] = useState(!compact);
+  const [speechLang, setSpeechLang] = useState(() => defaultSpeechLang(locale));
+  const [listening, setListening] = useState(false);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [speechErr, setSpeechErr] = useState("");
+  const stopListen = useRef<(() => void) | null>(null);
   const presets = presetsFor(locale);
   const scroller = useRef<HTMLDivElement>(null);
+  const support = useMemo(() => speechSupported(), []);
 
   useEffect(() => {
     setPreset("");
+  }, [locale]);
+
+  useEffect(() => {
+    setSpeechLang(defaultSpeechLang(locale));
   }, [locale]);
 
   useEffect(() => {
@@ -51,6 +71,13 @@ export function ChatDock({ compact = false }: { compact?: boolean }) {
     const el = scroller.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [chat, streaming]);
+
+  useEffect(() => {
+    return () => {
+      stopListen.current?.();
+      stopSpeaking();
+    };
+  }, []);
 
   const lastUser = useMemo(() => [...chat].reverse().find((m) => m.role === "user"), [chat]);
 
@@ -101,6 +128,60 @@ export function ChatDock({ compact = false }: { compact?: boolean }) {
     }
   }
 
+  function toggleListen() {
+    if (listening) {
+      stopListen.current?.();
+      stopListen.current = null;
+      setListening(false);
+      return;
+    }
+    if (!support.stt) {
+      setSpeechErr(t.speechNeedHttps);
+      return;
+    }
+    setSpeechErr("");
+    setListening(true);
+    stopListen.current = startDictation(
+      speechLang,
+      (piece, isFinal) => {
+        setText(piece);
+        if (isFinal) setText(piece.trim());
+      },
+      (err) => {
+        setListening(false);
+        stopListen.current = null;
+        if (err && err !== "aborted" && err !== "no-speech") setSpeechErr(err);
+      }
+    );
+  }
+
+  function toggleSpeak(id: string, content: string, contentEn?: string, msgLocale?: string) {
+    if (speakingId === id) {
+      stopSpeaking();
+      setSpeakingId(null);
+      return;
+    }
+    if (!support.tts) {
+      setSpeechErr(t.speechNeedHttps);
+      return;
+    }
+    setSpeakingId(id);
+    const hint = msgLocale && msgLocale !== "auto" ? msgLocale : speechLang;
+    speakText(content, hint, () => setSpeakingId((cur) => (cur === id ? null : cur)), contentEn);
+  }
+
+  const regenBtn = (
+    <button
+      className="neo-btn text-xs"
+      disabled={streaming || !lastUser}
+      onClick={() => lastUser && run(lastUser.content, { regenerate: true })}
+      title={t.regenerate}
+      aria-label={t.regenerate}
+    >
+      {compact ? <IconRefresh className="h-4 w-4" /> : t.regenerate}
+    </button>
+  );
+
   return (
     <section
       className={`neo flex flex-col overflow-hidden ${
@@ -140,26 +221,39 @@ export function ChatDock({ compact = false }: { compact?: boolean }) {
           >
             {t.clear}
           </button>
-          <button className="neo-btn text-xs" disabled={streaming || !lastUser} onClick={() => lastUser && run(lastUser.content, { regenerate: true })}>
-            {t.regenerate}
-          </button>
+          {regenBtn}
         </div>
       </header>
 
-      <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-neo-line px-3 py-2">
-        {presets.map((p) => (
+      <div className="shrink-0 border-b border-neo-line">
+        {compact ? (
           <button
-            key={p.id}
             type="button"
-            className={`chip ${preset === p.id ? "text-neo-accent" : ""}`}
-            onClick={() => {
-              setPreset(p.id);
-              setText(p.text);
-            }}
+            className="flex w-full items-center justify-between px-3 py-1.5 text-[11px] font-bold text-neo-muted"
+            onClick={() => setPresetsOpen((v) => !v)}
+            aria-expanded={presetsOpen}
           >
-            {p.label}
+            <span>{t.presets}</span>
+            <IconChevronDown className={`h-3.5 w-3.5 transition-transform ${presetsOpen ? "rotate-180" : ""}`} />
           </button>
-        ))}
+        ) : null}
+        {(compact ? presetsOpen : true) ? (
+          <div className={`flex flex-wrap gap-1.5 px-3 ${compact ? "pb-2" : "py-2"}`}>
+            {presets.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`chip ${preset === p.id ? "text-neo-accent" : ""}`}
+                onClick={() => {
+                  setPreset(p.id);
+                  setText(p.text);
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3" data-testid="chat-thread">
@@ -195,7 +289,23 @@ export function ChatDock({ compact = false }: { compact?: boolean }) {
                 ))}
               </div>
             ) : null}
-            {m.role === "assistant" && m.content_en && showEn ? (
+            {!compact && m.role === "assistant" && m.content ? (
+              <button
+                type="button"
+                className="mt-1 neo-btn px-1.5 py-0.5"
+                onClick={() => toggleSpeak(m.id, m.content, m.content_en || undefined, m.locale)}
+                title={speakingId === m.id ? t.stopSpeak : t.speakReply}
+                aria-label={speakingId === m.id ? t.stopSpeak : t.speakReply}
+                data-testid={`chat-tts-${m.id}`}
+              >
+                {speakingId === m.id ? (
+                  <IconVolumeOff className="h-3.5 w-3.5" />
+                ) : (
+                  <IconVolume className="h-3.5 w-3.5" />
+                )}
+              </button>
+            ) : null}
+            {!compact && m.role === "assistant" && m.content_en && showEn ? (
               <div className="mt-2 border-t border-neo-line pt-2 text-xs text-neo-muted">
                 <ChatBlocks prose={m.content_en} />
               </div>
@@ -210,10 +320,30 @@ export function ChatDock({ compact = false }: { compact?: boolean }) {
       </div>
 
       <div className="shrink-0 border-t border-neo-line p-3">
-        <label className="mb-2 flex items-center gap-2 text-[11px] text-neo-muted">
-          <input type="checkbox" checked={showEn} onChange={(e) => setShowEn(e.target.checked)} />
-          {t.showEn}
-        </label>
+        {!compact ? (
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-[11px] text-neo-muted">
+              {t.speechLang}
+              <select
+                className="neo-in px-2 py-1 text-[11px]"
+                value={speechLang}
+                onChange={(e) => setSpeechLang(e.target.value)}
+                data-testid="chat-speech-lang"
+              >
+                {SCHEDULED_LANGS.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.native} ({l.name})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-[11px] text-neo-muted">
+              <input type="checkbox" checked={showEn} onChange={(e) => setShowEn(e.target.checked)} />
+              {t.showEn}
+            </label>
+          </div>
+        ) : null}
+        {speechErr && !compact ? <p className="mb-1 text-[10px] text-neo-warn">{speechErr}</p> : null}
         <form
           className="flex gap-2"
           onSubmit={(e) => {
@@ -223,11 +353,24 @@ export function ChatDock({ compact = false }: { compact?: boolean }) {
             run(msg);
           }}
         >
+          {!compact ? (
+            <button
+              type="button"
+              className={`neo-btn shrink-0 ${listening ? "bg-neo-accent text-white" : ""}`}
+              onClick={toggleListen}
+              disabled={!location || streaming}
+              title={listening ? t.listening : t.listen}
+              aria-label={listening ? t.listening : t.listen}
+              data-testid="chat-mic"
+            >
+              <IconMic className="h-4 w-4" />
+            </button>
+          ) : null}
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
             className="neo-in min-w-0 flex-1 px-3 py-2 text-sm outline-none"
-            placeholder={location ? t.message : t.loading}
+            placeholder={location ? (listening ? t.listening : t.message) : t.loading}
             disabled={!location || streaming}
             data-testid="chat-input"
           />

@@ -160,7 +160,7 @@ export function EarlyWarnings({
                   <article key={w.id} className="neo-in px-3 py-3">
                     <div className="flex items-center justify-between gap-2">
                       <p className={`text-[10px] uppercase tracking-widest ${tone[w.severity] || ""}`}>{w.severity}</p>
-                      <span className="chip">{hazardLabel(w.hazard, t)}</span>
+                      <span className="chip">{w.scope === "india" ? "India" : hazardLabel(w.hazard, t)}</span>
                     </div>
                     <p className="mt-2 text-sm font-semibold leading-snug">{w.title}</p>
                     {line ? <p className="mt-1 text-xs leading-snug text-neo-muted">{line}</p> : null}

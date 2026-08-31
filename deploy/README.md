@@ -17,14 +17,14 @@ Use **one uvicorn worker**. The SWR cache is in-process.
 
 Home Ollama: set `LLM_WORKER_TOKEN` on the API, run `python backend/scripts/ollama_worker.py --api https://your-api` on the PC that has Ollama. See the README “Home Ollama” section.
 
-## Public HTTPS
+## Public HTTPS (split hosts)
 
-1. Set `.env` from `.env.production.example` (`PUBLIC_BASE_URL`, `CORS_ORIGINS`, `NEXT_PUBLIC_API_BASE`).
-2. Put Caddy in front (`deploy/Caddyfile`): `/` → Next, `/api` → FastAPI, `flush_interval -1` for Advisor SSE.
-3. Rebuild web so `NEXT_PUBLIC_API_BASE` is baked in.
-4. Point Expo `EXPO_PUBLIC_API_BASE` at the same API origin.
+- **Dashboard:** Vercel Hobby, GitHub-connected — [`deploy/vercel.md`](vercel.md). Root directory `frontend`. Set `NEXT_PUBLIC_API_BASE` to the Render API origin.
+- **API:** Render Free — [`deploy/render.md`](render.md).
 
-Same-origin option: leave `NEXT_PUBLIC_API_BASE` empty and set `API_INTERNAL_URL=http://api:8000` on the Next process; Caddy still terminates TLS.
+Same-origin Caddy (optional, self-host): set `.env` from `.env.production.example`, put Caddy in front (`deploy/Caddyfile`), rebuild web so `NEXT_PUBLIC_API_BASE` is baked in. Leave `NEXT_PUBLIC_API_BASE` empty and set `API_INTERNAL_URL=http://api:8000` for Next rewrites.
+
+Point Expo `EXPO_PUBLIC_API_BASE` at the same API origin.
 
 ## Mobile
 

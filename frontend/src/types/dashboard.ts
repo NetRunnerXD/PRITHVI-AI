@@ -45,6 +45,7 @@ export type EarlyWarning = {
   issued_at?: string | null;
   distance_km?: number | null;
   linked_risk_id?: string | null;
+  scope?: string | null;
 };
 
 export type WindHour = {
@@ -660,14 +661,44 @@ export type VeraPack = {
   };
   api_needed?: { id?: string; env?: string[]; prompt?: string; locked?: boolean }[];
   node_detail?: Record<string, unknown>;
-  hourly?: { t: string; lead_h?: number; ensemble: number; moe?: number; om?: number | null; members?: Record<string, number> }[];
+  hourly?: {
+    t: string;
+    lead_h?: number;
+    ensemble: number;
+    moe?: number;
+    om?: number | null;
+    ensemble_temp_c?: number | null;
+    moe_temp_c?: number | null;
+    om_temp_c?: number | null;
+    ensemble_wind_kmh?: number | null;
+    moe_wind_kmh?: number | null;
+    om_wind_kmh?: number | null;
+    ensemble_wbgt_c?: number | null;
+    moe_wbgt_c?: number | null;
+    om_wbgt_c?: number | null;
+    members?: Record<string, number>;
+  }[];
   extremes?: {
     heat_wave?: { level?: string; level_key?: string; p?: number; tmax_c?: number | null; consecutive?: number; hourly_temp_c?: number[]; rule?: string };
     high_wind?: { level?: string; level_key?: string; p?: number; peak_kmh?: number; peak_hour?: number | null; hourly_kmh?: number[]; rule?: string };
     heavy_rain?: { level?: string; level_key?: string; p?: number; next_24h_mm?: number; hourly_mm?: number[]; rule?: string; threshold_mm?: number };
     compare?: {
       note?: string;
-      hourly?: { h: number; blend_mm?: number | null; website_mm?: number | null; website_temp_c?: number | null; website_wind_kmh?: number | null }[];
+      hourly?: {
+        h: number;
+        blend_mm?: number | null;
+        website_mm?: number | null;
+        ensemble_mm?: number | null;
+        blend_temp_c?: number | null;
+        website_temp_c?: number | null;
+        ensemble_temp_c?: number | null;
+        blend_wind_kmh?: number | null;
+        website_wind_kmh?: number | null;
+        ensemble_wind_kmh?: number | null;
+        blend_wbgt_c?: number | null;
+        website_wbgt_c?: number | null;
+        ensemble_wbgt_c?: number | null;
+      }[];
     };
   };
   performance?: {
@@ -717,6 +748,23 @@ export type VeraPack = {
   };
   intra_hour?: {
     note?: string;
+    horizon_h?: number;
+    horizon?: {
+      t?: string;
+      lead_h?: number;
+      website_mm?: number | null;
+      blend_mm?: number | null;
+      ensemble_mm?: number | null;
+      temp_c?: number | null;
+      blend_temp_c?: number | null;
+      ensemble_temp_c?: number | null;
+      wind_kmh?: number | null;
+      blend_wind_kmh?: number | null;
+      ensemble_wind_kmh?: number | null;
+      wbgt_c?: number | null;
+      blend_wbgt_c?: number | null;
+      ensemble_wbgt_c?: number | null;
+    }[];
     days?: {
       date: string;
       weekday?: string;
@@ -728,7 +776,26 @@ export type VeraPack = {
       wind_max_kmh?: number | null;
       heat_level?: string;
       thunder_hint?: string | null;
-      hours?: { t?: string; rain_mm?: number; website_mm?: number | null; blend_mm?: number | null; ensemble_mm?: number | null; temp_c?: number | null; wind_kmh?: number; gust_kmh?: number | null; rh?: number; wbgt_c?: number | null; class?: string | null }[];
+      hours?: {
+        t?: string;
+        lead_h?: number;
+        rain_mm?: number;
+        website_mm?: number | null;
+        blend_mm?: number | null;
+        ensemble_mm?: number | null;
+        temp_c?: number | null;
+        blend_temp_c?: number | null;
+        ensemble_temp_c?: number | null;
+        wind_kmh?: number;
+        blend_wind_kmh?: number | null;
+        ensemble_wind_kmh?: number | null;
+        gust_kmh?: number | null;
+        rh?: number;
+        wbgt_c?: number | null;
+        blend_wbgt_c?: number | null;
+        ensemble_wbgt_c?: number | null;
+        class?: string | null;
+      }[];
       peak_minutes?: { t?: string; rain_mm?: number; rain_mm_h?: number; website_mm_h?: number; blend_mm_h?: number; ensemble_mm_h?: number; temp_c?: number; wind_kmh?: number; wbgt_c?: number }[];
       minutes_today?: { t?: string; rain_mm?: number; rain_mm_h?: number; website_mm_h?: number; blend_mm_h?: number; ensemble_mm_h?: number; temp_c?: number; wind_kmh?: number; wbgt_c?: number }[];
     }[];

@@ -264,7 +264,7 @@ export async function streamChat(
     body: JSON.stringify({
       message,
       locale_hint: locale,
-      output_locale: outputLocale || locale,
+      output_locale: outputLocale || "auto",
       location,
       history: history.slice(-6),
       regenerate: Boolean(regenerate),

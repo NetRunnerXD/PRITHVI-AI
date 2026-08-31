@@ -30,8 +30,6 @@ import {
 } from "@/lib/satKalman";
 import { useApp } from "@/lib/store";
 
-const STRIDE_KEY = "rituchakra.satStride";
-
 type SatPack = {
   source?: string;
   source_kind?: string;
@@ -49,31 +47,18 @@ type SatPack = {
   engine?: string;
 };
 
-function readStride(): 1 | 60 {
-  if (typeof window === "undefined") return 60;
-  try {
-    return window.localStorage.getItem(STRIDE_KEY) === "1" ? 1 : 60;
-  } catch {
-    return 60;
-  }
-}
-
 export function NowcastSat({ loc, locale, seed }: { loc: Location; locale: Locale; seed?: SatPack | null }) {
   const t = COPY[locale];
   const reduce = useApp((s) => s.settings.reduceMotion);
-  const [stride, setStride] = useState<1 | 60>(60);
+  const stride = 60;
   const [sat, setSat] = useState<SatPack | null>(seed || null);
   const [now, setNow] = useState(() => new Date());
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    setStride(readStride());
-  }, []);
-
-  useEffect(() => {
     let dead = false;
     async function load() {
-      const data = await fetchNowcastSat(loc, stride);
+      const data = await fetchNowcastSat(loc, 60);
       if (dead) return;
       if (!data) {
         setErr("sat");
@@ -88,22 +73,13 @@ export function NowcastSat({ loc, locale, seed }: { loc: Location; locale: Local
       dead = true;
       window.clearInterval(id);
     };
-  }, [loc.id, loc.lat, loc.lon, loc.place_name, stride]);
+  }, [loc.id, loc.lat, loc.lon, loc.place_name]);
 
   useEffect(() => {
     if (reduce) return;
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, [reduce]);
-
-  function pickStride(next: 1 | 60) {
-    setStride(next);
-    try {
-      window.localStorage.setItem(STRIDE_KEY, String(next));
-    } catch {
-      /* ignore */
-    }
-  }
 
   const form = sat?.formula;
   const liveRate =
@@ -149,14 +125,6 @@ export function NowcastSat({ loc, locale, seed }: { loc: Location; locale: Local
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.satEngine}</p>
-        </div>
-        <div className="flex gap-1">
-          <button type="button" className={`neo-btn text-xs ${stride === 60 ? "ring-1 ring-neo-accent" : ""}`} onClick={() => pickStride(60)}>
-            {t.satToggleMinute}
-          </button>
-          <button type="button" className={`neo-btn text-xs ${stride === 1 ? "ring-1 ring-neo-accent" : ""}`} onClick={() => pickStride(1)}>
-            {t.satToggleSecond}
-          </button>
         </div>
       </div>
 

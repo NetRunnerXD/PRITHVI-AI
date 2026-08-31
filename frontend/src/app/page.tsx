@@ -49,8 +49,10 @@ export default function Page() {
   const [cmpQ, setCmpQ] = useState("Pune");
   const [cmp, setCmp] = useState<Record<string, unknown> | null>(null);
   const [cmpBusy, setCmpBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
   const units = settings.units;
+
+  const [analyticsSubTab, setAnalyticsSubTab] = useState<"metrics" | "nowcast" | "forecast">("metrics");
+  const [dataSubTab, setDataSubTab] = useState<"meteorology" | "environment" | "hydrology" | "seismology" | "agriculture" | "risks" | "all">("all");
 
   useEffect(() => {
     refresh();
@@ -105,18 +107,7 @@ export default function Page() {
     ];
   }, [cmp, t]);
 
-  function copyBrief() {
-    if (!dashboard) return;
-    const act = dashboard.prescriptive.actions[0];
-    const lines = [
-      `PRITHVI-AI — ${dashboard.location.label}`,
-      `${t.rain3}: ${rain(dashboard.predictive.precip_next_3d_mm, units)}`,
-      act?.action || "",
-    ].filter(Boolean);
-    void navigator.clipboard.writeText(lines.join("\n"));
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
-  }
+
 
   return (
     <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col gap-3 p-2 sm:p-3 lg:flex-row lg:p-4">
@@ -136,9 +127,6 @@ export default function Page() {
               ) : null}
               <button className="neo-btn text-xs" onClick={() => toggleFavorite(dashboard.location)}>
                 {pinned ? "★" : "☆"}
-              </button>
-              <button className="neo-btn text-xs" onClick={copyBrief}>
-                {copied ? t.copied : t.copyBrief}
               </button>
               {settings.showHints ? (
                 <span className="hidden text-[11px] text-neo-muted md:inline">{t.keyboardHint}</span>
@@ -165,90 +153,188 @@ export default function Page() {
           <>
             {tab === "home" && dashboard ? (
               <div className="space-y-3">
-                <OverviewLive dash={dashboard} locale={locale} />
+                <OverviewLive 
+                  dash={dashboard} 
+                  locale={locale} 
+                  onNavigateData={(sub) => {
+                    setDataSubTab(sub as any);
+                    setTab("data");
+                  }} 
+                />
                 <SourcesBox tab="home" locale={locale} provenance={dashboard.science?.provenance} />
               </div>
             ) : null}
 
             {tab === "analytics" && dashboard ? (
               <div className="space-y-4">
-                <NowcastLive dash={dashboard} locale={locale} />
-                {windowPack && Array.isArray((windowPack as { days?: unknown[] }).days) ? (
-                  <section className="neo overflow-x-auto p-4">
-                    <h3 className="text-sm font-bold">{t.predictive}</h3>
-                    <table className="mt-2 w-full min-w-[20rem] text-left text-sm">
-                      <thead>
-                        <tr className="text-neo-muted">
-                          <th className="py-1">{t.colDate}</th>
-                          <th className="py-1">{t.colRain}</th>
-                          <th className="py-1">{t.colProb}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {((windowPack as { days: { date?: string; precip_mm?: number; precip_prob_pct?: number }[] }).days).map((d) => (
-                          <tr key={d.date} className="border-t border-neo-line">
-                            <td className="py-1 font-mono">{d.date}</td>
-                            <td className="py-1 font-mono">{d.precip_mm}</td>
-                            <td className="py-1 font-mono">{d.precip_prob_pct ?? "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </section>
-                ) : null}
-                <OutlookTable dash={dashboard} locale={locale} />
-                <ForecastCharts dash={dashboard} locale={locale} />
-                <OverviewPlots dash={dashboard} locale={locale} />
-                <Collapse title={t.compare} defaultOpen={false}>
-                  <div className="flex flex-wrap gap-2">
-                    <input value={cmpQ} onChange={(e) => setCmpQ(e.target.value)} className="neo-in px-3 py-2 text-sm" placeholder="Pune" />
-                    <button className="neo-btn" disabled={cmpBusy} onClick={runCompare}>
-                      {cmpBusy ? "…" : t.compare}
-                    </button>
+                {/* Subtab Navigation Bar */}
+                <div className="neo flex flex-wrap items-center gap-2 p-2 sm:p-2.5">
+                  <button
+                    type="button"
+                    className={`neo-btn flex items-center gap-2 text-xs font-bold tracking-wide uppercase px-3.5 py-2 transition ${
+                      analyticsSubTab === "metrics" ? "neo-btn-on shadow-sm" : "opacity-80 hover:opacity-100"
+                    }`}
+                    onClick={() => setAnalyticsSubTab("metrics")}
+                  >
+                    <span className="text-sm">📊</span>
+                    <span>{locale === "hi" ? "लाइव मेट्रिक्स" : locale === "bn" ? "লাইভ মেট্রিক্স" : "Live Metrics"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`neo-btn flex items-center gap-2 text-xs font-bold tracking-wide uppercase px-3.5 py-2 transition ${
+                      analyticsSubTab === "nowcast" ? "neo-btn-on shadow-sm" : "opacity-80 hover:opacity-100"
+                    }`}
+                    onClick={() => setAnalyticsSubTab("nowcast")}
+                  >
+                    <span className="text-sm">⚡</span>
+                    <span>{locale === "hi" ? "नाउकास्टिंग (Kalman)" : locale === "bn" ? "নাওকাস্টিং (Kalman)" : "Nowcasting & Kalman"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`neo-btn flex items-center gap-2 text-xs font-bold tracking-wide uppercase px-3.5 py-2 transition ${
+                      analyticsSubTab === "forecast" ? "neo-btn-on shadow-sm" : "opacity-80 hover:opacity-100"
+                    }`}
+                    onClick={() => setAnalyticsSubTab("forecast")}
+                  >
+                    <span className="text-sm">📈</span>
+                    <span>{locale === "hi" ? "पूर्वानुमान एवं ग्राफ़" : locale === "bn" ? "পূর্বাভাস ও গ্রাফ" : "Forecast & Graphs"}</span>
+                  </button>
+                </div>
+
+                {/* Subtab 1: Live Metrics */}
+                {analyticsSubTab === "metrics" && (
+                  <div className="space-y-4">
+                    <OverviewPlots dash={dashboard} locale={locale} />
+                    <Collapse title={t.compare} defaultOpen={false}>
+                      <div className="flex flex-wrap gap-2">
+                        <input value={cmpQ} onChange={(e) => setCmpQ(e.target.value)} className="neo-in px-3 py-2 text-sm" placeholder="Pune" />
+                        <button className="neo-btn" disabled={cmpBusy} onClick={runCompare}>
+                          {cmpBusy ? "…" : t.compare}
+                        </button>
+                      </div>
+                      {cmp && "error" in cmp ? (
+                        <p className="mt-2 text-sm text-neo-danger">{String((cmp as { error: string }).error)}</p>
+                      ) : null}
+                      {cmp && !("error" in cmp) ? (
+                        <table className="mt-3 w-full text-left text-sm">
+                          <tbody>
+                            {cmpRows.map((row) => (
+                              <tr key={row.k} className="border-t border-neo-line">
+                                <td className="py-2 text-neo-muted">{row.k}</td>
+                                <td className="py-2 font-mono">{row.v == null ? "—" : `${row.v > 0 ? "+" : ""}${row.v}`}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : null}
+                    </Collapse>
                   </div>
-                  {cmp && "error" in cmp ? (
-                    <p className="mt-2 text-sm text-neo-danger">{String((cmp as { error: string }).error)}</p>
-                  ) : null}
-                  {cmp && !("error" in cmp) ? (
-                    <table className="mt-3 w-full text-left text-sm">
-                      <tbody>
-                        {cmpRows.map((row) => (
-                          <tr key={row.k} className="border-t border-neo-line">
-                            <td className="py-2 text-neo-muted">{row.k}</td>
-                            <td className="py-2 font-mono">{row.v == null ? "—" : `${row.v > 0 ? "+" : ""}${row.v}`}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : null}
-                </Collapse>
+                )}
+
+                {/* Subtab 2: Nowcasting (including Between-Scene Kalman) */}
+                {analyticsSubTab === "nowcast" && (
+                  <div className="space-y-4">
+                    <NowcastLive dash={dashboard} locale={locale} />
+                  </div>
+                )}
+
+                {/* Subtab 3: Forecast & Graphs */}
+                {analyticsSubTab === "forecast" && (
+                  <div className="space-y-4">
+                    {windowPack && Array.isArray((windowPack as { days?: unknown[] }).days) ? (
+                      <section className="neo overflow-x-auto p-4">
+                        <h3 className="text-sm font-bold">{t.predictive}</h3>
+                        <table className="mt-2 w-full min-w-[20rem] text-left text-sm">
+                          <thead>
+                            <tr className="text-neo-muted">
+                              <th className="py-1">{t.colDate}</th>
+                              <th className="py-1">{t.colRain}</th>
+                              <th className="py-1">{t.colProb}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {((windowPack as { days: { date?: string; precip_mm?: number; precip_prob_pct?: number }[] }).days).map((d) => (
+                              <tr key={d.date} className="border-t border-neo-line">
+                                <td className="py-1 font-mono">{d.date}</td>
+                                <td className="py-1 font-mono">{d.precip_mm}</td>
+                                <td className="py-1 font-mono">{d.precip_prob_pct ?? "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </section>
+                    ) : null}
+                    <OutlookTable dash={dashboard} locale={locale} />
+                    <ForecastCharts dash={dashboard} locale={locale} />
+                  </div>
+                )}
+
                 <SourcesBox tab="analytics" locale={locale} provenance={dashboard.science?.provenance} />
               </div>
             ) : null}
 
             {tab === "data" && dashboard ? (
-              <div className="space-y-3">
-                <QualityCatalog dash={dashboard} />
-                <Collapse title={t.science} defaultOpen={false}>
-                  <SciencePanel dash={dashboard} locale={locale} />
-                </Collapse>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {dashboard.risks.map((r) => (
-                    <RiskCard
-                      key={r.id}
-                      risk={r}
-                      locale={locale}
-                      highlight={Boolean(highlight && (highlight === r.id || highlight.includes(r.id)))}
-                    />
+              <div className="space-y-4">
+                {/* Data Subtabs */}
+                <div className="flex flex-wrap gap-1.5 p-1.5 rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-sm">
+                  {[
+                    { id: "all", label: "All Data" },
+                    { id: "meteorology", label: "Meteorology" },
+                    { id: "environment", label: "Environment" },
+                    { id: "hydrology", label: "Hydrology" },
+                    { id: "seismology", label: "Seismology" },
+                    { id: "agriculture", label: "Agriculture" },
+                    { id: "risks", label: "Risks & Alerts" },
+                  ].map((sub) => (
+                    <button
+                      key={sub.id}
+                      onClick={() => setDataSubTab(sub.id as any)}
+                      className={`flex-1 min-w-fit rounded-xl px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider transition-all duration-200 ${
+                        dataSubTab === sub.id
+                          ? "bg-[var(--accent)] text-[var(--bg)] shadow-md transform scale-[1.02]"
+                          : "text-neo-muted hover:text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--accent)_10%,transparent)]"
+                      }`}
+                    >
+                      {sub.label}
+                    </button>
                   ))}
                 </div>
-                <MandiPanel dash={dashboard} locale={locale} />
-                <EarlyWarnings
-                  items={dashboard.prescriptive.warnings}
-                  locale={locale}
-                  live={dashboard.live}
-                  status={dashboard.provider_status}
-                />
+
+                {dataSubTab !== "agriculture" && dataSubTab !== "risks" && (
+                  <QualityCatalog dash={dashboard} group={dataSubTab === "all" ? undefined : dataSubTab} />
+                )}
+
+                {(dataSubTab === "all" || dataSubTab === "meteorology") && (
+                  <Collapse title={t.science} defaultOpen={false}>
+                    <SciencePanel dash={dashboard} locale={locale} />
+                  </Collapse>
+                )}
+
+                {(dataSubTab === "all" || dataSubTab === "risks") && (
+                  <div className="space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {dashboard.risks.map((r) => (
+                        <RiskCard
+                          key={r.id}
+                          risk={r}
+                          locale={locale}
+                          highlight={Boolean(highlight && (highlight === r.id || highlight.includes(r.id)))}
+                        />
+                      ))}
+                    </div>
+                    <EarlyWarnings
+                      items={dashboard.prescriptive.warnings}
+                      locale={locale}
+                      live={dashboard.live}
+                      status={dashboard.provider_status}
+                    />
+                  </div>
+                )}
+
+                {(dataSubTab === "all" || dataSubTab === "agriculture") && (
+                  <MandiPanel dash={dashboard} locale={locale} />
+                )}
+
                 <SourcesBox tab="data" locale={locale} provenance={dashboard.science?.provenance} />
               </div>
             ) : null}

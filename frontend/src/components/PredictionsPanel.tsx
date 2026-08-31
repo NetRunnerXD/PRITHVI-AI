@@ -68,6 +68,29 @@ function round2(n: number | null | undefined): string {
   return (Math.round(Number(n) * 100) / 100).toFixed(2);
 }
 
+function hourlyVars(
+  r: {
+    ensemble?: number | null;
+    moe?: number | null;
+    om?: number | null;
+    ensemble_temp_c?: number | null;
+    moe_temp_c?: number | null;
+    om_temp_c?: number | null;
+    ensemble_wind_kmh?: number | null;
+    moe_wind_kmh?: number | null;
+    om_wind_kmh?: number | null;
+    ensemble_wbgt_c?: number | null;
+    moe_wbgt_c?: number | null;
+    om_wbgt_c?: number | null;
+  },
+  varK: "rain" | "temp" | "wind" | "heat"
+) {
+  if (varK === "temp") return { Ensemble: r.ensemble_temp_c ?? null, Blend: r.moe_temp_c ?? null, Website: r.om_temp_c ?? null };
+  if (varK === "wind") return { Ensemble: r.ensemble_wind_kmh ?? null, Blend: r.moe_wind_kmh ?? null, Website: r.om_wind_kmh ?? null };
+  if (varK === "heat") return { Ensemble: r.ensemble_wbgt_c ?? null, Blend: r.moe_wbgt_c ?? null, Website: r.om_wbgt_c ?? null };
+  return { Ensemble: r.ensemble ?? null, Blend: r.moe ?? null, Website: r.om ?? null };
+}
+
 function AxisHint({ x, y }: { x: string; y: string }) {
   return <p className="mt-1 text-[10px] text-neo-muted">Horizontal (X): {x}. Vertical (Y): {y}.</p>;
 }
@@ -476,22 +499,35 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub?: string
 
 function HourlySec({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
   const now = Date.now();
-  const rows = (vera.hourly || []).filter((r) => (r.lead_h ?? 0) < 24);
+  const [varK, setVarK] = useState<"rain" | "temp" | "wind" | "heat">("rain");
+  const rows = (vera.hourly || [])
+    .filter((r) => {
+      const h = r.lead_h ?? 0;
+      return h >= -12 && h < 24;
+    })
+    .slice()
+    .sort((a, b) => (a.lead_h ?? 0) - (b.lead_h ?? 0));
   const chart = rows.map((r) => ({
     h: r.lead_h ?? 0,
     t: istClock(r.t),
-    Ensemble: r.ensemble,
-    Blend: r.moe,
-    Website: r.om,
+    ...hourlyVars(r, varK),
   }));
   const nowIst = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+  const yLabel = varK === "rain" ? "Rain (mm in that hour)" : varK === "temp" ? "Temperature (°C)" : varK === "wind" ? "Wind (km/h)" : "WBGT heat (°C)";
   return (
     <section className="neo space-y-3 p-4">
       <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.secHourly}</p>
       <p className="text-xs text-neo-muted">
-        Clock now (IST): {nowIst}. Times below are valid hours in India Standard Time — not UTC.
-        <strong> Ensemble</strong> = satellite rain shape plus NWP. <strong>Blend</strong> = gated mix of physics/AI members. <strong>Website</strong> = Open-Meteo. They are three different series.
+        Clock now (IST): {nowIst}. Horizon is the past 12 hours through the next 24. Times are India Standard Time — not UTC.
+        Past hours are negative in the table. <strong> Ensemble</strong> = satellite rain shape plus NWP. <strong>Blend</strong> = gated mix of physics/AI members. <strong>Website</strong> = Open-Meteo.
       </p>
+      <div className="flex flex-wrap gap-1">
+        {(["rain", "temp", "wind", "heat"] as const).map((k) => (
+          <button key={k} type="button" className={`neo-btn text-[11px] ${varK === k ? "neo-btn-on" : ""}`} onClick={() => setVarK(k)}>
+            {k === "rain" ? "Rain (mm)" : k === "temp" ? "Temperature (°C)" : k === "wind" ? "Wind (km/h)" : "Heat WBGT (°C)"}
+          </button>
+        ))}
+      </div>
       <div className="flex flex-wrap gap-2 text-[10px]">
         <span style={{ color: COL.ensemble }}>● Ensemble</span>
         <span style={{ color: COL.blend }}>● Blend</span>
@@ -511,16 +547,16 @@ function HourlySec({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <AxisHint x="Valid hour (IST)" y="Rain (mm in that hour)" />
+      <AxisHint x="Valid hour (IST), past 12 h → next 24 h" y={yLabel} />
       <div className="overflow-auto">
         <table className="w-full text-left text-[11px]">
           <thead className="text-neo-muted">
             <tr>
-              <th className="py-1">Hours ahead</th>
+              <th className="py-1">Hours from now</th>
               <th>Valid time (IST)</th>
-              <th style={{ color: COL.ensemble }}>Ensemble rain (mm)</th>
-              <th style={{ color: COL.blend }}>Blend rain (mm)</th>
-              <th style={{ color: COL.om }}>Website rain (mm)</th>
+              <th style={{ color: COL.ensemble }}>Ensemble</th>
+              <th style={{ color: COL.blend }}>Blend</th>
+              <th style={{ color: COL.om }}>Website</th>
             </tr>
           </thead>
           <tbody>
@@ -529,11 +565,11 @@ function HourlySec({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
               const isNow = !Number.isNaN(ts) && Math.abs(ts - now) < 35 * 60 * 1000;
               return (
               <tr key={`${r.t}-${r.lead_h}`} className="border-t border-neo-line">
-                <td className="py-1 font-mono">{r.lead_h}{isNow ? " · now" : ""}</td>
+                <td className="py-1 font-mono">{r.lead_h ?? 0}{isNow ? " · now" : ""}</td>
                 <td className="font-mono">{istClock(r.t)}</td>
-                <td className="font-mono" style={{ color: COL.ensemble }}>{round2(r.ensemble)}</td>
-                <td className="font-mono" style={{ color: COL.blend }}>{round2(r.moe)}</td>
-                <td className="font-mono" style={{ color: COL.om }}>{round2(r.om)}</td>
+                <td className="font-mono" style={{ color: COL.ensemble }}>{round2(hourlyVars(r, varK).Ensemble)}</td>
+                <td className="font-mono" style={{ color: COL.blend }}>{round2(hourlyVars(r, varK).Blend)}</td>
+                <td className="font-mono" style={{ color: COL.om }}>{round2(hourlyVars(r, varK).Website)}</td>
               </tr>
             );})}
           </tbody>
@@ -598,18 +634,19 @@ function BlendSec({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
 
 function ExtremesSec({ vera }: { vera: VeraPack }) {
   const x = vera.extremes;
-  const [p48, setP48] = useState<"rain" | "temp" | "wind">("rain");
+  const [p48, setP48] = useState<"rain" | "temp" | "wind" | "heat">("rain");
   const cards = [
     { k: "Heat", v: x?.heat_wave },
     { k: "Wind", v: x?.high_wind },
     { k: "Heavy rain", v: x?.heavy_rain },
   ];
   const cmp = x?.compare?.hourly || [];
-  const units = { rain: "mm per hour", temp: "°C", wind: "km/h" };
+  const units = { rain: "mm per hour", temp: "°C", wind: "km/h", heat: "°C WBGT" };
   const series = cmp.map((r) => ({
     h: r.h,
-    Blend: p48 === "rain" ? r.blend_mm : p48 === "temp" ? null : null,
-    Website: p48 === "rain" ? r.website_mm : p48 === "temp" ? r.website_temp_c : r.website_wind_kmh,
+    Ensemble: p48 === "rain" ? r.ensemble_mm : p48 === "temp" ? r.ensemble_temp_c : p48 === "wind" ? r.ensemble_wind_kmh : r.ensemble_wbgt_c,
+    Blend: p48 === "rain" ? r.blend_mm : p48 === "temp" ? r.blend_temp_c : p48 === "wind" ? r.blend_wind_kmh : r.blend_wbgt_c,
+    Website: p48 === "rain" ? r.website_mm : p48 === "temp" ? r.website_temp_c : p48 === "wind" ? r.website_wind_kmh : r.website_wbgt_c,
   }));
   return (
     <div className="space-y-3">
@@ -624,12 +661,12 @@ function ExtremesSec({ vera }: { vera: VeraPack }) {
         ))}
       </div>
       <section className="neo p-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Next 48 hours — Blend vs website</p>
-        <p className="text-[11px] text-neo-muted">Blend is the gated member mix. Website is Open-Meteo. This plot is not the satellite Ensemble.</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Next 72 hours — Ensemble, Blend, Website</p>
+        <p className="text-[11px] text-neo-muted">Same hour values as Hourly and Intra. Hours from now are 0…71.</p>
         <div className="mt-2 flex flex-wrap gap-1">
-          {(["rain", "temp", "wind"] as const).map((k) => (
+          {(["rain", "temp", "wind", "heat"] as const).map((k) => (
             <button key={k} type="button" className={`neo-btn text-[11px] ${p48 === k ? "neo-btn-on" : ""}`} onClick={() => setP48(k)}>
-              {k === "rain" ? "Rain (mm/h)" : k === "temp" ? "Temperature (°C)" : "Wind (km/h)"}
+              {k === "rain" ? "Rain (mm/h)" : k === "temp" ? "Temperature (°C)" : k === "wind" ? "Wind (km/h)" : "Heat WBGT (°C)"}
             </button>
           ))}
         </div>
@@ -641,12 +678,13 @@ function ExtremesSec({ vera }: { vera: VeraPack }) {
               <YAxis fontSize={10} stroke="#4d6b70" width={36} />
               <Tooltip />
               <Legend />
-              {p48 === "rain" ? <Line dataKey="Blend" stroke={COL.blend} dot={false} /> : null}
-              <Line dataKey="Website" stroke={COL.om} dot={false} />
+              <Line dataKey="Ensemble" stroke={COL.ensemble} strokeWidth={2.5} dot={false} />
+              <Line dataKey="Blend" stroke={COL.blend} strokeWidth={2} dot={false} />
+              <Line dataKey="Website" stroke={COL.om} strokeDasharray="4 3" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <AxisHint x="Hours from now (0–47)" y={`${p48 === "rain" ? "Rain" : p48 === "temp" ? "Air temperature" : "Wind speed"} (${units[p48]})`} />
+        <AxisHint x="Hours from now (0–71)" y={`${p48 === "rain" ? "Rain" : p48 === "temp" ? "Air temperature" : p48 === "wind" ? "Wind speed" : "WBGT"} (${units[p48]})`} />
       </section>
       <section className="neo overflow-auto p-4">
         <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Blend vs website (table)</p>
@@ -654,21 +692,19 @@ function ExtremesSec({ vera }: { vera: VeraPack }) {
         <table className="mt-2 w-full text-left text-[11px]">
           <thead className="text-neo-muted">
             <tr>
-              <th className="py-1">Hour ahead</th>
-              <th style={{ color: COL.blend }}>Blend rain (mm)</th>
-              <th style={{ color: COL.om }}>Website rain (mm)</th>
-              <th>Website temp (°C)</th>
-              <th>Website wind (km/h)</th>
+              <th className="py-1">Hour from now</th>
+              <th style={{ color: COL.ensemble }}>Ensemble</th>
+              <th style={{ color: COL.blend }}>Blend</th>
+              <th style={{ color: COL.om }}>Website</th>
             </tr>
           </thead>
           <tbody>
             {cmp.map((r) => (
               <tr key={r.h} className="border-t border-neo-line">
                 <td className="py-1 font-mono">{r.h}</td>
-                <td className="font-mono">{round2(r.blend_mm)}</td>
-                <td className="font-mono">{round2(r.website_mm)}</td>
-                <td className="font-mono">{r.website_temp_c ?? "—"}</td>
-                <td className="font-mono">{r.website_wind_kmh ?? "—"}</td>
+                <td className="font-mono">{round2(series.find((s) => s.h === r.h)?.Ensemble)}</td>
+                <td className="font-mono">{round2(series.find((s) => s.h === r.h)?.Blend)}</td>
+                <td className="font-mono">{round2(series.find((s) => s.h === r.h)?.Website)}</td>
               </tr>
             ))}
           </tbody>
@@ -679,7 +715,10 @@ function ExtremesSec({ vera }: { vera: VeraPack }) {
 }
 
 function CompareSec({ vera }: { vera: VeraPack }) {
-  const hours = (vera.hourly || []).filter((r) => (r.lead_h ?? 0) < 24);
+  const hours = (vera.hourly || []).filter((r) => {
+    const h = r.lead_h ?? 0;
+    return h >= 0 && h < 24;
+  });
   const ids = Object.keys(hours[0]?.members || {});
   const [on, setOn] = useState<string[]>(["Ensemble", "Blend", "Website", ...ids]);
   const data = hours.map((r) => ({ t: istClock(r.t), Ensemble: r.ensemble, Blend: r.moe, Website: r.om, ...(r.members || {}) }));
@@ -1034,24 +1073,29 @@ function IntraSec({ vera }: { vera: VeraPack }) {
   const [vsWeb, setVsWeb] = useState(true);
   const day = days[di] || days[0];
   const hours = day?.hours || [];
-  const chart = hours.map((h) => ({
-    t: istClock(h.t),
-    Blend: h.blend_mm,
-    Website: h.website_mm ?? h.rain_mm,
-    Ensemble: h.ensemble_mm,
-    temp: h.temp_c,
-    wind: h.wind_kmh,
-    heat: h.wbgt_c,
+  function dayPoint(h: (typeof hours)[number]) {
+    if (varK === "temp") return { Ensemble: h.ensemble_temp_c, Blend: h.blend_temp_c, Website: h.temp_c };
+    if (varK === "wind") return { Ensemble: h.ensemble_wind_kmh, Blend: h.blend_wind_kmh, Website: h.wind_kmh };
+    if (varK === "heat") return { Ensemble: h.ensemble_wbgt_c, Blend: h.blend_wbgt_c, Website: h.wbgt_c };
+    return { Ensemble: h.ensemble_mm, Blend: h.blend_mm, Website: h.website_mm ?? h.rain_mm };
+  }
+  const chart = hours.map((h) => ({ t: istClock(h.t), ...dayPoint(h) }));
+  const horizon = (vera.intra_hour?.horizon || []).map((h) => ({
+    t: `${h.lead_h ?? ""}`,
+    ...(varK === "temp"
+      ? { Ensemble: h.ensemble_temp_c, Blend: h.blend_temp_c, Website: h.temp_c }
+      : varK === "wind"
+        ? { Ensemble: h.ensemble_wind_kmh, Blend: h.blend_wind_kmh, Website: h.wind_kmh }
+        : varK === "heat"
+          ? { Ensemble: h.ensemble_wbgt_c, Blend: h.blend_wbgt_c, Website: h.wbgt_c }
+          : { Ensemble: h.ensemble_mm, Blend: h.blend_mm, Website: h.website_mm }),
   }));
   const mins = (di === 0 ? day?.minutes_today : day?.peak_minutes) || [];
   const mchart = mins.map((m) => ({
     t: istClock(m.t),
-    Website: m.website_mm_h ?? m.rain_mm_h,
-    Blend: m.blend_mm_h,
-    Ensemble: m.ensemble_mm_h,
-    temp: m.temp_c,
-    wind: m.wind_kmh,
-    heat: m.wbgt_c,
+    Website: varK === "rain" ? m.website_mm_h ?? m.rain_mm_h : varK === "temp" ? m.temp_c : varK === "wind" ? m.wind_kmh : m.wbgt_c,
+    Blend: varK === "rain" ? m.blend_mm_h : varK === "temp" ? m.temp_c : varK === "wind" ? m.wind_kmh : m.wbgt_c,
+    Ensemble: varK === "rain" ? m.ensemble_mm_h : varK === "temp" ? m.temp_c : varK === "wind" ? m.wind_kmh : m.wbgt_c,
   }));
   const web = mchart.map((m) => Number(m.Website || 0));
   const bl = mchart.map((m) => Number(m.Blend || 0));
@@ -1064,12 +1108,12 @@ function IntraSec({ vera }: { vera: VeraPack }) {
   return (
     <div className="space-y-3">
       <section className="neo p-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Inside each hour · next week</p>
-        <p className="text-[11px] text-neo-muted">{vera.intra_hour?.note} Times are IST. Ensemble is satellite-shaped rain; Blend is gated members; Website is Open-Meteo.</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Inside each hour</p>
+        <p className="text-[11px] text-neo-muted">{vera.intra_hour?.note} Times are IST.</p>
         <div className="mt-2 flex flex-wrap gap-1">
           {days.map((d, i) => (
             <button key={d.date} type="button" className={`neo-btn text-[11px] ${di === i ? "neo-btn-on" : ""}`} onClick={() => setDi(i)}>
-              {d.label || `Day ${i + 1}`} · {d.date}
+              {d.label || d.date} {d.weekday ? `· ${d.weekday}` : ""}
             </button>
           ))}
         </div>
@@ -1096,18 +1140,37 @@ function IntraSec({ vera }: { vera: VeraPack }) {
               <YAxis fontSize={10} width={36} />
               <Tooltip />
               <Legend />
-              {varK === "rain" ? <Line dataKey="Blend" stroke={COL.blend} dot={false} /> : null}
-              {varK === "rain" && vsWeb ? <Line dataKey="Website" stroke={COL.om} strokeDasharray="4 3" dot={false} /> : null}
-              {varK === "temp" ? <Line dataKey="temp" name="Temperature °C" stroke={COL.nwp} dot={false} /> : null}
-              {varK === "wind" ? <Line dataKey="wind" name="Wind km/h" stroke={COL.ai} dot={false} /> : null}
-              {varK === "heat" ? <Line dataKey="heat" name="WBGT °C" stroke="#c0392b" dot={false} /> : null}
+              <Line dataKey="Ensemble" stroke={COL.ensemble} strokeWidth={2.5} dot={false} />
+              <Line dataKey="Blend" stroke={COL.blend} strokeWidth={2} dot={false} />
+              {vsWeb ? <Line dataKey="Website" stroke={COL.om} strokeDasharray="4 3" strokeWidth={2} dot={false} /> : null}
             </LineChart>
           </ResponsiveContainer>
         </div>
         <AxisHint x="Valid hour (IST)" y={yHour} />
       </section>
+      {horizon.length ? (
+        <section className="neo p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Next 72 hours · Blend vs website</p>
+          <p className="text-[11px] text-neo-muted">Hour 0 is now. Same millimetres / °C / km/h as the Hourly tab.</p>
+          <div className="mt-2 h-52">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={horizon}>
+                <CartesianGrid stroke="#cfe0dd" vertical={false} />
+                <XAxis dataKey="t" fontSize={10} />
+                <YAxis fontSize={10} width={36} />
+                <Tooltip />
+                <Legend />
+                <Line dataKey="Ensemble" stroke={COL.ensemble} strokeWidth={2} dot={false} />
+                <Line dataKey="Blend" stroke={COL.blend} strokeWidth={2} dot={false} />
+                {vsWeb ? <Line dataKey="Website" stroke={COL.om} strokeDasharray="4 3" strokeWidth={2} dot={false} /> : null}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <AxisHint x="Hours from now (0–71)" y={yHour} />
+        </section>
+      ) : null}
       <section className="neo p-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{di === 0 ? "15-minute shape (Day 1)" : "Peak-hour 5-minute shape"}</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{day?.label === "Today" ? "15-minute shape (today)" : "Peak-hour 5-minute shape"}</p>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           <Kpi label="Peak rain rate" value={peak ? `${round2(peak)} mm/h` : "—"} />
           <Kpi label="Rain in this strip" value={`${round2(total)} mm`} sub="sums to the locked hour" />
@@ -1128,11 +1191,9 @@ function IntraSec({ vera }: { vera: VeraPack }) {
               <YAxis fontSize={10} width={36} />
               <Tooltip />
               <Legend />
-              {varK === "rain" ? <Line dataKey="Blend" stroke={COL.blend} dot={false} /> : null}
-              {varK === "rain" && vsWeb ? <Line dataKey="Website" stroke={COL.om} strokeDasharray="4 3" dot={false} /> : null}
-              {varK === "temp" ? <Line dataKey="temp" name="Temperature °C" stroke={COL.nwp} dot={false} /> : null}
-              {varK === "wind" ? <Line dataKey="wind" name="Wind km/h" stroke={COL.ai} dot={false} /> : null}
-              {varK === "heat" ? <Line dataKey="heat" name="WBGT °C" stroke="#c0392b" dot={false} /> : null}
+              <Line dataKey="Ensemble" stroke={COL.ensemble} strokeWidth={2} dot={false} />
+              <Line dataKey="Blend" stroke={COL.blend} strokeWidth={2} dot={false} />
+              {vsWeb ? <Line dataKey="Website" stroke={COL.om} strokeDasharray="4 3" strokeWidth={2} dot={false} /> : null}
             </LineChart>
           </ResponsiveContainer>
         </div>

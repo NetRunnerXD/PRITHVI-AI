@@ -6,7 +6,7 @@ India-first live dashboard and advisor for weather, flood, drought, heat, air qu
 
 The Advisor is a **local open LLM** (Ollama `qwen2.5` by default). It never invents rainfall, risk scores, liters, AQI, or rupees. Chat calls one `data()` library and quotes those packs. Bare names (`Puruliya`, `Delhi`) resolve through the India gazetteer or Open-Meteo India geocode.
 
-Default focus: **Haldia, Purba Medinipur, West Bengal**. GitHub: [NetRunnerXD/Rituchakra](https://github.com/NetRunnerXD/Rituchakra).
+Default focus: **Haldia, Purba Medinipur, West Bengal**. GitHub: [NetRunnerXD/Rituchakra](https://github.com/NetRunnerXD/Rituchakra). Public dashboard: Vercel (`deploy/vercel.md`); API: Render (`deploy/render.md`).
 
 Long-form proposal: [`full.md`](full.md). Engineering handoff: [`project.md`](project.md).
 
