@@ -42,8 +42,11 @@ def test_leads_and_intra_and_bulletin():
     assert leads[0]["rain"]["q50"] is not None
     mins = _hour_minutes(10.0, 30, 31, 10, 12, 70, times[0], stride_min=5)
     assert abs(sum(m["rain_mm"] for m in mins) - 10.0) < 1e-6
-    intra = intra_run(f, blend_hourly=[0.4] * 48)
+    from datetime import date as date_cls
+
+    intra = intra_run(f, blend_hourly=[0.4] * 48, today=date_cls(2026, 8, 30))
     assert intra["days"]
+    assert intra["days"][0]["label"] == "Today"
     assert intra["days"][0].get("minutes_today")
     d = disag_run(f["members"], {"q50": 40, "extremes": {"p_ge_64_5": 0.4}}, leads)
     assert d["rain"] > 0
@@ -53,15 +56,36 @@ def test_leads_and_intra_and_bulletin():
     assert pack["intra_hour"]["days"]
     assert pack["replay"]["cases"]
     assert pack["gate"]["explain"]
+    hour = {r["lead_h"]: r for r in pack["hourly"]}
+    ext_h = {r["h"]: r for r in (pack.get("extremes") or {}).get("compare", {}).get("hourly") or []}
+    if 0 in hour and 0 in ext_h:
+        assert ext_h[0]["blend_mm"] == hour[0]["moe"]
+        assert ext_h[0]["website_mm"] == hour[0]["om"]
+        assert ext_h[0]["ensemble_mm"] == hour[0]["ensemble"]
 
 
 def test_hourly_48():
     f = {"hourly_precip": [0.1] * 48, "hourly_times": [f"2026-08-30T{h:02d}:00" for h in range(24)] + [f"2026-08-31T{h:02d}:00" for h in range(24)]}
     members = {"ifs025": {"hourly_precip": [0.2] * 48}, "gfs": {"hourly_precip": [0.0] * 48}}
     rows = build(f, members, {"ifs025": 0.6, "gfs": 0.4}, [0.12] * 48, "22.1,88.1")
-    assert len(rows) == 48
+    assert [r["lead_h"] for r in rows] == list(range(0, 48))
     assert rows[0]["members"]["ifs025"] == 0.2
     assert rows[0]["moe"] == 0.12  # 0.6*0.2 + 0.4*0.0
+
+
+def test_hourly_includes_past_12_with_negative_leads():
+    times = [f"2026-08-30T{h:02d}:00+05:30" for h in range(24)] + [f"2026-08-31T{h:02d}:00+05:30" for h in range(24)]
+    precip = [float(i) for i in range(48)]
+    f = {"hourly_precip": precip, "hourly_times": times, "hourly_now_i": 12}
+    members = {"ifs025": {"hourly_precip": precip}, "gfs": {"hourly_precip": precip}}
+    rows = build(f, members, {"ifs025": 0.5, "gfs": 0.5}, precip, "22.1,88.1")
+    leads = [r["lead_h"] for r in rows]
+    assert leads[0] == -12
+    assert 0 in leads
+    assert leads[-1] == 35
+    assert rows[0]["om"] == 0.0
+    now_row = next(r for r in rows if r["lead_h"] == 0)
+    assert now_row["om"] == 12.0
 
 
 def test_verify_and_cv(tmp_path, monkeypatch):

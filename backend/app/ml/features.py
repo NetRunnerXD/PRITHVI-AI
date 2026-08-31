@@ -152,9 +152,9 @@ def extract(
     precip_today = precip[0] if precip else 0.0
     n_h = len(hourly_times)
     win_a = max(0, now_i - 24)
-    win_b = min(n_h, now_i + 1 + 48) if n_h else 0
+    win_b = min(n_h, now_i + 1 + 72) if n_h else 0
     if n_h and win_b <= win_a:
-        win_a, win_b = 0, min(n_h, 72)
+        win_a, win_b = 0, min(n_h, 96)
     now_i_w = max(0, now_i - win_a) if n_h else 0
     hourly_times_w = hourly_times[win_a:win_b] if n_h else []
 

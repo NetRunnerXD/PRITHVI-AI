@@ -27,8 +27,9 @@ def run(
     est = float((cv.get("derived") or {}).get("precip_est_mmh") or 0)
     q50 = float(fusion.get("q50") or 0)
     clim = float((historical.get("climatology") or {}).get("harmonic_doy") or 6)
+    n = max(48, min(len(hourly_om) or 48, 96))
     hourly = []
-    for h in range(48):
+    for h in range(n):
         sw = sat_weight(h + 0.5)
         nwp = hourly_om[h] if h < len(hourly_om) else q50 / 24.0
         val = sw * est + (1 - sw) * float(nwp)

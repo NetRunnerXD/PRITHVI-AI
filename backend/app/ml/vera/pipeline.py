@@ -121,10 +121,11 @@ def build_vera(
     historical = hist_mod.run(f, lat, lon, regime)
     g = gate_mod.run(member_ids, members, cv, regime, historical, f, lead_hours=24.0)
     fus = fusion_mod.run(members, g.get("weights") or {}, historical)
-    hourly = [float(x) for x in (f.get("hourly_precip") or [])[:48]]
+    precip_all = [float(x) for x in (f.get("hourly_precip") or [])]
+    hourly = precip_all[:96]
     if len(hourly) < 48:
         q = float(fus.get("q50") or 0) / 24.0
-        hourly = (hourly + [q] * 48)[:48]
+        hourly = (hourly + [q] * 72)[:72]
     temp = temporal_mod.run(cv, fus, g, historical, hourly)
     loc_key = f"{round(lat, 3)},{round(lon, 3)}"
     hourly_rows = hourly_mod.build(f, members, g.get("weights") or {}, list(temp.get("hourly_0_48") or []), loc_key)
@@ -134,11 +135,12 @@ def build_vera(
         perf = {"scores": {}, "cv": {"folds": 0}, "history": []}
     ens_mae = (perf.get("scores") or {}).get("ensemble", {}).get("mae") if perf.get("independent_obs") else None
     ops = mlops_mod.run(member_ids, str(regime.get("top")), fus, mae=ens_mae)
-    moe_hourly = [hourly_mod.blend_hour(hourly_mod.member_hourly(members, h), g.get("weights") or {}) for h in range(48)]
-    ext = extremes_mod.run(f, members, g.get("weights") or {}, fus, blend_hourly=moe_hourly)
+    moe_hourly = [r["moe"] for r in hourly_rows if (r.get("lead_h") or 0) >= 0]
+    ens_hourly = [r["ensemble"] for r in hourly_rows if (r.get("lead_h") or 0) >= 0]
+    ext = extremes_mod.run(f, members, g.get("weights") or {}, fus, blend_hourly=moe_hourly, hourly_rows=hourly_rows)
     lead_rows = leads_mod.run(f, members, g.get("weights") or {})
     disag = disag_mod.run(members, fus, lead_rows)
-    intra = intra_mod.run(f, blend_hourly=moe_hourly, ensemble_hourly=list(temp.get("hourly_0_48") or []))
+    intra = intra_mod.run(f, blend_hourly=moe_hourly, ensemble_hourly=ens_hourly, hourly_rows=hourly_rows)
     replay = replay_mod.run()
     loc_name = getattr(loc, "place_name", None) or getattr(loc, "district", None) or getattr(loc, "label", None) or "pin"
     rain24 = (lead_rows[0]["rain"] if lead_rows else {}).get("q50")

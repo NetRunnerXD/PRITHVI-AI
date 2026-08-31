@@ -104,5 +104,5 @@ def test_build_vera_short_daily_times():
     assert abs(sum(pack["gate"]["weights"].values()) - 1.0) < 1e-3
     assert pack["fusion"].get("q25") is not None
     assert pack.get("api_needed")
-    assert len(pack["temporal"]["hourly_0_48"]) == 48
+    assert len(pack["temporal"]["hourly_0_48"]) >= 48
     assert pack["historical"]["embedding_shape"][-1] == 64

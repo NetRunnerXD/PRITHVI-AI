@@ -34,6 +34,7 @@ def run(
     weights: dict[str, float],
     fusion: dict[str, Any],
     blend_hourly: list[float] | None = None,
+    hourly_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     tmax = [float(x) for x in (f.get("temp_max") or [])[:7]]
     wind_d = [float(x) for x in (f.get("wind_max") or [])[:7]]
@@ -94,17 +95,40 @@ def run(
     rain_key = "watch" if (p_heavy or 0) >= 0.3 or rain24 >= RAIN_HEAVY_MM else ("outlook" if rain24 >= 25 else "quiet")
     blend = [float(x) for x in (blend_hourly or [])[:48]]
     compare = []
-    n = max(len(hourly_rain), len(blend), 48)
-    for i in range(min(48, n)):
-        compare.append(
-            {
-                "h": i,
-                "blend_mm": round(blend[i], 2) if i < len(blend) else None,
-                "website_mm": round(hourly_rain[i], 2) if i < len(hourly_rain) else None,
-                "website_temp_c": round(hourly_temp[i], 1) if i < len(hourly_temp) else None,
-                "website_wind_kmh": round(hourly_wind[i], 1) if i < len(hourly_wind) else None,
-            }
-        )
+    if hourly_rows:
+        for r in hourly_rows:
+            lead = int(r.get("lead_h") or 0)
+            if lead < 0 or lead >= 72:
+                continue
+            compare.append(
+                {
+                    "h": lead,
+                    "blend_mm": r.get("moe"),
+                    "website_mm": r.get("om"),
+                    "ensemble_mm": r.get("ensemble"),
+                    "blend_temp_c": r.get("moe_temp_c"),
+                    "website_temp_c": r.get("om_temp_c"),
+                    "ensemble_temp_c": r.get("ensemble_temp_c"),
+                    "blend_wind_kmh": r.get("moe_wind_kmh"),
+                    "website_wind_kmh": r.get("om_wind_kmh"),
+                    "ensemble_wind_kmh": r.get("ensemble_wind_kmh"),
+                    "blend_wbgt_c": r.get("moe_wbgt_c"),
+                    "website_wbgt_c": r.get("om_wbgt_c"),
+                    "ensemble_wbgt_c": r.get("ensemble_wbgt_c"),
+                }
+            )
+    else:
+        n = max(len(hourly_rain), len(blend), 48)
+        for i in range(min(48, n)):
+            compare.append(
+                {
+                    "h": i,
+                    "blend_mm": round(blend[i], 2) if i < len(blend) else None,
+                    "website_mm": round(hourly_rain[i], 2) if i < len(hourly_rain) else None,
+                    "website_temp_c": round(hourly_temp[i], 1) if i < len(hourly_temp) else None,
+                    "website_wind_kmh": round(hourly_wind[i], 1) if i < len(hourly_wind) else None,
+                }
+            )
     return {
         "guidance_only": True,
         "heat_wave": {
@@ -135,7 +159,7 @@ def run(
             "rule": "IMD heavy ≥64.5 mm/day; very heavy ≥115.6 mm/day",
         },
         "compare": {
-            "note": "Blend = gated mix of physics and AI members. Website = Open-Meteo. This is not the satellite Ensemble series.",
+            "note": "Same hourly series as Hourly / Intra / Compare. Ensemble, Blend, and Website for rain, temperature, wind, and heat.",
             "hourly": compare,
         },
     }
