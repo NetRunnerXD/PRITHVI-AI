@@ -28,23 +28,23 @@ function dur(sec: unknown): string {
   return `${h.toFixed(2)} h`;
 }
 
-function Stat({ k, v }: { k: string; v: string }) {
+function Stat({ k, v, scrollable }: { k: string; v: string; scrollable?: boolean }) {
   return (
     <div className="flex flex-col justify-center rounded-xl px-3 py-2.5 bg-[color-mix(in_srgb,var(--accent)_3%,transparent)] border border-[color-mix(in_srgb,var(--accent)_10%,transparent)] transition-all hover:bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] hover:border-[color-mix(in_srgb,var(--accent)_20%,transparent)] group">
       <p className="text-[9px] font-bold uppercase tracking-widest text-neo-muted transition-colors group-hover:text-neo-accent">{k}</p>
-      <p className="mt-1 break-all font-mono text-sm font-extrabold text-[var(--text)]">{v}</p>
+      <div className={`mt-1 font-mono text-sm font-extrabold text-[var(--text)] ${scrollable ? "max-h-32 overflow-y-auto whitespace-pre-wrap pr-1" : "break-all"}`}>{v}</div>
     </div>
   );
 }
 
-function Sector({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
+function Sector({ title, note, fullWidth, children }: { title: string; note?: string; fullWidth?: boolean; children: ReactNode }) {
   return (
-    <section className="neo flex flex-col p-5 bg-[var(--card)] hover:ring-2 hover:ring-[var(--accent)] transition-all duration-300 break-inside-avoid mb-4">
+    <section className={`neo flex flex-col p-5 bg-[var(--card)] hover:ring-2 hover:ring-[var(--accent)] transition-all duration-300 mb-4 ${fullWidth ? 'w-full' : 'break-inside-avoid'}`}>
       <div className="mb-4">
         <p className="text-[12px] font-bold uppercase tracking-[0.18em] text-neo-accent">{title}</p>
         {note ? <p className="mt-1.5 text-[11px] text-neo-muted leading-relaxed">{note}</p> : null}
       </div>
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">{children}</div>
+      <div className={`grid gap-2.5 ${fullWidth ? 'grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8' : 'grid-cols-2 sm:grid-cols-3'}`}>{children}</div>
     </section>
   );
 }
@@ -95,31 +95,16 @@ export function QualityCatalog({ dash, group }: { dash: DashboardSnapshot; group
       : null;
 
   return (
-    <div className="columns-1 lg:columns-2 2xl:columns-3 gap-4 space-y-4">
+    <div className={`gap-4 space-y-4 ${group === "hydrology" || group === "seismology" ? "flex flex-col" : "columns-1 lg:columns-2 2xl:columns-3"}`}>
       {(!group || group === "environment") && (
         <>
           <h2 style={{ columnSpan: "all" } as any} className="mb-4 mt-8 first:mt-0 text-[13px] font-extrabold uppercase tracking-[0.2em] text-neo-muted border-b border-[var(--line)] pb-2">
-            Environment & Air Quality
+            AIR
           </h2>
-          <Sector title="Air quality indices" note="CPCB + Open-Meteo CAMS. Dash = not in the fetched sample.">
-            <Stat
-              k={cpcb.value != null ? "AQI (CPCB)" : "AQI (CAMS)"}
-              v={fmt(cpcb.value ?? dash.descriptive.current.aqi ?? air.us_aqi)}
-            />
-            <Stat k="AQI category" v={fmt(cpcb.category ?? dash.descriptive.current.aqi_category)} />
-            <Stat k="US AQI (CAMS)" v={fmt(air.us_aqi)} />
-            <Stat k="European AQI" v={fmt(air.european_aqi)} />
-            <Stat k="UV index" v={fmt(air.uv_index ?? climate.uv_index)} />
-            <Stat k="UV index (clear sky)" v={fmt(air.uv_index_clear_sky ?? climate.uv_index_clear_sky)} />
-          </Sector>
-
-          <Sector title="Particulates">
+          <Sector title="Particulates, Gases & Pollen" note="India aerobiology climatology (CAMS pollen is Europe-only).">
             <Stat k="PM10" v={fmt(air.pm10)} />
             <Stat k="PM2.5" v={fmt(air.pm2_5)} />
             <Stat k="Dust" v={fmt(air.dust)} />
-          </Sector>
-
-          <Sector title="Gases">
             <Stat k="CO" v={fmt(air.co)} />
             <Stat k="CO2" v={fmt(air.co2)} />
             <Stat k="NO2" v={fmt(air.no2)} />
@@ -127,9 +112,6 @@ export function QualityCatalog({ dash, group }: { dash: DashboardSnapshot; group
             <Stat k="O3" v={fmt(air.o3)} />
             <Stat k="NH3" v={fmt(air.nh3)} />
             <Stat k="CH4" v={fmt(air.ch4)} />
-          </Sector>
-
-          <Sector title="Pollen" note="India aerobiology climatology (CAMS pollen is Europe-only).">
             <Stat k="Pollen · alder" v={fmt(pollen.alder)} />
             <Stat k="Pollen · birch" v={fmt(pollen.birch)} />
             <Stat k="Pollen · grass" v={fmt(pollen.grass)} />
@@ -139,7 +121,16 @@ export function QualityCatalog({ dash, group }: { dash: DashboardSnapshot; group
             <Stat k="Pollen source" v={fmt(pollen.source)} />
           </Sector>
 
-          <Sector title="Soil">
+          <Sector title="Air quality indices" note="CPCB + Open-Meteo CAMS. Dash = not in the fetched sample.">
+            <Stat
+              k={cpcb.value != null ? "AQI (CPCB)" : "AQI"}
+              v={fmt(cpcb.value ?? dash.descriptive.current.aqi ?? air.us_aqi)}
+            />
+            <Stat k="AQI category" v={fmt(cpcb.category ?? dash.descriptive.current.aqi_category)} />
+            <Stat k="UV index" v={fmt(air.uv_index ?? climate.uv_index)} />
+          </Sector>
+
+          <Sector title="AGRICULTURE">
             <Stat k="Soil temperature 0 cm" v={fmt(climate.soil_t_0)} />
             <Stat k="Soil temperature 6 cm" v={fmt(climate.soil_t_6)} />
             <Stat k="Soil temperature 18 cm" v={fmt(climate.soil_t_18)} />
@@ -253,6 +244,7 @@ export function QualityCatalog({ dash, group }: { dash: DashboardSnapshot; group
           </h2>
           <Sector
             title="Marine"
+            fullWidth
             note={inland ? "Inland pin — Open-Meteo marine may be empty or snapped to the nearest Indian coast." : "Open-Meteo marine weather."}
           >
             <Stat k="Wave height" v={fmt(marine.wave_height_m)} />
@@ -279,20 +271,20 @@ export function QualityCatalog({ dash, group }: { dash: DashboardSnapshot; group
             <Stat k="Ocean current direction" v={fmt(marine.ocean_current_dir)} />
           </Sector>
 
-          <Sector title="Flood" note="Open-Meteo GloFAS.">
+          <Sector title="Flood" fullWidth note="Open-Meteo GloFAS.">
             <Stat k="River discharge trend" v={fmt(flood.trend ?? dash.predictive.flood_discharge_trend)} />
             <Stat k="River discharge (now)" v={fmt((flood.discharge as number[] | undefined)?.[0] ?? dash.predictive.river_discharge?.[0])} />
             <Stat k="Flood source" v={fmt(flood.source)} />
           </Sector>
 
-          <Sector title="Tsunami" note="INCOIS ITEWS.">
+          <Sector title="Tsunami" fullWidth note="INCOIS ITEWS.">
             <Stat k="ITEWS title" v={fmt(ts0.title)} />
-            <Stat k="ITEWS body" v={fmt(ts0.body)} />
+            <Stat k="ITEWS body" v={fmt(ts0.body)} scrollable />
             <Stat k="ITEWS threat" v={fmt(ts0.threat)} />
             <Stat k="ITEWS source" v={fmt(ts0.source)} />
           </Sector>
 
-          <Sector title="Cyclones" note="GDACS.">
+          <Sector title="Cyclones" fullWidth note="GDACS.">
             <Stat k="GDACS events" v={String(gdacs.length)} />
             <Stat k="GDACS latest" v={fmt(gdacs[0]?.title)} />
             <Stat k="GDACS type" v={fmt(gdacs[0]?.event_type)} />
@@ -305,7 +297,7 @@ export function QualityCatalog({ dash, group }: { dash: DashboardSnapshot; group
           <h2 style={{ columnSpan: "all" } as any} className="mb-4 mt-8 first:mt-0 text-[13px] font-extrabold uppercase tracking-[0.2em] text-neo-muted border-b border-[var(--line)] pb-2">
             Seismology
           </h2>
-          <Sector title="Earthquake / seismic" note="Nearest event in the India–Indian Ocean box (USGS FDSN, EMSC). NCS has no public JSON.">
+          <Sector title="Earthquake / seismic" fullWidth note="Nearest event in the India–Indian Ocean box (USGS FDSN, EMSC). NCS has no public JSON.">
             {QUAKE_FIELDS.map((row) => (
               <Stat key={row.k} k={row.label} v={fmt(quake[row.k] ?? (row.k === "updated_iso" ? quake.updated : undefined))} />
             ))}

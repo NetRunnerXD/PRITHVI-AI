@@ -50,8 +50,8 @@ export function Sidebar() {
         sidebarOpen ? "lg:w-56" : "max-lg:gap-2 max-lg:p-2 lg:w-[4.25rem]"
       }`}
     >
-      <div className={`flex items-center ${sidebarOpen ? "justify-between" : "flex-col gap-2"}`}>
-        <div className={sidebarOpen ? "min-w-0" : "text-center"}>
+      <div className={`flex items-center ${sidebarOpen ? "justify-between" : "max-lg:justify-start max-lg:w-full lg:flex-col gap-3"}`}>
+        <div className={sidebarOpen ? "min-w-0" : "max-lg:text-left text-center"}>
           <p className="text-lg font-extrabold tracking-tight text-neo-accent">{sidebarOpen ? t.brand : "P"}</p>
           {sidebarOpen ? <p className="mt-0.5 text-[11px] leading-snug text-neo-muted">{t.tag}</p> : null}
         </div>

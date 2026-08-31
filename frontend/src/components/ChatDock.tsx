@@ -200,7 +200,7 @@ export function ChatDock({ compact = false }: { compact?: boolean }) {
           ) : null}
         </div>
         <div className="flex flex-wrap gap-1">
-          {(["en", "hi", "bn", "auto"] as const).map((l) => (
+          {(["en", "hi", "bn"] as const).map((l) => (
             <button
               key={l}
               type="button"
@@ -224,37 +224,6 @@ export function ChatDock({ compact = false }: { compact?: boolean }) {
           {regenBtn}
         </div>
       </header>
-
-      <div className="shrink-0 border-b border-neo-line">
-        {compact ? (
-          <button
-            type="button"
-            className="flex w-full items-center justify-between px-3 py-1.5 text-[11px] font-bold text-neo-muted"
-            onClick={() => setPresetsOpen((v) => !v)}
-            aria-expanded={presetsOpen}
-          >
-            <span>{t.presets}</span>
-            <IconChevronDown className={`h-3.5 w-3.5 transition-transform ${presetsOpen ? "rotate-180" : ""}`} />
-          </button>
-        ) : null}
-        {(compact ? presetsOpen : true) ? (
-          <div className={`flex flex-wrap gap-1.5 px-3 ${compact ? "pb-2" : "py-2"}`}>
-            {presets.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={`chip ${preset === p.id ? "text-neo-accent" : ""}`}
-                onClick={() => {
-                  setPreset(p.id);
-                  setText(p.text);
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
 
       <div ref={scroller} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3" data-testid="chat-thread">
         {chat.length === 0 ? <p className="text-xs text-neo-muted">{t.pickPreset}</p> : null}

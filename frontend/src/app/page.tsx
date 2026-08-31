@@ -53,7 +53,7 @@ export default function Page() {
   const units = settings.units;
 
   const [analyticsSubTab, setAnalyticsSubTab] = useState<"metrics" | "nowcast" | "forecast">("metrics");
-  const [dataSubTab, setDataSubTab] = useState<"meteorology" | "environment" | "hydrology" | "seismology" | "agriculture" | "risks" | "all">("all");
+  const [dataSubTab, setDataSubTab] = useState<"meteorology" | "environment" | "hydrology" | "seismology" | "agriculture" | "risks">("meteorology");
 
   useEffect(() => {
     refresh();
@@ -116,7 +116,7 @@ export default function Page() {
       <OmRelay />
       <Sidebar />
       <div className="min-w-0 flex-1 space-y-3">
-        <header className="neo flex flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
+        <header className="neo relative z-50 flex flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
           <DistrictSearch locale={locale} onPick={(l) => setLocation(l)} />
           {dashboard ? (
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -280,13 +280,12 @@ export default function Page() {
                 {/* Data Subtabs */}
                 <div className="flex flex-wrap gap-1.5 p-1.5 rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-sm">
                   {[
-                    { id: "all", label: "All Data" },
                     { id: "meteorology", label: "Meteorology" },
-                    { id: "environment", label: "Environment" },
+                    { id: "environment", label: "Air" },
                     { id: "hydrology", label: "Hydrology" },
                     { id: "seismology", label: "Seismology" },
                     { id: "agriculture", label: "Agriculture" },
-                    { id: "risks", label: "Risks & Alerts" },
+                    { id: "risks", label: "Risk" },
                   ].map((sub) => (
                     <button
                       key={sub.id}
@@ -303,16 +302,16 @@ export default function Page() {
                 </div>
 
                 {dataSubTab !== "agriculture" && dataSubTab !== "risks" && (
-                  <QualityCatalog dash={dashboard} group={dataSubTab === "all" ? undefined : dataSubTab} />
+                  <QualityCatalog dash={dashboard} group={dataSubTab} />
                 )}
 
-                {(dataSubTab === "all" || dataSubTab === "meteorology") && (
+                {dataSubTab === "meteorology" && (
                   <Collapse title={t.science} defaultOpen={false}>
                     <SciencePanel dash={dashboard} locale={locale} />
                   </Collapse>
                 )}
 
-                {(dataSubTab === "all" || dataSubTab === "risks") && (
+                {dataSubTab === "risks" && (
                   <div className="space-y-3">
                     <div className="grid gap-3 sm:grid-cols-2">
                       {dashboard.risks.map((r) => (
@@ -324,16 +323,10 @@ export default function Page() {
                         />
                       ))}
                     </div>
-                    <EarlyWarnings
-                      items={dashboard.prescriptive.warnings}
-                      locale={locale}
-                      live={dashboard.live}
-                      status={dashboard.provider_status}
-                    />
                   </div>
                 )}
 
-                {(dataSubTab === "all" || dataSubTab === "agriculture") && (
+                {dataSubTab === "agriculture" && (
                   <MandiPanel dash={dashboard} locale={locale} />
                 )}
 

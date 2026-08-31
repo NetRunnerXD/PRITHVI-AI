@@ -39,7 +39,7 @@ export function DistrictSearch({
         onBlur={() => window.setTimeout(() => setFocus(false), 180)}
       />
       {focus && !hits.length && recent.length > 0 && q.trim().length < 2 ? (
-        <ul className="neo absolute z-[500] mt-2 max-h-64 w-full overflow-auto">
+        <ul className="neo absolute z-[9999] mt-2 max-h-64 w-full overflow-auto">
           {recent.slice(0, 5).map((h) => (
             <li key={h.id}>
               <button
@@ -56,7 +56,7 @@ export function DistrictSearch({
         </ul>
       ) : null}
       {hits.length > 0 && (
-        <ul className="neo absolute z-[500] mt-2 max-h-64 w-full overflow-auto">
+        <ul className="neo absolute z-[9999] mt-2 max-h-64 w-full overflow-auto">
           {hits.map((h) => (
             <li key={h.id}>
               <button
