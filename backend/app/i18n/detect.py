@@ -171,20 +171,19 @@ def pick_output_locale(
     locale_hint: str | None,
     detected: str,
 ) -> str:
-    """Reply language.
+    """Reply language from the Chat Reply-in control.
 
-    An explicit Reply-in override (output_locale ≠ UI hint) always wins.
-    Otherwise a non-English question is answered in that language so Hindi/Bengali
-    (or Tamil, French, …) typed into an English UI still come back translated.
+    auto / empty → language of the question.
+    en / hi / bn / … → that language, even if the question was typed in another.
+    locale_hint is only used when output_locale is missing.
     """
     raw_out = (output_locale or "").strip().lower()
     detected_n = normalize_lang(detected) or "en"
     if raw_out in {"auto", ""}:
+        if raw_out == "" and locale_hint:
+            hinted = normalize_lang(locale_hint)
+            if hinted:
+                return hinted
         return detected_n
     explicit = normalize_lang(output_locale)
-    hint = normalize_lang(locale_hint)
-    if explicit and hint and explicit != hint:
-        return explicit
-    if detected_n != "en":
-        return detected_n
-    return explicit or hint or "en"
+    return explicit or detected_n

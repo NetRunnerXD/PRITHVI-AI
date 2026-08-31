@@ -199,14 +199,20 @@ async def _gtx(text: str, src: str, tgt: str) -> MTResult | None:
     client = http_provider.client()
     sl = _google_code(src)
     tl = _google_code(tgt)
+    params = {"client": "gtx", "sl": sl, "tl": tl, "dt": "t"}
+    headers = {**_GTX_HEADERS, "Content-Type": "application/x-www-form-urlencoded"}
     try:
-        resp = await client.post(
-            GTX_URL,
-            params={"client": "gtx", "sl": sl, "tl": tl, "dt": "t"},
-            data={"q": text},
-            headers={**_GTX_HEADERS, "Content-Type": "application/x-www-form-urlencoded"},
-            timeout=15.0,
-        )
+        resp = None
+        if len(text) < 1600:
+            resp = await client.get(GTX_URL, params={**params, "q": text}, headers=_GTX_HEADERS, timeout=15.0)
+        if resp is None or resp.status_code != 200:
+            resp = await client.post(
+                GTX_URL,
+                params=params,
+                data={"q": text},
+                headers=headers,
+                timeout=20.0,
+            )
         if resp.status_code != 200:
             return None
         body, detected = _parse_gtx(resp.json())
@@ -254,8 +260,19 @@ def _cache_key(src: str, tgt: str, text: str) -> str:
     return f"mt:{src}:{tgt}:{digest}"
 
 
-async def translate(text: str, src: str, tgt: str) -> MTResult:
-    """Translate `text` from `src` (or auto) to `tgt`. Identity if src == tgt."""
+def _still_source_script(original: str, translated: str, tgt: str) -> bool:
+    """True when a non-English source was not actually rendered into English."""
+    if tgt != "en":
+        return False
+    src_script = script_of(original)
+    if not src_script:
+        return False
+    out_script = script_of(translated)
+    return out_script == src_script
+
+
+async def translate(text: str, src: str, tgt: str, *, whole: bool = True) -> MTResult:
+    """Translate `text` from `src` (or auto) to `tgt`. Prefer one whole-document call."""
     blob = text or ""
     tgt_n = normalize_lang(tgt) or tgt or "en"
     src_n = normalize_lang(src) or src or "auto"
@@ -280,38 +297,44 @@ async def translate(text: str, src: str, tgt: str) -> MTResult:
         )
 
     masked, held = protect(blob)
-    pieces = _chunks(masked, 900)
+    layouts = [[masked]] if whole else [_chunks(masked, 900)]
+    if whole:
+        layouts.append(_chunks(masked, 900))
     last_err = "none"
-    for factory in (_gtx, _mymemory):
-        translated: list[str] = []
-        detected = src_n
-        engine = "none"
-        failed = False
-        for piece in pieces:
-            pack = await factory(piece, src_n if src_n != "auto" else "auto", tgt_n)
-            if pack is None or not pack.text:
-                failed = True
-                last_err = factory.__name__
-                break
-            translated.append(pack.text)
-            detected = pack.src or detected
-            engine = pack.engine
-        if failed:
-            continue
-        body = restore("\n".join(translated), held)
-        if "⟦" in body or "⟧" in body:
-            last_err = f"{engine}-leaked-lock"
-            continue
-        lost = held_missing(body, held)
-        if lost:
-            last_err = f"{engine}-lost-lock"
-            continue
-        if tgt_n != "en" and not _plausible(blob, body, tgt_n):
-            last_err = f"{engine}-implausible"
-            continue
-        result = MTResult(text=body, src=detected or src_n, tgt=tgt_n, engine=engine, ok=True)
-        cache.set(ck, result.as_dict() | {"text": result.text}, ttl_s=6 * 3600)
-        return result
+    for pieces in layouts:
+        for factory in (_gtx, _mymemory):
+            translated: list[str] = []
+            detected = src_n
+            engine = "none"
+            failed = False
+            for piece in pieces:
+                pack = await factory(piece, src_n if src_n != "auto" else "auto", tgt_n)
+                if pack is None or not pack.text:
+                    failed = True
+                    last_err = factory.__name__
+                    break
+                translated.append(pack.text)
+                detected = pack.src or detected
+                engine = pack.engine
+            if failed:
+                continue
+            body = restore("\n".join(translated), held)
+            if "⟦" in body or "⟧" in body:
+                last_err = f"{engine}-leaked-lock"
+                continue
+            lost = held_missing(body, held)
+            if lost:
+                last_err = f"{engine}-lost-lock"
+                continue
+            if _still_source_script(blob, body, tgt_n):
+                last_err = f"{engine}-still-source-script"
+                continue
+            if tgt_n != "en" and not _plausible(blob, body, tgt_n):
+                last_err = f"{engine}-implausible"
+                continue
+            result = MTResult(text=body, src=detected or src_n, tgt=tgt_n, engine=engine, ok=True)
+            cache.set(ck, result.as_dict() | {"text": result.text}, ttl_s=6 * 3600)
+            return result
 
     return MTResult(text=blob, src=src_n, tgt=tgt_n, engine=f"failed:{last_err}", ok=False)
 
@@ -328,25 +351,30 @@ def _plausible(original: str, translated: str, tgt: str) -> bool:
 
 
 async def inbound(text: str, hint: str | None = None) -> MTResult:
-    """User text (any language) → English for the LLM."""
+    """Detect language, then machine-translate the whole utterance to English for the LLM."""
     blob = text or ""
     detected = detect_lang(blob, hint)
     if not blob.strip() or detected == "en":
         return _identity(blob, detected or "en", "en")
-    result = await translate(blob, "auto", "en")
-    if result.ok:
-        result.src = result.src if result.src not in {"auto", ""} else detected
+    result = await translate(blob, detected, "en", whole=True)
+    if result.ok and not _still_source_script(blob, result.text, "en"):
+        result.src = detected
         return result
-    return MTResult(text=blob, src=detected, tgt="en", engine=result.engine, ok=False)
+    fallback = await translate(blob, "auto", "en", whole=True)
+    if fallback.ok and not _still_source_script(blob, fallback.text, "en"):
+        fallback.src = fallback.src if fallback.src not in {"auto", ""} else detected
+        return fallback
+    failed = result if not result.ok else fallback
+    return MTResult(text=blob, src=detected, tgt="en", engine=failed.engine, ok=False)
 
 
 async def outbound(text: str, tgt: str, src: str = "en") -> MTResult:
-    """English LLM draft → reply language."""
+    """Validated English draft → reply language as one document (not sentence-spliced)."""
     blob = text or ""
     tgt_n = normalize_lang(tgt) or tgt or "en"
     if tgt_n == "en" or not blob.strip():
         return _identity(blob, "en", tgt_n)
-    result = await translate(blob, src or "en", tgt_n)
+    result = await translate(blob, src or "en", tgt_n, whole=True)
     if result.ok and has_script(result.text, tgt_n):
         return result
     return MTResult(text=blob, src="en", tgt=tgt_n, engine=result.engine, ok=False)

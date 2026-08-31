@@ -54,18 +54,18 @@ def test_detect_scripts_and_english():
 
 
 def test_pick_output_locale():
-    # Bengali / Hindi typed into an English UI → reply in that language
-    assert pick_output_locale(output_locale="en", locale_hint="en", detected="bn") == "bn"
-    assert pick_output_locale(output_locale="en", locale_hint="en", detected="hi") == "hi"
-    # explicit Reply-in override wins
-    assert pick_output_locale(output_locale="hi", locale_hint="en", detected="bn") == "hi"
-    assert pick_output_locale(output_locale="en", locale_hint="bn", detected="bn") == "en"
-    # English typed in a Bengali UI stays on the UI reply language
-    assert pick_output_locale(output_locale="bn", locale_hint="bn", detected="en") == "bn"
-    # Tamil (or any other language) typed in an English UI comes back in Tamil
-    assert pick_output_locale(output_locale="en", locale_hint="en", detected="ta") == "ta"
+    # Reply-in Auto follows the question
+    assert pick_output_locale(output_locale="auto", locale_hint="en", detected="bn") == "bn"
+    assert pick_output_locale(output_locale="auto", locale_hint="en", detected="hi") == "hi"
     assert pick_output_locale(output_locale="auto", locale_hint="en", detected="ta") == "ta"
     assert pick_output_locale(output_locale="auto", locale_hint="hi", detected="en") == "en"
+    # Explicit EN / HI / BN always wins over the typed language
+    assert pick_output_locale(output_locale="en", locale_hint="en", detected="bn") == "en"
+    assert pick_output_locale(output_locale="en", locale_hint="bn", detected="bn") == "en"
+    assert pick_output_locale(output_locale="hi", locale_hint="en", detected="bn") == "hi"
+    assert pick_output_locale(output_locale="bn", locale_hint="bn", detected="en") == "bn"
+    # Missing Reply-in falls back to UI hint
+    assert pick_output_locale(output_locale=None, locale_hint="hi", detected="en") == "hi"
 
 
 @pytest.mark.asyncio
@@ -132,6 +132,44 @@ async def test_translate_fails_on_leaked_brackets(monkeypatch):
     monkeypatch.setattr("app.i18n.mt._mymemory", leak)
     out = await translate("Howrah is 29.4 C.", "en", "hi")
     assert not out.ok
+
+
+@pytest.mark.asyncio
+async def test_inbound_translates_from_detected_language(monkeypatch):
+    seen: list[tuple[str, str]] = []
+
+    async def fake_gtx(text, src, tgt):
+        seen.append((src, tgt))
+        return MTResult(text="Which West Bengal districts will flood?", src="bn", tgt="en", engine="google-gtx", ok=True)
+
+    monkeypatch.setattr("app.i18n.mt._gtx", fake_gtx)
+    pack = await inbound("পশ্চিমবঙ্গের কোন কোন জেলায় বন্যার সম্ভাবনা বেশি?", "en")
+    assert pack.ok
+    assert pack.src == "bn"
+    assert seen[0] == ("bn", "en")
+    assert "flood" in pack.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_outbound_sends_whole_document(monkeypatch):
+    calls: list[str] = []
+
+    async def fake_gtx(text, src, tgt):
+        calls.append(text)
+        return MTResult(text=text.replace("Rain", "বৃষ্টি"), src="en", tgt="bn", engine="google-gtx", ok=True)
+
+    async def no_memory(*_a, **_k):
+        raise AssertionError("should not chunk to MyMemory when whole gtx works")
+
+    monkeypatch.setattr("app.i18n.mt._gtx", fake_gtx)
+    monkeypatch.setattr("app.i18n.mt._mymemory", no_memory)
+    draft = "Rain 12.4 mm next 3 days. CPCB AQI 47.\n" * 40
+    out = await outbound(draft, "bn")
+    assert out.ok
+    assert len(calls) == 1
+    assert "12.4" in out.text
+    assert "47" in out.text
+    assert "বৃষ্টি" in out.text
 
 
 @pytest.mark.asyncio

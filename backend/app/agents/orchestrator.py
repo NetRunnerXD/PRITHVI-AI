@@ -30,6 +30,7 @@ from app.data.india_districts import match_states
 from app.agents.facts import (
     drop_false_shrug,
     fill_slots,
+    has_null_metrics,
     is_dash_soup,
     is_pushback,
     present_answer,
@@ -53,10 +54,9 @@ from app.data.closed_class import is_closed_query
 from app.agents.memory import TurnState, load as mem_load, save as mem_save
 from app.agents.prompts import SYSTEM
 from app.agents.views import strip_forbidden
-from app.i18n.detect import detect_lang, pick_output_locale
+from app.i18n.detect import detect_lang, pick_output_locale, script_of
 from app.i18n.mt import inbound as mt_inbound, outbound as mt_outbound
 from app.i18n.number_lock import NUM
-from app.i18n.translate_reply import compose_indic
 from app.llm import ollama_client
 from app.schemas.chat import ChatRequest
 from app.schemas.location import Location
@@ -137,16 +137,33 @@ def _place_matches_locus(requested: str, loc: Location, asked: str | None) -> bo
     return any(_fold_hit(requested, n) for n in names)
 
 
-_COMPOSE_INTENT = {
-    "forecast": "outlook",
-    "rain_window": "window",
-    "nowcast": "irrigation",
-    "aqi": "aqi",
-    "rank": "rank",
-    "mandi": "price",
-    "compare": "compare",
-    "risks": "flood",
-}
+def _bind_focus_place(original: str, message_en: str, pin: Location) -> tuple[str, str | None]:
+    """Trust a place named in the user text; ignore towns invented by inbound MT.
+
+    If nothing is named, keep the dashboard / GPS pin as the locus.
+    """
+    from app.i18n.detect import script_of
+
+    orig_p = mentioned_place(original)
+    en_p = mentioned_place(message_en)
+    if orig_p:
+        return message_en, orig_p
+    if en_p and _place_matches_locus(en_p, pin, None):
+        return message_en, en_p
+    if en_p and script_of(original) is None:
+        return message_en, en_p
+    if en_p and script_of(original):
+        focus = pin.place_name or pin.district or pin.label
+        safe = re.sub(rf"(?i)\b{re.escape(en_p)}\b", focus, message_en or "")
+        pin_state = (pin.state or "").strip()
+        if pin_state:
+            from app.data.india_districts import match_states
+
+            for st in match_states(safe):
+                if st.lower() != pin_state.lower():
+                    safe = re.sub(rf"(?i)\b{re.escape(st)}\b", pin_state, safe)
+        return safe, None
+    return message_en, None
 
 
 def _mt_kept_numbers(en: str, translated: str) -> bool:
@@ -159,6 +176,26 @@ def _mt_kept_numbers(en: str, translated: str) -> bool:
         return True
     have = set(NUM.findall(translated or ""))
     return bool(need & have)
+
+
+async def _localize_validated(content_en: str, out_locale: str):
+    """After English validation, translate the whole reply. Never splice templates."""
+    if out_locale == "en" or not (content_en or "").strip():
+        return content_en, None, "llm-en"
+    outbound = await mt_outbound(content_en, out_locale)
+    usable = bool(
+        outbound.ok
+        and outbound.text
+        and not looks_like_dump(outbound.text)
+        and not is_dash_soup(outbound.text)
+        and not has_null_metrics(outbound.text)
+        and "⟦" not in outbound.text
+        and "⟧" not in outbound.text
+        and _mt_kept_numbers(content_en, outbound.text)
+    )
+    if usable:
+        return outbound.text, outbound, f"llm-en+{outbound.engine}"
+    return content_en, outbound, "en-fallback"
 
 
 async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
@@ -175,8 +212,17 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     loc: Location = pin_now
     original = payload.message or ""
     incoming = await mt_inbound(original, payload.locale_hint)
-    message_en = incoming.text or original
     locale = incoming.src if incoming.src not in {"auto", ""} else detect_lang(original, payload.locale_hint)
+    if incoming.ok:
+        message_en = incoming.text or original
+    elif locale != "en":
+        message_en = (
+            f"(User language is {locale}; translate the meaning into an English weather question, "
+            f"then answer in English.)\n{original}"
+        )
+    else:
+        message_en = original
+    message_en, mt_place = _bind_focus_place(original, message_en, pin_now)
     out_locale = pick_output_locale(
         output_locale=payload.output_locale,
         locale_hint=payload.locale_hint,
@@ -197,23 +243,36 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             "needed": [],
             "gate": "emergency",
         }
+        em_en = tri.message
+        em, em_out, em_engine = await _localize_validated(em_en, out_locale)
         yield {
             "type": "final",
             "message": {
                 "id": uuid.uuid4().hex[:12],
                 "role": "assistant",
-                "content": tri.message,
-                "content_en": tri.message,
+                "content": em,
+                "content_en": em_en,
                 "locale": out_locale,
                 "blocks": [],
                 "suggestions": [],
                 "tool_trace": [],
                 "citations": [],
                 "triage": "emergency",
+                "translation": {
+                    "engine": em_engine,
+                    "src": "en",
+                    "tgt": out_locale,
+                    "inbound": incoming.as_dict(),
+                    "outbound": em_out.as_dict() if em_out else {"src": "en", "tgt": out_locale, "engine": "identity", "ok": True},
+                },
             },
         }
         return
-    place = plan.asked or mentioned_place(message_en) or mentioned_place(original)
+    place = mt_place or plan.asked or mentioned_place(message_en) or mentioned_place(original)
+    if place and script_of(original) and not mentioned_place(original) and not _place_matches_locus(place, pin_now, None):
+        place = None
+        plan.asked = None
+        plan.needs_geocode = False
     if place and (is_closed_query(place) or is_time_followup(message_en)):
         place = None
         plan.asked = None
@@ -414,25 +473,29 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             "gate": "refuse",
             "translation": {"inbound": incoming.as_dict()},
         }
+        refuse_en = gate.refuse
+        refuse, refuse_out, refuse_engine = await _localize_validated(refuse_en, out_locale)
         msg_id = uuid.uuid4().hex[:12]
         yield {
             "type": "final",
             "message": {
                 "id": msg_id,
                 "role": "assistant",
-                "content": gate.refuse,
-                "content_en": gate.refuse,
+                "content": refuse,
+                "content_en": refuse_en,
                 "locale": out_locale,
                 "blocks": [],
                 "suggestions": [],
                 "tool_trace": [],
                 "citations": [],
                 "translation": {
-                    "engine": "source-gate",
+                    "engine": refuse_engine,
                     "src": "en",
                     "tgt": out_locale,
                     "inbound": incoming.as_dict(),
-                    "outbound": {"src": "en", "tgt": out_locale, "engine": "source-gate", "ok": True},
+                    "outbound": refuse_out.as_dict()
+                    if refuse_out
+                    else {"src": "en", "tgt": out_locale, "engine": "source-gate", "ok": True},
                 },
             },
         }
@@ -461,6 +524,11 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         yield {
             "type": "notice",
             "message": f"Translated question {incoming.src} → en ({incoming.engine}).",
+        }
+    elif not incoming.ok and locale != "en":
+        yield {
+            "type": "notice",
+            "message": f"Could not translate question {locale} → en ({incoming.engine}); LLM still answers in English.",
         }
 
     lib = DataLib(loc, speech=original)
@@ -576,10 +644,12 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                     "Do not mention mandi, crops, or markets. Do not paste the source block twice."
                 )
             elif needed or tri.kind == "data":
+                named = "named this town in the question" if place else "did not name a town — use only the dashboard/GPS focus"
                 hint_bits.append(
                     f"Answer only for {loc.label} "
-                    f"(focus {loc.place_name or loc.district}, district {loc.district}). "
-                    "Do not substitute Haldia or any other district unless the user named it in this question. "
+                    f"(focus {loc.place_name or loc.district}, district {loc.district}, {named}). "
+                    "Do not mention Patna, Bihar, Haldia, or any other district unless it is this focus "
+                    "or the user named it. Never switch state. "
                     "Do not say you could not find data if figures are provided below. "
                     "Do not invent dates or millimetres. Quote only the data() pack for this window. "
                     "Do not mention mandi or farm prices unless the user asked."
@@ -811,15 +881,25 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     asked_name = place or (prior.asked if prior and inherit else None) or loc.place_name or loc.district
     pin_from_client = pin_now.label
     content_en = strip_unasked_pin(content_en, place, pin_from_client)
-    allowed = [loc.place_name, loc.district, loc.label, asked_name, place]
+    allowed = [loc.place_name, loc.district, loc.label, loc.state, asked_name, place]
     other = extract_compare_other(message_en, loc.place_name or loc.district)
     if other:
         allowed.append(other)
-    forbidden = []
+    for pack in collected.values():
+        if not isinstance(pack, dict):
+            continue
+        for r in pack.get("ranked") or []:
+            if isinstance(r, dict) and r.get("district"):
+                allowed.append(str(r["district"]))
+        if pack.get("state"):
+            allowed.append(str(pack["state"]))
+    forbidden = ["Patna", "Bihar"]
     if not any(_fold_hit("Haldia", n) for n in allowed if n):
         forbidden.append("Haldia")
     if not _same_pin(pin_now, loc):
         forbidden.append(pin_now.place_name or pin_now.district)
+    if loc.state and loc.state.lower() == "bihar":
+        forbidden = [f for f in forbidden if f.lower() not in {"patna", "bihar"}]
     content_en = strip_foreign_places(content_en, allowed, forbidden)
     content_en = fill_slots(content_en, collected)
     content_en = drop_false_shrug(content_en, collected)
@@ -867,35 +947,14 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     if suggestions:
         yield {"type": "suggestions", "suggestions": suggestions}
 
-    content = content_en
-    engine = "llm-en" if english_llm else "chat-fallback"
-    outbound = None
+    content, outbound, engine = await _localize_validated(content_en, out_locale)
+    if not english_llm and engine == "llm-en":
+        engine = "chat-fallback"
     if out_locale != "en" and content_en:
-        outbound = await mt_outbound(content_en, out_locale)
-        kept = bool(
-            outbound.ok
-            and outbound.text
-            and not looks_like_dump(outbound.text)
-            and _mt_kept_numbers(content_en, outbound.text)
-        )
-        if kept:
-            content = outbound.text
-            engine = f"llm-en+{outbound.engine}"
+        if engine.startswith("llm-en+"):
             yield {"type": "notice", "message": f"Translated answer en → {out_locale} ({outbound.engine})."}
         else:
-            intent = _COMPOSE_INTENT.get((needed or ["outlook"])[0], "outlook")
-            composed = compose_indic(out_locale, intent, lib.snap, collected)
-            if composed:
-                content = composed
-                engine = "compose-indic"
-                yield {"type": "notice", "message": f"Structured {out_locale} from Rituchakra figures (translation dropped numbers)."}
-            elif quoted:
-                content = quoted
-                engine = "quote-facts"
-                yield {"type": "notice", "message": "Showing sourced English figures (translation dropped numbers)."}
-            else:
-                engine = "en-fallback"
-                yield {"type": "notice", "message": "Showing English (translation unavailable)."}
+            yield {"type": "notice", "message": "Showing English (whole-document translation unavailable)."}
 
     mem_save(
         payload.conversation_id,
