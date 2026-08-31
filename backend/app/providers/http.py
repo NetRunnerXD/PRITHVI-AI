@@ -21,6 +21,10 @@ def client() -> httpx.AsyncClient:
 
 async def aclose() -> None:
     global _client
-    if _client is not None:
+    if _client is None:
+        return
+    try:
         await _client.aclose()
-        _client = None
+    except RuntimeError:
+        pass
+    _client = None

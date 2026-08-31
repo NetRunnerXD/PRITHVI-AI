@@ -1,4 +1,5 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -26,15 +27,17 @@ async def _snapshot_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    task = asyncio.create_task(_snapshot_loop())
+    skip_loop = bool(os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("RITUCHAKRA_NO_SNAP_LOOP"))
+    task = None if skip_loop else asyncio.create_task(_snapshot_loop())
     try:
         yield
     finally:
-        task.cancel()
-        try:
-            await task
-        except (asyncio.CancelledError, Exception):
-            pass
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
         await aclose()
 
 

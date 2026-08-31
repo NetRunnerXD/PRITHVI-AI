@@ -15,7 +15,7 @@ import {
 import { useApp } from "@/lib/store";
 import type { ChatMsg, ChatSuggestion, DashboardSnapshot } from "@/types/dashboard";
 import { ChatBlocks } from "./ChatBlocks";
-import { IconChevronDown, IconMic, IconRefresh, IconVolume, IconVolumeOff } from "./Icons";
+import { IconMic, IconRefresh, IconVolume, IconVolumeOff } from "./Icons";
 
 export function ChatDock({ compact = false }: { compact?: boolean }) {
   const {
@@ -43,7 +43,6 @@ export function ChatDock({ compact = false }: { compact?: boolean }) {
   const [preset, setPreset] = useState("");
   const [showEn, setShowEn] = useState(false);
   const [answerFor, setAnswerFor] = useState("");
-  const [presetsOpen, setPresetsOpen] = useState(!compact);
   const [speechLang, setSpeechLang] = useState(() => defaultSpeechLang(locale));
   const [listening, setListening] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
@@ -208,7 +207,7 @@ export function ChatDock({ compact = false }: { compact?: boolean }) {
               onClick={() => setOutputLocale(l)}
               data-testid={`locale-${l}`}
             >
-              {l === "auto" ? t.replyAuto : l.toUpperCase()}
+              {l.toUpperCase()}
             </button>
           ))}
           <button

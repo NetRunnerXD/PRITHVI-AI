@@ -15,6 +15,16 @@ def test_parse_23_to_28_august():
     assert w["kind"] == "range"
 
 
+def test_parse_late_august_stays_this_year_in_early_september():
+    w = parse_window(
+        "Rainfall prediction Pune 23 to 25 August",
+        today=date(2026, 9, 1),
+    )
+    assert w is not None
+    assert w["start"] == date(2026, 8, 23)
+    assert w["end"] == date(2026, 8, 25)
+
+
 def test_parse_iso_and_next_days():
     w = parse_window("rain 2026-08-23 to 2026-08-25", today=date(2026, 8, 18))
     assert w["start"].isoformat() == "2026-08-23"

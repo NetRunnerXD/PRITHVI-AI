@@ -62,7 +62,9 @@ def _year_for(month: int, day: int, today: date) -> int:
         cand = date(today.year, month, day)
     except ValueError:
         return today.year
-    if cand < today - timedelta(days=3) and month < today.month:
+    # Keep a date in this year if it is still a recent window (late August on 1 Sep).
+    # Roll to next year only when that calendar day is long gone.
+    if cand < today - timedelta(days=45):
         return today.year + 1
     return today.year
 
