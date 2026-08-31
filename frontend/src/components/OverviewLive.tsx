@@ -182,57 +182,57 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
 
   return (
     <div className="space-y-3">
-      {/* ── Row 1: Sky + Rain — Extended full width ── */}
-      <div className="grid gap-3 lg:grid-cols-12">
-        {/* Sky card */}
-        <section 
-          className="neo sky-card relative overflow-hidden p-5 lg:col-span-7 cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
-          onClick={() => onNavigateData?.('meteorology')}
-        >
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.sky}</p>
-          <div className="mt-3 flex items-center gap-4">
-            <SkyGlyph kind={sky.kind || cur.sky_kind || "cloud"} day={sky.is_day !== false} />
-            <div className="min-w-0">
-              <p className="text-2xl font-extrabold leading-tight">{sky.label || cur.sky_label || "—"}</p>
-              <p className="mt-1 font-mono text-4xl font-bold text-neo-accent">
-                {temp(sky.temp_c ?? cur.temp_c, units)}
-              </p>
-              <p className="mt-1 text-xs text-neo-muted">
-                {sky.is_day ? t.day : t.night}
-                {feels != null ? ` · feels ${temp(feels, units)}` : ""}
-                {sky.place ? ` · ${sky.place}` : ""}
-              </p>
+      {/* ── Row 1: Sky and Rainfall — merged full width ── */}
+      <section
+        className="neo sky-card relative overflow-hidden p-5 cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
+        onClick={() => onNavigateData?.('meteorology')}
+      >
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Sky and Rainfall</p>
+        <div className="mt-3 grid gap-5 lg:grid-cols-12">
+          {/* Sky side */}
+          <div className="lg:col-span-7">
+            <div className="flex items-center gap-4">
+              <SkyGlyph kind={sky.kind || cur.sky_kind || "cloud"} day={sky.is_day !== false} />
+              <div className="min-w-0">
+                <p className="text-2xl font-extrabold leading-tight">{sky.label || cur.sky_label || "—"}</p>
+                <p className="mt-1 font-mono text-4xl font-bold text-neo-accent">
+                  {temp(sky.temp_c ?? cur.temp_c, units)}
+                </p>
+                <p className="mt-1 text-xs text-neo-muted">
+                  {sky.is_day ? t.day : t.night}
+                  {feels != null ? ` · feels ${temp(feels, units)}` : ""}
+                  {sky.place ? ` · ${sky.place}` : ""}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              <Stat k={`${t.humidity}`} v={sky.humidity_pct != null ? `${Math.round(Number(sky.humidity_pct))} %` : "—"} />
+              <Stat k={t.cloud} v={sky.cloud_cover_pct != null ? `${Math.round(Number(sky.cloud_cover_pct))} %` : "—"} />
+              <Stat k={t.visibility} v={sky.visibility_km != null ? dist(sky.visibility_km, units) : "—"} />
+              <Stat k={t.lastHourRain} v={rain(sky.precip_1h_mm, units)} />
             </div>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-            <Stat k={`${t.humidity}`} v={sky.humidity_pct != null ? `${Math.round(Number(sky.humidity_pct))} %` : "—"} />
-            <Stat k={t.cloud} v={sky.cloud_cover_pct != null ? `${Math.round(Number(sky.cloud_cover_pct))} %` : "—"} />
-            <Stat k={t.visibility} v={sky.visibility_km != null ? dist(sky.visibility_km, units) : "—"} />
-            <Stat k={t.lastHourRain} v={rain(sky.precip_1h_mm, units)} />
+          {/* Divider */}
+          <div className="hidden lg:block lg:col-span-1 border-l border-[var(--line)] self-stretch mx-auto" />
+          {/* Rainfall side */}
+          <div className="lg:col-span-4">
+            <p className="text-[10px] uppercase tracking-widest text-neo-muted">{t.rainToday}</p>
+            <p className="mt-1 font-mono text-4xl font-extrabold text-neo-accent">
+              {todayRain != null ? rain(todayRain, units) : "—"}
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <Stat k={t.rain3} v={rain(dash.predictive.precip_next_3d_mm, units)} />
+              <Stat k={t.rain7} v={rain(dash.predictive.precip_7d_mm, units)} />
+              <RainOdds
+                k={t.chanceOfRain}
+                pct={(dash.predictive.precip_probability_pct || []).slice(0, 3)}
+                days={[t.day1, t.day2, t.day3]}
+              />
+              <Stat k={t.balance} v={rain(dash.predictive.water_balance_7d_mm, units)} />
+            </div>
           </div>
-        </section>
-
-        {/* Rain panel */}
-        <section 
-          className="neo p-5 lg:col-span-5 cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
-          onClick={() => onNavigateData?.('meteorology')}
-        >
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.rainToday}</p>
-          <p className="mt-3 font-mono text-4xl font-extrabold text-neo-accent">
-            {todayRain != null ? rain(todayRain, units) : "—"}
-          </p>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <Stat k={t.rain3} v={rain(dash.predictive.precip_next_3d_mm, units)} />
-            <Stat k={t.rain7} v={rain(dash.predictive.precip_7d_mm, units)} />
-            <RainOdds
-              k={t.chanceOfRain}
-              pct={(dash.predictive.precip_probability_pct || []).slice(0, 3)}
-              days={[t.day1, t.day2, t.day3]}
-            />
-            <Stat k={t.balance} v={rain(dash.predictive.water_balance_7d_mm, units)} />
-          </div>
-        </section>
-      </div>
+        </div>
+      </section>
 
       {/* ── Row 2: (Wind + Next 6h + 7-day forecast) on left & Alerts on right ── */}
       <div className="grid gap-3 lg:grid-cols-12 items-stretch">
@@ -293,10 +293,7 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
             </section>
 
             {/* Next 6h */}
-            <section 
-              className="neo p-4 sm:col-span-7 flex flex-col justify-between cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
-              onClick={() => onNavigateData?.('meteorology')}
-            >
+            <section className="neo p-4 sm:col-span-7 flex flex-col justify-between">
               <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.next6h}</p>
               {six.length ? (
                 <div className="mt-2 grid grid-cols-6 gap-1">
@@ -329,10 +326,7 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
           </div>
 
           {/* 7-day Forecast */}
-          <section 
-            className="neo p-4 cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
-            onClick={() => onNavigateData?.('meteorology')}
-          >
+          <section className="neo p-4">
             <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.forecast7}</p>
             <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
               {days.map((d) => (
@@ -351,7 +345,7 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
 
         {/* Alerts sidebar — expanded height with scrollable list */}
         <aside 
-          className="neo flex flex-col lg:col-span-4 h-[25.5rem] max-h-[25.5rem] overflow-hidden cursor-pointer hover:ring-2 hover:ring-[var(--danger)] transition-all"
+          className="neo flex flex-col lg:col-span-4 lg:h-[25.5rem] lg:max-h-[25.5rem] overflow-hidden cursor-pointer hover:ring-2 hover:ring-[var(--danger)] transition-all"
           onClick={() => onNavigateData?.('risks')}
         >
           {/* Header */}
@@ -394,21 +388,6 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
               ))
             )}
           </ul>
-          {/* Footer summary */}
-          <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-[var(--line)] p-2.5">
-            <AlertStat
-              label={t.floodWatch}
-              value={`${live?.flood?.trend ?? "—"} · ${live?.flood?.score_pct ?? "—"}%`}
-            />
-            <AlertStat
-              label={t.aqi}
-              value={
-                live?.air?.cpcb?.value != null
-                  ? `${live.air.cpcb.value} ${live.air.cpcb.category ?? ""}`.trim()
-                  : "—"
-              }
-            />
-          </div>
         </aside>
       </div>
 
@@ -441,61 +420,43 @@ function HomeHazardStrip({ dash, locale, onNavigateData }: { dash: DashboardSnap
   const vera = dash.predictions?.vera;
   const risk = (id: string) => dash.risks.find((r) => r.id === id);
 
+  const aqiNum = dash.descriptive.current.aqi ?? air.us_aqi;
+  const aqiQuality =
+    aqiNum == null
+      ? "—"
+      : Number(aqiNum) <= 50
+        ? "Good"
+        : Number(aqiNum) <= 100
+          ? "Moderate"
+          : Number(aqiNum) <= 200
+            ? "Unhealthy"
+            : "Very Poor";
+
   const cards = [
     {
-      title: t.aqi,
+      title: "Air",
       rows: [
-        ["AQI", String(dash.descriptive.current.aqi ?? air.us_aqi ?? "—")],
+        ["AQI", String(aqiNum ?? "—")],
+        ["Quality", aqiQuality],
         ["PM2.5", String(air.pm2_5 ?? "—")],
-        ["UV", String(air.uv_index ?? climate.uv_index ?? "—")],
+        ["Grass Pollen", String(pollen.grass ?? "—")],
+        ["Ragweed Pollen", String(pollen.ragweed ?? "—")],
       ],
     },
     {
       title: t.landWeather,
       rows: [
-        ["Tmax", String(climate.temp_max ?? "—")],
-        ["RH", String(climate.rh_now ?? "—")],
-        ["Soil", String(climate.soil_m_0_1 ?? dash.descriptive.current.soil_moisture_m3m3 ?? "—")],
+        ["Maximum Temperature", String(climate.temp_max ?? "—")],
+        ["Relative Humidity", String(climate.rh_now ?? "—")],
+        ["Soil Moisture", String(climate.soil_m_0_1 ?? dash.descriptive.current.soil_moisture_m3m3 ?? "—")],
       ],
     },
     {
       title: t.marineWeather,
       rows: [
-        ["Wave m", String(marine.wave_height_m ?? "—")],
-        ["SST", String(marine.sst_c ?? "—")],
+        ["Wave Height", String(marine.wave_height_m ?? "—")],
+        ["Sea Surface Temperature", String(marine.sst_c ?? "—")],
         ["Swell", String(marine.swell_height_m ?? "—")],
-      ],
-    },
-    {
-      title: t.allergen,
-      rows: [
-        ["Grass", String(pollen.grass ?? "—")],
-        ["Ragweed", String(pollen.ragweed ?? "—")],
-        ["Source", String(pollen.source ?? "India climatology")],
-      ],
-    },
-    {
-      title: t.cyclone,
-      rows: [
-        ["GDACS", String(gdacs.length)],
-        ["Latest", String(gdacs[0]?.title ?? "—")],
-        ["Type", String(gdacs[0]?.event_type ?? "—")],
-      ],
-    },
-    {
-      title: t.tsunami,
-      rows: [
-        ["ITEWS", String((tsunami[0] as { title?: string } | undefined)?.title ?? t.noItews)],
-        ["Threat", String((tsunami[0] as { threat?: unknown } | undefined)?.threat ?? "—")],
-        ["Flood", String(flood.trend ?? dash.predictive.flood_discharge_trend ?? "—")],
-      ],
-    },
-    {
-      title: t.earthquake,
-      rows: [
-        ["Mag", String(seismic[0]?.mag ?? "—")],
-        ["Place", String(seismic[0]?.place ?? "—")],
-        ["km", String(seismic[0]?.distance_km ?? "—")],
       ],
     },
   ];
@@ -674,16 +635,15 @@ function HomeHazardStrip({ dash, locale, onNavigateData }: { dash: DashboardSnap
   return (
     <div className="space-y-3">
       {/* Hazard info cards */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => (
           <section 
             key={c.title} 
             className="neo p-3 cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all"
             onClick={() => {
-              if (c.title === t.aqi || c.title === t.allergen) onNavigateData?.('environment');
+              if (c.title === "Air") onNavigateData?.('environment');
               else if (c.title === t.landWeather) onNavigateData?.('meteorology');
-              else if (c.title === t.marineWeather || c.title === t.cyclone || c.title === t.tsunami) onNavigateData?.('hydrology');
-              else if (c.title === t.earthquake) onNavigateData?.('seismology');
+              else if (c.title === t.marineWeather) onNavigateData?.('hydrology');
             }}
           >
             <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{c.title}</p>
@@ -699,37 +659,7 @@ function HomeHazardStrip({ dash, locale, onNavigateData }: { dash: DashboardSnap
         ))}
       </div>
 
-      <section className="neo p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.suggestions}</p>
-          <div className="ml-auto flex items-center gap-2 text-[10px] text-neo-muted">
-            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--accent)]" />All clear</span>
-            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--warn)]" />Caution</span>
-            <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[var(--danger)]" />Warning</span>
-          </div>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-          {suggestions.map((s) => {
-            const level = suggestionLevel(s.id, s.raw);
-            const style = suggLevel[level];
-            return (
-              <button
-                type="button"
-                key={s.id}
-                className={`flex items-center gap-2.5 rounded-2xl px-3 py-2.5 text-left ${style.bg}`}
-                onClick={() => onNavigateData?.(s.tab)}
-              >
-                <span className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-neo-muted">{s.label}</p>
-                  <p className={`mt-0.5 truncate text-sm font-bold ${style.text}`}>{s.status}</p>
-                  <p className="truncate font-mono text-[10px] text-neo-muted">{s.metric}</p>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
+
     </div>
   );
 }
@@ -765,10 +695,9 @@ export function OverviewPlots({ dash, locale }: { dash: DashboardSnapshot; local
       <Spark title={t.windSpeed} data={wspd} color="var(--accent)" unit={units === "imperial" ? "mph" : "km/h"} />
       <Spark title={t.humidity} data={rh} color="var(--accent)" unit="%" />
       <Spark title={t.cloud} data={cloud} color="#7aa2a8" unit="%" />
-      <Spark title={t.soil} data={soil} color="#8d6e63" unit="m³/m³" />
+      <Spark title="SOIL MOISTURE" data={soil} color="#8d6e63" unit="m³/m³" />
       <Spark title={t.discharge} data={discharge} color="var(--flood)" unit="m³/s" />
-      <Spark title={t.omAqi} data={aqi} color="var(--accent2)" unit="US AQI" />
-      <Spark title={t.histAqi} data={aqiHist.length ? aqiHist : aqi} color="var(--accent2)" unit={aqiHist.length ? "µg/m³" : "US AQI"} />
+      <Spark title="AQI" data={aqi} color="var(--accent2)" unit="" />
       <Spark title="PM10" data={(series.pm10_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }))} color="var(--accent2)" unit="µg/m³" />
       <Spark title="Dust" data={dust} color="#a1887f" unit="µg/m³" />
       <Spark title="UV" data={(series.uv_hourly || []).slice(0, 24).map((p) => ({ t: hhmm(p.t), v: p.value }))} color="var(--gold)" unit="UV" />
@@ -777,7 +706,7 @@ export function OverviewPlots({ dash, locale }: { dash: DashboardSnapshot; local
       <Spark title="Sea surface" data={sst} color="#00838f" unit={tempUnit(units)} />
       <Spark title="Daily rain" data={rainD} color="var(--rain)" unit={rainUnit(units)} kind="bar" />
       <Spark title="Daily Tmax" data={tmax} color="var(--gold)" unit={tempUnit(units)} />
-      <Spark title={t.et0} data={et0} color="#5d8a66" unit="mm" />
+      <Spark title="EVATRANSPIRATION" data={et0} color="#5d8a66" unit="mm" />
     </div>
   );
 }

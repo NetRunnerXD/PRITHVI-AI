@@ -22,9 +22,6 @@ export function ChatFloat() {
       {open ? (
         <div className="pointer-events-auto w-[min(100vw-1.5rem,24rem)] overflow-hidden rounded-organ shadow-neo">
           <ChatDock compact />
-          <button className="neo-btn w-full rounded-none text-xs" onClick={() => setTab("chat")}>
-            {t.tabChat}
-          </button>
         </div>
       ) : null}
       <button
