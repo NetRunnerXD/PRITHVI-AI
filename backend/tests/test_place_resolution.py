@@ -29,6 +29,13 @@ def test_unknown_does_not_become_haldia():
     assert fallback.place_name == "Haldia"
 
 
+def test_indic_aliases_resolve_nadia_and_howrah():
+    from app.data.india_districts import extract_place
+
+    assert extract_place("নদিয়ায় আগামী ৩ দিনে কত বৃষ্টি?") == "Nadia"
+    assert extract_place("हावड़ा में आज मौसम कैसा है?") == "Howrah"
+
+
 def test_named_beats_default_pin():
     loc = resolve_named_place("Puruliya")
     assert loc is not None

@@ -49,6 +49,20 @@ def test_strip_foreign_places_drops_default_pin():
     assert "Haldia" not in out
 
 
+def test_strip_foreign_places_drops_bihar_when_focus_is_howrah():
+    from app.agents.facts import strip_foreign_places
+
+    raw = (
+        "Howrah is 26.4°C with 50.7 mm in 3 days. "
+        "The forecast for Patna district of Bihar shows a thunderstorm."
+    )
+    out = strip_foreign_places(raw, ["Howrah", "West Bengal"], ["Patna", "Bihar"])
+    assert "Howrah" in out
+    assert "26.4" in out
+    assert "Patna" not in out
+    assert "Bihar" not in out
+
+
 def test_source_gate_refuses_unsourced_visit():
     g = source_gate("Best places to take my pet to visit")
     assert g.mode == "refuse"

@@ -11,14 +11,14 @@ from functools import lru_cache
 # id, label, state, district, subdivision, lat, lon, aliases, crop_hint
 _RAW: list[tuple] = [
     # West Bengal / Gangetic
-    ("in_wb_nadia", "Nadia, West Bengal", "West Bengal", "Nadia", "Gangetic West Bengal", 23.4710, 88.5565, "krishnanagar,kalyani", "aman_rice"),
-    ("in_wb_kolkata", "Kolkata, West Bengal", "West Bengal", "Kolkata", "Gangetic West Bengal", 22.5726, 88.3639, "calcutta,calcuta,kolkatta", "vegetables"),
+    ("in_wb_nadia", "Nadia, West Bengal", "West Bengal", "Nadia", "Gangetic West Bengal", 23.4710, 88.5565, "krishnanagar,kalyani,nadiya,নদিয়া,नदिया", "aman_rice"),
+    ("in_wb_kolkata", "Kolkata, West Bengal", "West Bengal", "Kolkata", "Gangetic West Bengal", 22.5726, 88.3639, "calcutta,calcuta,kolkatta,কলকাতা,कोलकाता", "vegetables"),
     ("in_wb_n24p", "North 24 Parganas, West Bengal", "West Bengal", "North 24 Parganas", "Gangetic West Bengal", 22.7245, 88.4805, "barasat,bongaon", "aman_rice"),
     ("in_wb_s24p", "South 24 Parganas, West Bengal", "West Bengal", "South 24 Parganas", "Gangetic West Bengal", 22.1352, 88.4016, "baruipur,sundarban", "aman_rice"),
-    ("in_wb_howrah", "Howrah, West Bengal", "West Bengal", "Howrah", "Gangetic West Bengal", 22.5958, 88.2636, "haora", "vegetables"),
+    ("in_wb_howrah", "Howrah, West Bengal", "West Bengal", "Howrah", "Gangetic West Bengal", 22.5958, 88.2636, "haora,হাওড়া,हावड़ा,হাওড়া", "vegetables"),
     ("in_wb_hooghly", "Hooghly, West Bengal", "West Bengal", "Hooghly", "Gangetic West Bengal", 22.8963, 88.4025, "chinsurah,hooghlly", "aman_rice"),
     ("in_wb_murshidabad", "Murshidabad, West Bengal", "West Bengal", "Murshidabad", "Gangetic West Bengal", 24.1759, 88.2802, "berhampore", "aman_rice"),
-    ("in_wb_malda", "Malda, West Bengal", "West Bengal", "Malda", "Gangetic West Bengal", 25.0108, 88.1411, "english bazar", "mango"),
+    ("in_wb_malda", "Malda, West Bengal", "West Bengal", "Malda", "Gangetic West Bengal", 25.0108, 88.1411, "english bazar,মালদা,मालदा", "mango"),
     ("in_wb_eburdwan", "Purba Bardhaman, West Bengal", "West Bengal", "Purba Bardhaman", "Gangetic West Bengal", 23.2324, 87.8615, "bardhaman,burdwan", "aman_rice"),
     ("in_wb_birbhum", "Birbhum, West Bengal", "West Bengal", "Birbhum", "Gangetic West Bengal", 23.8400, 87.6186, "suri", "aman_rice"),
     ("in_wb_bankura", "Bankura, West Bengal", "West Bengal", "Bankura", "Gangetic West Bengal", 23.2324, 87.0786, "", "aman_rice"),
@@ -32,7 +32,7 @@ _RAW: list[tuple] = [
     ("in_wb_udinajpur", "Uttar Dinajpur, West Bengal", "West Bengal", "Uttar Dinajpur", "Sub Himalayan West Bengal", 25.6170, 88.1240, "raiganj", "rice"),
     ("in_wb_ddinajpur", "Dakshin Dinajpur, West Bengal", "West Bengal", "Dakshin Dinajpur", "Gangetic West Bengal", 25.2210, 88.7630, "balurghat", "rice"),
     ("in_wb_wburdwan", "Paschim Bardhaman, West Bengal", "West Bengal", "Paschim Bardhaman", "Gangetic West Bengal", 23.6730, 87.6850, "asansol,durgapur", "vegetables"),
-    ("in_wb_eastmedinipur", "Purba Medinipur, West Bengal", "West Bengal", "Purba Medinipur", "Gangetic West Bengal", 22.3010, 87.9160, "tamluk,haldia", "aman_rice"),
+    ("in_wb_eastmedinipur", "Purba Medinipur, West Bengal", "West Bengal", "Purba Medinipur", "Gangetic West Bengal", 22.3010, 87.9160, "tamluk,haldia,হলদিয়া,हल्दिया", "aman_rice"),
     ("in_wb_jhargram", "Jhargram, West Bengal", "West Bengal", "Jhargram", "Gangetic West Bengal", 22.4540, 86.9970, "", "sal"),
     # Odisha
     ("in_od_khordha", "Khordha, Odisha", "Odisha", "Khordha", "Odisha", 20.1820, 85.6160, "bhubaneswar", "rice"),
@@ -46,7 +46,7 @@ _RAW: list[tuple] = [
     ("in_jh_ranchi", "Ranchi, Jharkhand", "Jharkhand", "Ranchi", "Jharkhand", 23.3441, 85.3096, "", "rice"),
     ("in_jh_eastsing", "East Singhbhum, Jharkhand", "Jharkhand", "East Singhbhum", "Jharkhand", 22.8046, 86.2029, "jamshedpur", "vegetables"),
     ("in_jh_dhanbad", "Dhanbad, Jharkhand", "Jharkhand", "Dhanbad", "Jharkhand", 23.7957, 86.4304, "", "vegetables"),
-    ("in_br_patna", "Patna, Bihar", "Bihar", "Patna", "Bihar", 25.5941, 85.1376, "", "rice"),
+    ("in_br_patna", "Patna, Bihar", "Bihar", "Patna", "Bihar", 25.5941, 85.1376, "পাটনা,पटना", "rice"),
     ("in_br_muzaffarpur", "Muzaffarpur, Bihar", "Bihar", "Muzaffarpur", "Bihar", 26.1209, 85.3647, "", "litchi"),
     ("in_br_darbhanga", "Darbhanga, Bihar", "Bihar", "Darbhanga", "Bihar", 26.1542, 85.8918, "", "rice"),
     ("in_br_gaya", "Gaya, Bihar", "Bihar", "Gaya", "Bihar", 24.7969, 85.0039, "", "rice"),
@@ -307,6 +307,12 @@ def extract_places(text: str) -> list[str]:
         names = [d["district"], *[a for a in d["aliases"] if a]]
         for n in names:
             key = n.strip().lower()
+            if len(key) < 3:
+                continue
+            if not key.isascii():
+                if key in (text or "") or key in blob:
+                    found[d["district"]] = max(found.get(d["district"], 0), len(key))
+                continue
             if len(key) < 4:
                 continue
             if re.search(rf"(?<![a-z]){re.escape(key)}(?![a-z])", blob):

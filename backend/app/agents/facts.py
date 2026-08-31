@@ -117,6 +117,21 @@ def is_dash_soup(text: str) -> bool:
     return len(digits) <= 2
 
 
+_NULL_METRIC = re.compile(
+    r"(?:—|–|\bnull\b|\bnone\b)\s*(?:°\s*C|°C|mm|%|hPa|m/s|मिमी|মিমি|लीटर|লিটার)|"
+    r"(?:AQI|°C|mm|मिमी|মিমি)\s*[:\s]*(?:—|–|\bnull\b)",
+    re.I,
+)
+
+
+def has_null_metrics(text: str) -> bool:
+    """True when millimetres / °C / AQI were replaced by an em dash or null."""
+    raw = text or ""
+    if raw.count("—") >= 3 and len(NUM.findall(raw)) <= 1:
+        return True
+    return bool(_NULL_METRIC.search(raw))
+
+
 def drop_false_shrug(text: str, collected: dict) -> str:
     """If we already fetched figures, drop 'I couldn't find any weather' waffle."""
     if not text or not collected:
@@ -155,15 +170,32 @@ def strip_foreign_places(
     """Drop sentences that name a town that is not the locus (or an explicit extra)."""
     if not text:
         return text
+    from app.agents.dimensions import mentioned_places
+    from app.data.india_districts import match_states
+
     allow = {n.split(",")[0].strip().lower() for n in (allowed or []) if n}
     forbid = {n.split(",")[0].strip().lower() for n in (forbidden or []) if n}
+    for p in mentioned_places(text):
+        key = p.split(",")[0].strip().lower()
+        if key and key not in allow:
+            forbid.add(key)
+    home_states = set()
+    for n in allowed or []:
+        blob = (n or "").lower()
+        for st in match_states(n or ""):
+            home_states.add(st.lower())
+        if "west bengal" in blob or "bengal" in blob:
+            home_states.add("west bengal")
     forbid -= {a for a in allow if a}
-    if not forbid:
+    if not forbid and not home_states:
         return text
     keep = []
-    for sent in re.split(r"(?<=[.!?])\s+", text):
+    for sent in re.split(r"(?<=[.!?।])\s+", text):
         low = sent.lower()
-        if any(f in low for f in forbid) and not any(a and a in low for a in allow):
+        if any(len(f) >= 4 and f in low for f in forbid) and not any(a and len(a) >= 3 and a in low for a in allow):
+            continue
+        foreign_st = [s for s in match_states(sent) if s.lower() not in home_states]
+        if foreign_st and home_states and not any(a and a in low for a in allow):
             continue
         keep.append(sent)
     return " ".join(keep).strip()
