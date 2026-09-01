@@ -133,7 +133,12 @@ Any client (frontend/ or a new web / React Native folder using clients/js)
                           ├─ /api/sat/imd-asia CORS-safe cropped INSAT Asia JPEG
                           ├─ /api/geo/*        India search + Bhuvan WMS proxy
                           ├─ /api/chat         SSE ← agents.orchestrator.run_agent
+                          ├─ /api/auth/*       optional accounts (JWT + Mongo or in-process)
                           └─ providers + ml + science + cache (in-memory TTL)
+
+**Blend vs Open-Meteo skill** uses frozen issue rows (`forecast_issues` on Atlas, else `.cache/vera_hourly_log.jsonl`). Issued millimetres are never rewritten when OM updates. Models tab **OM vs blend** scores agreement vs `om_issued`; skill only after IMERG/HEM/ERA5 `obs`. Live nowcast is not that score.
+
+**Accounts are optional.** Sign-in is a sidebar action, not a gate. Dashboard, search, nowcast, and Advisor work as a guest. Profiles (phone, GPS at register, SMS opt-in, alert location) persist on MongoDB Atlas when `MONGODB_URI` is set, else an in-process store. SMS uses Fast2SMS or dry-run.
 ```
 
 One process serves web and app together. Do not change frontend URLs: they stay on `/api`. App clients may use `/app/v1` (or keep `/api`). Optional header `X-Rituchakra-Client: web|app|local|v1` is echoed as `X-Client-Surface`.
@@ -356,6 +361,10 @@ Dashboard section **Models** (`tabPredicted`). Pack is `predictions.vera` from `
 | Hourly rows | `ensemble`, **`moe` (gated blend)**, `om`, `members`, `lead_h` for 48 h; UI shows **0–24 h** |
 | Verify | Log `.cache/vera_hourly_log.jsonl` keyed `pin\|hour\|lead`. `obs` only from `imerg_hourly` / `hem_hourly` / `obs_hourly`. `agreement` = MAE vs Open-Meteo (always). Skill KPI hidden without independent obs |
 | Extremes | Heat / wind / rain with labels **No alert / Possible / Warning**. `compare.hourly` = blend rain vs website (Open-Meteo) |
+| EQMN fusion | Operational percentiles are **direct quantile blends** `Q(τ)=Σ w_k Q_k(τ)` with pinball vs independent obs. Mixture PDF on the board is diagnostic only. |
+| Gate | ViT spatial map + **cross-attention** (forecasts query satellite / regime / historical). |
+| CV | ResNet-shaped CNN + ConvLSTM + **Swin-window** encoder + U-Net (numpy stand-in; not a trained GPU Swin). |
+| Parameters | 12 RCEPF heads on Models; fog/waves/solar/TC stay `not_wired` or derived until extra ingest. |
 | Satellite lab | `SatProcessMap`: proxied IR overlay, GIBS IMERG WMS, IR rain PNG, cells, AMV line, gate RGB |
 | Leads | 24 / 72 / 120 / 240 h rain, Tmax/Tmin, wind + P(exceed) |
 | Disagreement | Member-spread index; high-impact / low-confidence flags |

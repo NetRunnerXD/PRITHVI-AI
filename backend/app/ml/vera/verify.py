@@ -48,19 +48,44 @@ def _row_key(r: dict[str, Any]) -> str:
 
 
 def ingest_forecast(rows: list[dict[str, Any]]) -> None:
+    """First write wins for issued millimetres. Later OM rewrites do not replace them."""
     prev = _load()
     idx = {_row_key(r): i for i, r in enumerate(prev)}
+    now = datetime.now(IST).isoformat(timespec="seconds")
+    frozen_new: list[dict[str, Any]] = []
     for r in rows:
+        r = dict(r)
+        r.setdefault("issued_at", now)
+        if r.get("om_issued") is None:
+            r["om_issued"] = r.get("om")
         k = _row_key(r)
         if k in idx:
             old = prev[idx[k]]
+            keep = {
+                **r,
+                "ensemble": old.get("ensemble", r.get("ensemble")),
+                "moe": old.get("moe", r.get("moe")),
+                "om": old.get("om_issued", old.get("om", r.get("om"))),
+                "om_issued": old.get("om_issued", old.get("om", r.get("om"))),
+                "members": old.get("members") if old.get("members") is not None else r.get("members"),
+                "issued_at": old.get("issued_at") or r.get("issued_at"),
+            }
             if old.get("obs") is not None:
-                r = {**r, "obs": old.get("obs"), "obs_source": old.get("obs_source")}
-            prev[idx[k]] = r
+                keep["obs"] = old.get("obs")
+                keep["obs_source"] = old.get("obs_source")
+            prev[idx[k]] = keep
         else:
             prev.append(r)
             idx[k] = len(prev) - 1
+            frozen_new.append(r)
     _save(prev)
+    if frozen_new:
+        try:
+            from app.ml.vera.issue_store import upsert_frozen
+
+            upsert_frozen(frozen_new)
+        except Exception:
+            pass
 
 
 def backfill_obs(
@@ -94,6 +119,12 @@ def backfill_obs(
             r["obs"] = by_t[key]
             r["obs_source"] = source
             n += 1
+            try:
+                from app.ml.vera.issue_store import set_obs
+
+                set_obs(pin, key, r.get("lead_h"), by_t[key], source)
+            except Exception:
+                pass
     if n:
         _save(prev)
     return n
@@ -201,6 +232,69 @@ def history(pin: str) -> list[dict[str, Any]]:
     return out
 
 
+def om_blend_pack(pin: str, n: int = 48) -> dict[str, Any]:
+    """Blend vs Open-Meteo as issued. Skill only when independent obs exist."""
+    rows = [r for r in _load() if r.get("pin") == pin]
+    rows.sort(key=lambda r: (str(r.get("t")), int(r.get("lead_h") or 0)))
+    issued = []
+    for r in rows[-n:]:
+        om_i = r.get("om_issued")
+        if om_i is None:
+            om_i = r.get("om")
+        issued.append(
+            {
+                "t": r.get("t"),
+                "lead_h": r.get("lead_h"),
+                "issued_at": r.get("issued_at"),
+                "blend": r.get("moe"),
+                "ensemble": r.get("ensemble"),
+                "om_issued": om_i,
+                "obs": r.get("obs"),
+                "obs_source": r.get("obs_source"),
+            }
+        )
+    agr = _mae_rmse(
+        [
+            (float(r["blend"]), float(r["om_issued"]))
+            for r in issued
+            if r.get("blend") is not None and r.get("om_issued") is not None
+        ]
+    )
+    indep = [
+        r
+        for r in issued
+        if r.get("obs") is not None and str(r.get("obs_source") or "") not in {"open-meteo-analysis", "open-meteo", ""}
+    ]
+    blend_obs = _mae_rmse([(float(r["blend"]), float(r["obs"])) for r in indep if r.get("blend") is not None])
+    om_obs = _mae_rmse([(float(r["om_issued"]), float(r["obs"])) for r in indep if r.get("om_issued") is not None])
+    skill = None
+    if blend_obs.get("mae") is not None and om_obs.get("mae"):
+        skill = round(1.0 - float(blend_obs["mae"]) / max(float(om_obs["mae"]), 1e-6), 3)
+    by_lead: dict[str, Any] = {}
+    bins = ((0, 2, "0-2"), (3, 6, "3-6"), (6, 24, "6-24"), (24, 48, "24-48"))
+    for lo, hi, name in bins:
+        grp = [r for r in indep if r.get("lead_h") is not None and lo <= int(r["lead_h"]) < hi]
+        by_lead[name] = {
+            "blend": _mae_rmse([(float(r["blend"]), float(r["obs"])) for r in grp if r.get("blend") is not None]),
+            "om": _mae_rmse([(float(r["om_issued"]), float(r["obs"])) for r in grp if r.get("om_issued") is not None]),
+        }
+    return {
+        "issued_rows": issued,
+        "agreement_mae": agr.get("mae"),
+        "agreement_n": agr.get("n") or 0,
+        "skill_vs_om": skill,
+        "blend_mae_vs_obs": blend_obs.get("mae"),
+        "om_mae_vs_obs": om_obs.get("mae"),
+        "n_issued": len(issued),
+        "n_verified": len(indep),
+        "by_lead": by_lead,
+        "independent_obs": bool(indep),
+        "note": None
+        if indep
+        else "Agreement is blend vs Open-Meteo locked at issue time. Not skill until IMERG/HEM/ERA5 fills obs.",
+    }
+
+
 def agreement(pin: str) -> dict[str, Any]:
     """Forecast-vs-Open-Meteo closeness (not gauge skill). Always available."""
     rows = [r for r in _load() if r.get("pin") == pin and r.get("om") is not None]
@@ -280,6 +374,7 @@ def run(pin: str, forecast_rows: list[dict[str, Any]], f: dict[str, Any]) -> dic
         "history": history(pin),
         "hourly_history": hourly_history(pin),
         "agreement": agr,
+        "om_blend": om_blend_pack(pin),
         "n_logged": len([r for r in _load() if r.get("pin") == pin]),
         "n_verified": verified if independent else 0,
         "backfilled": n_back,
@@ -290,7 +385,21 @@ def run(pin: str, forecast_rows: list[dict[str, Any]], f: dict[str, Any]) -> dic
         else "Skill vs Open-Meteo is omitted until IMERG/HEM/gauge hours are backfilled. OM is the NWP reference, not obs.",
         "cost_loss": _cost_loss(sc, f),
         "leaderboard": _leaderboard(agr),
+        "pinball": _pinball_scores(pin) if independent else None,
+        "walk_forward": walk_forward_cv(pin),
     }
+
+
+def _pinball_scores(pin: str) -> dict[str, Any]:
+    from app.ml.vera.fusion import QUANTILES, pinball_mean
+
+    rows = [r for r in _load() if r.get("pin") == pin and r.get("obs") is not None and r.get("moe") is not None]
+    if not rows:
+        return {"n": 0}
+    y = [float(r["obs"]) for r in rows]
+    yhat = [float(r["moe"]) for r in rows]
+    by_tau = {str(t): pinball_mean(y, yhat, t) for t in QUANTILES}
+    return {"n": len(rows), "by_tau": by_tau, "note": "Pinball of blend vs independent obs only."}
 
 
 def _cost_loss(sc: dict[str, Any], f: dict[str, Any]) -> dict[str, Any]:

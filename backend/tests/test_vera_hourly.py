@@ -140,6 +140,26 @@ def test_leads_do_not_clobber(tmp_path, monkeypatch):
     assert len(loaded) == 2
 
 
+def test_ingest_does_not_rewrite_issued_om(tmp_path, monkeypatch):
+    from app.ml.vera import verify as v
+
+    monkeypatch.setattr(v, "LOG", tmp_path / "log.jsonl")
+    v.ingest_forecast(
+        [{"t": "2026-08-29T03:00", "lead_h": 2, "pin": "p", "ensemble": 0.4, "moe": 0.3, "om": 0.2, "members": {"gfs": 0.2}}]
+    )
+    v.ingest_forecast(
+        [{"t": "2026-08-29T03:00", "lead_h": 2, "pin": "p", "ensemble": 9.0, "moe": 8.0, "om": 7.0, "members": {"gfs": 9.0}}]
+    )
+    row = v._load()[0]
+    assert row["om"] == 0.2
+    assert row["om_issued"] == 0.2
+    assert row["moe"] == 0.3
+    assert row["ensemble"] == 0.4
+    pack = v.om_blend_pack("p")
+    assert pack["issued_rows"][0]["om_issued"] == 0.2
+    assert pack["skill_vs_om"] is None
+
+
 def test_independent_imerg_obs(tmp_path, monkeypatch):
     from app.ml.vera import verify as v
 
@@ -166,6 +186,8 @@ def test_independent_imerg_obs(tmp_path, monkeypatch):
     assert pack["scores"]["skill_vs_om"] is not None
     assert pack["agreement"]["ensemble"]["n"] >= 1
     assert pack["hourly_history"]
+    assert pack["om_blend"]["n_issued"] >= 1
+    assert pack["om_blend"]["independent_obs"] is True
 
 
 def test_extremes_heat_wind_rain():
