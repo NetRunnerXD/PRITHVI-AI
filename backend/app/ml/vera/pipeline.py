@@ -8,6 +8,7 @@ from app.ml.vera import cv_branch, fusion as fusion_mod, gate as gate_mod, histo
 from app.ml.vera import extremes as extremes_mod, hourly as hourly_mod, mlops as mlops_mod
 from app.ml.vera import preprocess, regime as regime_mod, temporal as temporal_mod, verify as verify_mod
 from app.ml.vera import disagreement as disag_mod, intra_hour as intra_mod, leads as leads_mod, replays as replay_mod
+from app.ml.vera import heads as heads_mod
 from app.config import get_settings
 from app.providers import graphcast_run, imd_gridded, mosdac
 from app.providers import gpm_imerg
@@ -56,21 +57,44 @@ def api_needed() -> list[dict[str, Any]]:
             "prompt": "IMD AWS/ARG hourly stations stay out of scope (portal locked since May 2025). Not required for VERA-MoE.",
         }
     )
+    out.append(
+        {
+            "id": "torch_gpu",
+            "env": [],
+            "prompt": "Optional: pip install torch (CUDA build for GPU). POST /api/vera/train runs EQRN pinball + Swin-UNet. CPU works.",
+        }
+    )
+    if not s.weatherbit_api_key and not s.lightning_feed_url:
+        out.append(
+            {
+                "id": "lightning",
+                "env": ["WEATHERBIT_API_KEY", "LIGHTNING_FEED_URL"],
+                "prompt": "Damini-class strokes: Weatherbit key or LIGHTNING_FEED_URL. CAPE-based lightning probability still runs without it.",
+            }
+        )
+    if not s.waqi_token:
+        out.append(
+            {
+                "id": "waqi",
+                "env": ["WAQI_TOKEN"],
+                "prompt": "Optional WAQI token for station AQI. CAMS US AQI from Open-Meteo air-quality already fills the AQI head.",
+            }
+        )
     return out
 
 
 GRAPH = {
     "nodes": [
-        {"id": "data", "title": "Data sources", "layer": "DataSources"},
-        {"id": "prep", "title": "Preprocess & harmonize", "layer": "Preprocessing"},
-        {"id": "cv", "title": "Computer vision (INSAT)", "layer": "CVBranch"},
-        {"id": "regime", "title": "Regime classifier", "layer": "RegimeDetection"},
-        {"id": "hist", "title": "Historical patterns", "layer": "HistoricalModule"},
-        {"id": "gate", "title": "Adaptive ViT gate", "layer": "AdaptiveGate"},
-        {"id": "fusion", "title": "Extreme-preserving fusion", "layer": "Fusion"},
-        {"id": "time", "title": "Multi-resolution temporal fusion", "layer": "TemporalFusion"},
-        {"id": "out", "title": "Output products", "layer": "Output"},
-        {"id": "mlops", "title": "Closed-loop MLOps", "layer": "MLOps"},
+        {"id": "data", "title": "Data sources", "layer": "DataSources", "rcepf": "DataSources"},
+        {"id": "prep", "title": "Preprocess & harmonize", "layer": "Preprocessing", "rcepf": "Preprocessing"},
+        {"id": "cv", "title": "CV / SUNB", "layer": "CVBranch", "rcepf": "SUNB"},
+        {"id": "regime", "title": "Regime / VTRG", "layer": "RegimeDetection", "rcepf": "VTRG"},
+        {"id": "hist", "title": "Historical / KSHCE", "layer": "HistoricalModule", "rcepf": "KSHCE"},
+        {"id": "gate", "title": "Adaptive ViT gate", "layer": "AdaptiveGate", "rcepf": "ViT-B/16 + cross-attn"},
+        {"id": "fusion", "title": "Fusion / EQMN", "layer": "Fusion", "rcepf": "EQMN"},
+        {"id": "time", "title": "Multi-resolution temporal fusion", "layer": "TemporalFusion", "rcepf": "weight transitions"},
+        {"id": "out", "title": "Output products", "layer": "Output", "rcepf": "12-parameter heads"},
+        {"id": "mlops", "title": "Closed-loop MLOps", "layer": "MLOps", "rcepf": "MLOps"},
     ],
     "edges": [
         ["data", "prep"],
@@ -138,6 +162,7 @@ def build_vera(
     moe_hourly = [r["moe"] for r in hourly_rows if (r.get("lead_h") or 0) >= 0]
     ens_hourly = [r["ensemble"] for r in hourly_rows if (r.get("lead_h") or 0) >= 0]
     ext = extremes_mod.run(f, members, g.get("weights") or {}, fus, blend_hourly=moe_hourly, hourly_rows=hourly_rows)
+    params = heads_mod.run(f, members, g.get("weights") or {}, fus, ext)
     lead_rows = leads_mod.run(f, members, g.get("weights") or {})
     disag = disag_mod.run(members, fus, lead_rows)
     intra = intra_mod.run(f, blend_hourly=moe_hourly, ensemble_hourly=ens_hourly, hourly_rows=hourly_rows)
@@ -197,6 +222,16 @@ def build_vera(
     return {
         "name": "VERA-MoE",
         "title": "Vision-Enhanced Regime-Adaptive Mixture-of-Experts",
+        "rcepf": {
+            "aliases": {
+                "cv": "SUNB",
+                "historical": "KSHCE",
+                "regime": "VTRG",
+                "fusion": "EQMN",
+                "gate": "ViT-B/16 + cross-attn",
+            },
+            "note": "RCEPF names for the same VERA-MoE stack. Operational rain is EQMN q50.",
+        },
         "graph": GRAPH,
         "sources": src,
         "preprocess": preprocess.remap_note(lat, lon),
@@ -214,6 +249,8 @@ def build_vera(
                 "p50": fus.get("q50"),
                 "p75": fus.get("q75"),
                 "p90": fus.get("q90"),
+                "p95": fus.get("q95"),
+                "p99": fus.get("q99"),
             },
             "hourly_p10": temp.get("p10"),
             "hourly_p90": temp.get("p90"),
@@ -222,6 +259,7 @@ def build_vera(
             "analogues": historical.get("analogues"),
         },
         "hourly": hourly_rows,
+        "parameters": params,
         "extremes": ext,
         "leads": lead_rows,
         "disagreement": disag,
@@ -255,8 +293,8 @@ def build_vera(
             "cv": {"input": cv.get("input"), "derived": cv.get("derived"), "channels": cv.get("channels")},
             "regime": regime,
             "hist": {"source": historical.get("source"), "n_days": historical.get("n_days"), "clim": historical.get("climatology")},
-            "gate": {"method": g.get("method"), "weights": g.get("weights"), "by_window": g.get("by_window")},
-            "fusion": {k: fus.get(k) for k in ("q10", "q25", "q50", "q75", "q90", "extremes", "mixture")},
+            "gate": {"method": g.get("method"), "weights": g.get("weights"), "by_window": g.get("by_window"), "cross_attn": g.get("cross_attn")},
+            "fusion": {k: fus.get(k) for k in ("method", "eqmn", "q10", "q25", "q50", "q75", "q90", "q95", "q99", "extremes", "mixture", "blend")},
             "time": temp.get("windows"),
             "out": {"percentiles": fus.get("q50"), "hourly_n": len(temp.get("hourly_0_48") or [])},
             "mlops": ops.get("registry"),

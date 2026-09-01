@@ -687,6 +687,12 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
         f["hist_rows"] = []
     f["era5"] = obs.get("era5") or {}
     f["mosdac"] = obs.get("mosdac") or {}
+    f["gdacs"] = obs.get("gdacs") or []
+    f["waqi"] = obs.get("waqi")
+    f["ow_air"] = obs.get("ow_air")
+    f["imerg"] = obs.get("imerg") or {}
+    if isinstance(live_sat, dict):
+        f["lightning"] = (live_sat.get("lightning") or live_sat.get("convective") or {}).get("n_strokes") or live_sat.get("n_strokes")
     if isinstance(live_sat, dict) and obs.get("imerg"):
         live_sat = {**live_sat, "imerg": obs.get("imerg")}
     vera = _vera_pack(f, loc, live_sat)

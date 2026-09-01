@@ -155,8 +155,14 @@ export function NowcastLive({ dash, locale }: { dash: DashboardSnapshot; locale:
   const satLive = live?.sat_live || nc?.sat_live;
   const strike = satLive?.lightning?.nearest_km ?? conv?.lightning?.nearest_km;
 
+  const veraQ50 = dash.predictions?.vera?.fusion?.q50;
   return (
     <div className="space-y-3">
+      {veraQ50 != null ? (
+        <p className="neo px-3 py-2 text-[11px] text-neo-muted">
+          Models EQMN 24 h q50 rain {veraQ50} mm (gated blend). Nowcast hours stay satellite + NWP shape — not this daily quantile.
+        </p>
+      ) : null}
       <section className="neo p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.liveStorm}</h2>

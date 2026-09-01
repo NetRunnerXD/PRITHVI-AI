@@ -589,10 +589,33 @@ export type PredictionPack = {
 
 export type VeraFrame = { t?: string; url?: string; heatmap?: string | null; tb_k?: number; channel?: string };
 
+export type VeraParameterHead = {
+  id?: string;
+  status?: string;
+  method?: string;
+  q10?: number | null;
+  q50?: number | null;
+  q90?: number | null;
+  q95?: number | null;
+  q99?: number | null;
+  source?: string;
+  need?: string;
+  unit?: string;
+  level?: string;
+  p_exceed?: number;
+  p_fog?: number;
+  p_lightning?: number;
+  dni?: number | null;
+  diurnal_amp_c?: number;
+  tmin_c?: number;
+  tmax_c?: number;
+};
+
 export type VeraPack = {
   name?: string;
   title?: string;
-  graph?: { nodes?: { id: string; title: string; layer?: string }[]; edges?: string[][] };
+  rcepf?: { aliases?: Record<string, string>; note?: string };
+  graph?: { nodes?: { id: string; title: string; layer?: string; rcepf?: string }[]; edges?: string[][] };
   sources?: Record<string, unknown>;
   preprocess?: Record<string, unknown>;
   cv?: {
@@ -604,6 +627,7 @@ export type VeraPack = {
     stage1_cnn?: { shape?: number[]; backbone?: string };
     stage2_convlstm?: { shape?: number[] };
     stage2_vit?: { attn?: number[] };
+    stage_swin?: { backbone?: string; shape?: number[]; window_mean?: number };
     stage3_unet?: { spatial_shape?: number[] };
     embedding?: number[];
     n_cells?: number;
@@ -642,13 +666,20 @@ export type VeraPack = {
     explain?: { factor?: string; detail?: string; shift?: string }[];
     by_window?: Record<string, Record<string, number>>;
     weight_map_rgb?: string | null;
+    cross_attn?: { members?: string[]; conditions?: string[]; weights?: number[][] };
   };
   fusion?: {
+    method?: string;
+    eqmn?: boolean;
+    blend?: string;
     q10?: number;
     q25?: number;
     q50?: number;
     q75?: number;
     q90?: number;
+    q95?: number;
+    q99?: number;
+    quantiles?: Record<string, number>;
     pdf_x?: number[];
     pdf_y?: number[];
     extremes?: { p_ge_64_5?: number; p_ge_115_6?: number; p_ge_204_5?: number; thresholds_mm?: number[] };
@@ -660,6 +691,7 @@ export type VeraPack = {
     seamless?: { lead_h?: number; sat_w?: number; nwp_w?: number }[];
     hourly_0_48?: number[];
   };
+  parameters?: { heads?: VeraParameterHead[]; n_wired?: number; n_total?: number };
   outputs?: Record<string, unknown>;
   mlops?: {
     drift?: { flag?: boolean; z?: number };
@@ -734,6 +766,28 @@ export type VeraPack = {
     hourly_history?: { t?: string; lead_h?: number; ensemble?: number; moe?: number; om?: number; obs?: number | null }[];
     leaderboard?: { id: string; family?: string; mae?: number }[];
     cost_loss?: { p_event?: number; value_vs_never?: number; note?: string };
+    om_blend?: {
+      issued_rows?: {
+        t?: string;
+        lead_h?: number;
+        issued_at?: string;
+        blend?: number | null;
+        ensemble?: number | null;
+        om_issued?: number | null;
+        obs?: number | null;
+        obs_source?: string | null;
+      }[];
+      agreement_mae?: number | null;
+      agreement_n?: number;
+      skill_vs_om?: number | null;
+      blend_mae_vs_obs?: number | null;
+      om_mae_vs_obs?: number | null;
+      n_issued?: number;
+      n_verified?: number;
+      by_lead?: Record<string, { blend?: { mae?: number | null; n?: number }; om?: { mae?: number | null; n?: number } }>;
+      independent_obs?: boolean;
+      note?: string | null;
+    };
   };
   leads?: {
     lead_h: number;
@@ -803,8 +857,40 @@ export type VeraPack = {
         ensemble_wbgt_c?: number | null;
         class?: string | null;
       }[];
-      peak_minutes?: { t?: string; rain_mm?: number; rain_mm_h?: number; website_mm_h?: number; blend_mm_h?: number; ensemble_mm_h?: number; temp_c?: number; wind_kmh?: number; wbgt_c?: number }[];
-      minutes_today?: { t?: string; rain_mm?: number; rain_mm_h?: number; website_mm_h?: number; blend_mm_h?: number; ensemble_mm_h?: number; temp_c?: number; wind_kmh?: number; wbgt_c?: number }[];
+      peak_minutes?: {
+        t?: string;
+        rain_mm?: number;
+        rain_mm_h?: number;
+        website_mm_h?: number;
+        blend_mm_h?: number;
+        ensemble_mm_h?: number;
+        temp_c?: number;
+        blend_temp_c?: number;
+        ensemble_temp_c?: number;
+        wind_kmh?: number;
+        blend_wind_kmh?: number;
+        ensemble_wind_kmh?: number;
+        wbgt_c?: number;
+        blend_wbgt_c?: number;
+        ensemble_wbgt_c?: number;
+      }[];
+      minutes_today?: {
+        t?: string;
+        rain_mm?: number;
+        rain_mm_h?: number;
+        website_mm_h?: number;
+        blend_mm_h?: number;
+        ensemble_mm_h?: number;
+        temp_c?: number;
+        blend_temp_c?: number;
+        ensemble_temp_c?: number;
+        wind_kmh?: number;
+        blend_wind_kmh?: number;
+        ensemble_wind_kmh?: number;
+        wbgt_c?: number;
+        blend_wbgt_c?: number;
+        ensemble_wbgt_c?: number;
+      }[];
     }[];
   };
   replay?: { cases?: { id?: string; title?: string; place?: string; date?: string; kind?: string; signal?: string; note?: string; blend_mm?: number; p_heavy?: number }[]; kind?: string };

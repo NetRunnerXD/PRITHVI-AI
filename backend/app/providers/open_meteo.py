@@ -63,7 +63,8 @@ _FC_HOURLY = (
     "soil_moisture_0_to_7cm,et0_fao_evapotranspiration,evapotranspiration,relative_humidity_2m,"
     "dew_point_2m,apparent_temperature,pressure_msl,surface_pressure,"
     "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,cloud_cover_low,"
-    "cloud_cover_mid,cloud_cover_high,weather_code,visibility,cape,vapour_pressure_deficit"
+    "cloud_cover_mid,cloud_cover_high,weather_code,visibility,cape,vapour_pressure_deficit,"
+    "shortwave_radiation,direct_radiation,diffuse_radiation,direct_normal_irradiance,is_day"
 )
 _FC_HOURLY_EXTRA = (
     "temperature_80m,temperature_120m,temperature_180m,"
@@ -169,10 +170,14 @@ async def forecast_models(lat: float, lon: float) -> dict[str, Any]:
         params = {
             "latitude": lat,
             "longitude": lon,
-            "hourly": "precipitation,temperature_2m,wind_speed_10m",
+            "hourly": (
+                "precipitation,temperature_2m,wind_speed_10m,wind_gusts_10m,"
+                "shortwave_radiation,visibility,relative_humidity_2m"
+            ),
             "daily": (
                 "precipitation_sum,precipitation_probability_max,"
-                "temperature_2m_max,temperature_2m_min,wind_speed_10m_max"
+                "temperature_2m_max,temperature_2m_min,wind_speed_10m_max,"
+                "wind_gusts_10m_max,shortwave_radiation_sum"
             ),
             "forecast_days": 7,
             "timezone": "Asia/Kolkata",
