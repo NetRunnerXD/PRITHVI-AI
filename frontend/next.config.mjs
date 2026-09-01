@@ -3,7 +3,7 @@ const apiBase = process.env.NEXT_PUBLIC_API_BASE;
 const internalApi = (process.env.API_INTERNAL_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 
 const nextConfig = {
-  output: "standalone",
+  output: process.env.NEXT_STANDALONE || process.platform !== "win32" ? "standalone" : undefined,
   async rewrites() {
     // Browser calls FastAPI directly when NEXT_PUBLIC_API_BASE is set (CORS).
     // Empty base = same-origin `/api` proxied to the API process.
