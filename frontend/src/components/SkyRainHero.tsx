@@ -298,8 +298,6 @@ export function SkyRainHero({
 
   const feels = feelsLikeC(sky.temp_c ?? cur.temp_c, sky.humidity_pct ?? cur.humidity_pct);
 
-  // Active multi-lens tab for compact display
-  const [lensMode, setLensMode] = useState<"core" | "rain" | "balance">("core");
   const [inspectorOpen, setInspectorOpen] = useState(false);
 
   const [mounted, setMounted] = useState(false);
@@ -354,51 +352,14 @@ export function SkyRainHero({
         <div className="flex items-center gap-2">
           <span className="live-dot" aria-hidden />
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
-            Atmosphere & Hydrometeorology
+            SKY
           </p>
           <span className="chip text-[9px] font-mono px-1.5 py-0">
             Live Telemetry
           </span>
         </div>
 
-        {/* Multi-Lens Switcher & Deep Inspector Trigger */}
         <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-lg bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)]">
-            <button
-              type="button"
-              onClick={() => setLensMode("core")}
-              className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-all ${
-                lensMode === "core"
-                  ? "bg-neo-accent text-white shadow-xs"
-                  : "text-neo-muted hover:text-neo-text"
-              }`}
-            >
-              Atmosphere
-            </button>
-            <button
-              type="button"
-              onClick={() => setLensMode("rain")}
-              className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-all ${
-                lensMode === "rain"
-                  ? "bg-neo-accent text-white shadow-xs"
-                  : "text-neo-muted hover:text-neo-text"
-              }`}
-            >
-              Precipitation
-            </button>
-            <button
-              type="button"
-              onClick={() => setLensMode("balance")}
-              className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-all ${
-                lensMode === "balance"
-                  ? "bg-neo-accent text-white shadow-xs"
-                  : "text-neo-muted hover:text-neo-text"
-              }`}
-            >
-              Water Flux
-            </button>
-          </div>
-
           <button
             type="button"
             onClick={() => setInspectorOpen(true)}
@@ -411,7 +372,7 @@ export function SkyRainHero({
         </div>
       </div>
 
-      {/* Main Grid: Left Animated Diorama & Core Weather, Right Lens Data */}
+      {/* Main Grid: Left Animated Diorama & Core Weather, Right Unified Telemetry */}
       <div className="grid gap-4 lg:grid-cols-12 items-center">
         {/* Left Column: Atmospheric Diorama & Live Hero Status */}
         <div className="lg:col-span-6 flex items-center gap-3.5">
@@ -452,138 +413,69 @@ export function SkyRainHero({
           </div>
         </div>
 
-        {/* Right Column: Multi-Lens Compact Telemetry */}
+        {/* Right Column: Unified Telemetry Deck */}
         <div className="lg:col-span-6 min-h-[90px] flex flex-col justify-center">
-          {/* Lens 1: Atmospheric Core */}
-          {lensMode === "core" && (
-            <div key="lens-core" className="fade-in-scale grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
-                  <IconDroplet className="w-2.5 h-2.5 text-neo-rain" />
-                  Humidity
-                </span>
-                <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
-                  {sky.humidity_pct != null ? `${Math.round(Number(sky.humidity_pct))}%` : "—"}
-                </p>
-              </div>
-
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
-                  <IconCloud className="w-2.5 h-2.5 text-neo-muted" />
-                  Cloud Cover
-                </span>
-                <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
-                  {sky.cloud_cover_pct != null ? `${Math.round(Number(sky.cloud_cover_pct))}%` : "—"}
-                </p>
-              </div>
-
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
-                  <IconEye className="w-2.5 h-2.5 text-neo-accent" />
-                  Visibility
-                </span>
-                <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
-                  {sky.visibility_km != null ? dist(sky.visibility_km, units) : "—"}
-                </p>
-              </div>
-
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
-                  <IconGauge className="w-2.5 h-2.5 text-neo-warn" />
-                  Last 1h Rain
-                </span>
-                <p className="mt-0.5 font-mono text-sm font-bold text-neo-rain">
-                  {rain(sky.precip_1h_mm, units)}
-                </p>
-              </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+            <div className="neo-in p-2 rounded-xl">
+              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
+                <IconDroplet className="w-2.5 h-2.5 text-neo-rain" />
+                Humidity
+              </span>
+              <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
+                {sky.humidity_pct != null ? `${Math.round(Number(sky.humidity_pct))}%` : "—"}
+              </p>
             </div>
-          )}
 
-          {/* Lens 2: Precipitation & Inflow */}
-          {lensMode === "rain" && (
-            <div key="lens-rain" className="fade-in-scale grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                  Today Total
-                </span>
-                <p className="mt-0.5 font-mono text-sm font-bold text-neo-rain">
-                  {todayRain != null ? rain(todayRain, units) : "0 mm"}
-                </p>
-              </div>
-
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                  3-Day Accum
-                </span>
-                <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
-                  {rain(dash.predictive.precip_next_3d_mm, units)}
-                </p>
-              </div>
-
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                  7-Day Inflow
-                </span>
-                <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
-                  {rain(dash.predictive.precip_7d_mm, units)}
-                </p>
-              </div>
-
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                  3-Day Prob
-                </span>
-                <div className="mt-1 flex items-center gap-1 text-[9px] font-mono">
-                  {(rainOdds.length ? rainOdds : [20, 45, 10]).map((p, idx) => (
-                    <span key={idx} className="chip px-1 py-0 text-[8px]">
-                      {p}%
-                    </span>
-                  ))}
-                </div>
-              </div>
+            <div className="neo-in p-2 rounded-xl">
+              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
+                <IconCloud className="w-2.5 h-2.5 text-neo-muted" />
+                Cloud Cover
+              </span>
+              <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
+                {sky.cloud_cover_pct != null ? `${Math.round(Number(sky.cloud_cover_pct))}%` : "—"}
+              </p>
             </div>
-          )}
 
-          {/* Lens 3: Water Balance & Energy */}
-          {lensMode === "balance" && (
-            <div key="lens-balance" className="fade-in-scale grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                  7d Water Balance
-                </span>
-                <p className={`mt-0.5 font-mono text-sm font-bold ${Number(dash.predictive.water_balance_7d_mm ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
-                  {rain(dash.predictive.water_balance_7d_mm, units)}
-                </p>
-              </div>
-
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                  7d Horizon ET₀
-                </span>
-                <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
-                  {rain(dash.predictive.outlook_days?.[0]?.et0_mm, units)}
-                </p>
-              </div>
-
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                  Convective Index
-                </span>
-                <p className="mt-0.5 font-mono text-sm font-bold text-neo-accent">
-                  {isStorm ? "High" : precip1h > 1 ? "Moderate" : "Low"}
-                </p>
-              </div>
-
-              <div className="neo-in p-2 rounded-xl">
-                <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                  Hydrometeor State
-                </span>
-                <p className="mt-0.5 font-mono text-xs font-bold text-neo-text truncate">
-                  {precip1h > 5 ? "Heavy Rain" : precip1h > 0 ? "Light Rain" : "Dry Air"}
-                </p>
-              </div>
+            <div className="neo-in p-2 rounded-xl">
+              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
+                <IconEye className="w-2.5 h-2.5 text-neo-accent" />
+                Visibility
+              </span>
+              <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
+                {sky.visibility_km != null ? dist(sky.visibility_km, units) : "—"}
+              </p>
             </div>
-          )}
+
+            <div className="neo-in p-2 rounded-xl">
+              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
+                <IconGauge className="w-2.5 h-2.5 text-neo-warn" />
+                Last 1h Rain
+              </span>
+              <p className="mt-0.5 font-mono text-sm font-bold text-neo-rain">
+                {rain(sky.precip_1h_mm, units)}
+              </p>
+            </div>
+
+            <div className="neo-in p-2 rounded-xl">
+              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
+                <IconCloudRain className="w-2.5 h-2.5 text-neo-rain" />
+                Today Total
+              </span>
+              <p className="mt-0.5 font-mono text-sm font-bold text-neo-rain">
+                {todayRain != null ? rain(todayRain, units) : "0 mm"}
+              </p>
+            </div>
+
+            <div className="neo-in p-2 rounded-xl">
+              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
+                <IconSparkles className="w-2.5 h-2.5 text-neo-accent" />
+                3-Day Accum
+              </span>
+              <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
+                {rain(dash.predictive.precip_next_3d_mm, units)}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

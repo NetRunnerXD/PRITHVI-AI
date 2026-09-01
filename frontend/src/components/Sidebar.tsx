@@ -2,7 +2,6 @@
 
 import type { ComponentType } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
-import { askChips } from "@/i18n/presets";
 import { useApp } from "@/lib/store";
 import type { TabId } from "@/types/dashboard";
 import {
@@ -31,7 +30,7 @@ const TABS: { id: TabId; Icon: ComponentType<{ className?: string }> }[] = [
 ];
 
 export function Sidebar() {
-  const { locale, setLocale, tab, setTab, dashboard, refresh, sidebarOpen, setSidebarOpen, setPendingAsk, favorites, recent, setLocation } =
+  const { locale, setLocale, tab, setTab, dashboard, refresh, sidebarOpen, setSidebarOpen, favorites, recent, setLocation } =
     useApp();
   const t = COPY[locale];
   const tabLabel: Record<TabId, string> = {
@@ -247,27 +246,6 @@ export function Sidebar() {
             {sidebarOpen ? <span className="truncate">{t.refresh}</span> : null}
           </button>
         </div>
-
-        {/* Quick Ask Chips */}
-        {sidebarOpen ? (
-          <div className="fade-in-scale pt-1">
-            <p className="mb-1 text-[9px] uppercase tracking-widest text-neo-muted font-bold">{t.askAgent}</p>
-            <div className="flex flex-wrap gap-1">
-              {askChips(locale).map((item) => (
-                <button
-                  key={item.short}
-                  className="chip hover:scale-105 hover:bg-neo-accent hover:text-white transition-all text-[9px] font-medium"
-                  onClick={() => {
-                    setPendingAsk(item.q);
-                    setTab("chat");
-                  }}
-                >
-                  {item.short}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </aside>
     </>
   );
