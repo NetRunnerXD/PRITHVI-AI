@@ -88,6 +88,14 @@ class Settings(BaseSettings):
 
     user_agent: str = "Rituchakra/0.4 (India environmental intelligence; local-dev)"
 
+    # Optional accounts (MongoDB Atlas M0). Empty URI = in-process store.
+    mongodb_uri: str = ""
+    mongodb_db: str = "rituchakra"
+    jwt_secret: str = ""
+    fast2sms_api_key: str = ""
+    sms_dry_run: bool = True
+    sms_alert_interval_s: float = 900.0
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

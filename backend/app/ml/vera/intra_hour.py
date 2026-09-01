@@ -244,6 +244,14 @@ def _from_rows(hourly_rows: list[dict[str, Any]], f: dict[str, Any], today: date
             stride_min=5,
             blend_mm=peak.get("blend_mm"),
             ensemble_mm=peak.get("ensemble_mm"),
+            blend_t0=peak.get("blend_temp_c"),
+            blend_t1=nxt.get("blend_temp_c"),
+            ens_t0=peak.get("ensemble_temp_c"),
+            ens_t1=nxt.get("ensemble_temp_c"),
+            blend_w0=peak.get("blend_wind_kmh"),
+            blend_w1=nxt.get("blend_wind_kmh"),
+            ens_w0=peak.get("ensemble_wind_kmh"),
+            ens_w1=nxt.get("ensemble_wind_kmh"),
         )
         days.append(
             {
@@ -292,6 +300,14 @@ def _attach_minutes(days: list[dict[str, Any]]) -> None:
                 stride_min=15,
                 blend_mm=h.get("blend_mm"),
                 ensemble_mm=h.get("ensemble_mm"),
+                blend_t0=h.get("blend_temp_c"),
+                blend_t1=nxt.get("blend_temp_c"),
+                ens_t0=h.get("ensemble_temp_c"),
+                ens_t1=nxt.get("ensemble_temp_c"),
+                blend_w0=h.get("blend_wind_kmh"),
+                blend_w1=nxt.get("blend_wind_kmh"),
+                ens_w0=h.get("ensemble_wind_kmh"),
+                ens_w1=nxt.get("ensemble_wind_kmh"),
             )
         )
     today_day["minutes_today"] = minutes_today
@@ -308,6 +324,14 @@ def _hour_minutes(
     stride_min: int = 5,
     blend_mm: float | None = None,
     ensemble_mm: float | None = None,
+    blend_t0: float | None = None,
+    blend_t1: float | None = None,
+    ens_t0: float | None = None,
+    ens_t1: float | None = None,
+    blend_w0: float | None = None,
+    blend_w1: float | None = None,
+    ens_w0: float | None = None,
+    ens_w1: float | None = None,
 ) -> list[dict[str, Any]]:
     n = max(1, 60 // stride_min)
     wts = _skew_weights(n)
@@ -323,7 +347,13 @@ def _hour_minutes(
         emm = (ensemble_mm if ensemble_mm is not None else rain_mm) * wt
         tc = _lerp(t0, t1, frac)
         wc = _lerp(w0, w1, frac)
+        tb = _lerp(float(blend_t0 if blend_t0 is not None else t0), float(blend_t1 if blend_t1 is not None else t1), frac)
+        te = _lerp(float(ens_t0 if ens_t0 is not None else t0), float(ens_t1 if ens_t1 is not None else t1), frac)
+        wb_ = _lerp(float(blend_w0 if blend_w0 is not None else w0), float(blend_w1 if blend_w1 is not None else w1), frac)
+        we = _lerp(float(ens_w0 if ens_w0 is not None else w0), float(ens_w1 if ens_w1 is not None else w1), frac)
         wb = wbgt_est(tc, rh, wc / 3.6 if wc else None)
+        wbb = wbgt_est(tb, rh, wb_ / 3.6 if wb_ else None)
+        wbe = wbgt_est(te, rh, we / 3.6 if we else None)
         ts = start + timedelta(minutes=i * stride_min)
         out.append(
             {
@@ -334,8 +364,14 @@ def _hour_minutes(
                 "blend_mm_h": round(bmm * (60 / stride_min), 2),
                 "ensemble_mm_h": round(emm * (60 / stride_min), 2),
                 "temp_c": round(tc, 1),
+                "blend_temp_c": round(tb, 1),
+                "ensemble_temp_c": round(te, 1),
                 "wind_kmh": round(wc, 1),
+                "blend_wind_kmh": round(wb_, 1),
+                "ensemble_wind_kmh": round(we, 1),
                 "wbgt_c": wb["wbgt_c"],
+                "blend_wbgt_c": wbb["wbgt_c"],
+                "ensemble_wbgt_c": wbe["wbgt_c"],
                 "acc_mm": round(acc, 3),
             }
         )

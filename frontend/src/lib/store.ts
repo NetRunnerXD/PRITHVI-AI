@@ -5,6 +5,7 @@ import type { Locale } from "@/i18n/copy";
 
 export type ReplyLocale = Locale | "auto";
 import { fetchDashboard, reverseGeocode } from "./api";
+import { fetchMe, logoutAccount, type AuthUser } from "./auth";
 
 const FAV_KEY = "prithvi.favs";
 const REC_KEY = "prithvi.recent";
@@ -128,6 +129,12 @@ type State = {
   favorites: Location[];
   recent: Location[];
   settings: AppSettings;
+  account: AuthUser | null;
+  authModal: boolean;
+  setAccount: (u: AuthUser | null) => void;
+  setAuthModal: (v: boolean) => void;
+  loadAccount: () => Promise<void>;
+  signOut: () => void;
   setSettings: (p: Partial<AppSettings>) => void;
   resetSettings: () => void;
   setSidebarOpen: (v: boolean) => void;
@@ -169,6 +176,18 @@ export const useApp = create<State>((set, get) => ({
   locale: "en",
   tab: "home",
   settings: DEFAULT_SETTINGS,
+  account: null,
+  authModal: false,
+  setAccount: (account) => set({ account }),
+  setAuthModal: (authModal) => set({ authModal }),
+  loadAccount: async () => {
+    const account = await fetchMe();
+    set({ account });
+  },
+  signOut: () => {
+    logoutAccount();
+    set({ account: null });
+  },
   location: null,
   dashboard: null,
   status: "idle",

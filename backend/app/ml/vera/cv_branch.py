@@ -159,6 +159,46 @@ def temporal_vit(arr) -> dict[str, Any]:
     }
 
 
+def swin_encode(arr) -> dict[str, Any]:
+    """Shifted-window attention stand-in (Swin-UNet encoder). Numpy heuristic, not GPU training."""
+    if arr is None or np is None:
+        return {"shape": [1, 96, 1, 1], "backbone": "swin-unet", "window_mean": 0.0, "depths": [2, 2, 6, 2]}
+    last = arr[-1]
+    h, w = last.shape
+    win = 8
+    oh, ow = max(1, h // win), max(1, w // win)
+    tiles = []
+    for y in range(oh):
+        for x in range(ow):
+            patch = last[y * win : (y + 1) * win, x * win : (x + 1) * win]
+            tiles.append(float(patch.mean()) if patch.size else 0.0)
+    shifted = last[win // 2 :, win // 2 :]
+    sh, sw_ = shifted.shape
+    soh, sow = max(1, sh // win), max(1, sw_ // win)
+    shift_tiles = []
+    for y in range(soh):
+        for x in range(sow):
+            patch = shifted[y * win : (y + 1) * win, x * win : (x + 1) * win]
+            shift_tiles.append(float(patch.mean()) if patch.size else 0.0)
+    attn = []
+    if tiles:
+        m = max(tiles)
+        e = [math.exp((t - m) / 8.0) for t in tiles]
+        s = sum(e) or 1.0
+        attn = [round(v / s, 4) for v in e[:16]]
+    return {
+        "shape": [1, 96, oh, ow],
+        "backbone": "swin-unet",
+        "window_size": win,
+        "depths": [2, 2, 6, 2],
+        "num_heads": [3, 6, 12, 24],
+        "trained": (ROOT / ".cache" / "mlflow" / "swin_unet.pt").exists(),
+        "window_mean": round(float(sum(tiles) / len(tiles)), 4) if tiles else 0.0,
+        "shift_mean": round(float(sum(shift_tiles) / len(shift_tiles)), 4) if shift_tiles else 0.0,
+        "attn": attn,
+    }
+
+
 def unet_decode(arr) -> dict[str, Any]:
     if arr is None or np is None:
         return {"spatial_shape": [256, 1, 1], "global": [0.0] * 8}
@@ -308,6 +348,7 @@ def run(
     cnn = cnn_encode(arr)
     lstm = convlstm(arr)
     vit = temporal_vit(arr)
+    swin = swin_encode(arr)
     dec = unet_decode(arr)
     der = derived(seq, arr)
     bands = live_sat.get("channels") or live_sat.get("insat_channels") or {}
@@ -359,6 +400,7 @@ def run(
         "stage1_cnn": {**cnn, "backbone": "ResNet-18-shaped 3×3 conv stack (numpy; torch if installed)"},
         "stage2_convlstm": lstm,
         "stage2_vit": vit,
+        "stage_swin": swin,
         "temporal_mode": temporal_mode if temporal_mode in {"convlstm", "vit"} else "convlstm",
         "stage3_unet": dec,
         "derived": der,

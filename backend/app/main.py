@@ -28,16 +28,25 @@ async def _snapshot_loop() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     skip_loop = bool(os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("RITUCHAKRA_NO_SNAP_LOOP"))
+    from app.auth.db import close as auth_close
+    from app.auth.db import connect as auth_connect
+    from app.auth.alerts_job import loop as sms_loop
+    from app.auth.alerts_job import should_start as sms_should_start
+
+    await auth_connect()
     task = None if skip_loop else asyncio.create_task(_snapshot_loop())
+    sms_task = None if not sms_should_start() else asyncio.create_task(sms_loop())
     try:
         yield
     finally:
-        if task is not None:
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
+        for t in (task, sms_task):
+            if t is not None:
+                t.cancel()
+                try:
+                    await t
+                except (asyncio.CancelledError, Exception):
+                    pass
+        await auth_close()
         await aclose()
 
 

@@ -48,6 +48,8 @@ def test_vera_pack_on_models_tab():
     assert pack["cv"]["map"]["asia"]["south"] == -10.0
     assert pack["cv"]["map"]["asia"]["url"] == "/api/sat/imd-asia"
     assert pack["cv"]["map"]["imerg_layer"] == "IMERG_Precipitation_Rate"
+    assert pack["fusion"]["method"] == "EQMN"
+    assert pack["parameters"]["n_total"] == 12
 
 
 def test_contradiction_different_rain_does_not_copy():

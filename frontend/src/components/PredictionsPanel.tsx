@@ -131,8 +131,10 @@ export function PredictionsPanel({ dash, locale }: { dash: DashboardSnapshot; lo
     ["sat", t.secSat],
     ["leads", t.secLeads],
     ["blend", t.secBlend],
+    ["params", t.secParams],
     ["explain", t.secExplain],
     ["disagree", t.secDisagree],
+    ["omblend", t.secOmBlend],
     ["extremes", t.secExtremes],
     ["compare", t.secCompare],
     ["board", t.secBoard],
@@ -156,6 +158,7 @@ export function PredictionsPanel({ dash, locale }: { dash: DashboardSnapshot; lo
       {vera && sec === "leads" ? <LeadsSec vera={vera} /> : null}
       {vera && sec === "explain" ? <ExplainSec vera={vera} /> : null}
       {vera && sec === "disagree" ? <DisagreeSec vera={vera} /> : null}
+      {vera && sec === "omblend" ? <OmBlendSec vera={vera} t={t} /> : null}
       {vera && sec === "board" ? <BoardSec vera={vera} /> : null}
       {vera && sec === "replay" ? <ReplaySec vera={vera} /> : null}
       {vera && sec === "bulletin" ? (
@@ -172,6 +175,7 @@ export function PredictionsPanel({ dash, locale }: { dash: DashboardSnapshot; lo
         </section>
       ) : null}
       {vera && sec === "blend" ? <BlendSec vera={vera} t={t} /> : null}
+      {vera && sec === "params" ? <ParamsSec vera={vera} t={t} /> : null}
       {vera && sec === "extremes" ? <ExtremesSec vera={vera} /> : null}
       {vera && sec === "compare" ? <CompareSec vera={vera} /> : null}
       {vera && sec === "perf" ? <PerfSec vera={vera} t={t} /> : null}
@@ -366,9 +370,10 @@ function VeraBoard({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
             <img src={vera.cv.insat_url} alt="INSAT full disk IR" className="h-28 w-40 rounded-lg object-cover" />
           ) : null}
         </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-4 font-mono text-[11px]">
+        <div className="mt-3 grid gap-2 sm:grid-cols-5 font-mono text-[11px]">
           <div className="neo-in p-2">CNN {JSON.stringify(vera.cv?.stage1_cnn?.shape)}</div>
           <div className="neo-in p-2">ConvLSTM {JSON.stringify(vera.cv?.stage2_convlstm?.shape)}</div>
+          <div className="neo-in p-2">Swin {JSON.stringify(vera.cv?.stage_swin?.shape)} {vera.cv?.stage_swin?.backbone}</div>
           <div className="neo-in p-2">U-Net {JSON.stringify(vera.cv?.stage3_unet?.spatial_shape)}</div>
           <div className="neo-in p-2">
             CI {String(vera.cv?.derived?.convective_initiation)} · {String(vera.cv?.derived?.precip_est_mmh)} mm/h
@@ -415,10 +420,11 @@ function VeraBoard({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
         <section className="neo p-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.veraFusion}</p>
           <p className="text-xs">
-            q10 {vera.fusion?.q10} · q25 {vera.fusion?.q25} · q50 {vera.fusion?.q50} · q75 {vera.fusion?.q75} · q90{" "}
-            {vera.fusion?.q90} mm · P(≥64.5){" "}
+            {vera.fusion?.method || "EQMN"} · q10 {vera.fusion?.q10} · q50 {vera.fusion?.q50} · q90 {vera.fusion?.q90} · q95{" "}
+            {vera.fusion?.q95} · q99 {vera.fusion?.q99} mm · P(≥64.5){" "}
             {vera.fusion?.extremes?.p_ge_64_5} · P(≥115.6) {vera.fusion?.extremes?.p_ge_115_6}
           </p>
+          <p className="text-[10px] text-neo-muted">Operational blend is EQMN quantiles. Area chart is a diagnostic Gaussian mixture, not the product.</p>
           <div className="mt-2 h-40">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={pdf}>
@@ -627,6 +633,211 @@ function BlendSec({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
             </li>
           ))}
         </ul>
+      </section>
+      {vera.fusion?.quantiles || vera.fusion?.q50 != null ? (
+        <section className="neo p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">How wet the mix thinks the next 24 h will be</p>
+          <p className="text-[11px] text-neo-muted">
+            This is 24-hour rain from the gated mix, in millimetres. The number used on the rest of Models is <strong>Typical</strong>. Drier = only 1 day in 10 is this dry or drier. Extreme = 1 day in 100.
+          </p>
+          <div className="mt-2 h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={[
+                  { k: "Drier", mm: vera.fusion?.quantiles?.["0.1"] ?? vera.fusion?.q10 },
+                  { k: "Below typical", mm: vera.fusion?.quantiles?.["0.25"] ?? vera.fusion?.q25 },
+                  { k: "Typical", mm: vera.fusion?.quantiles?.["0.5"] ?? vera.fusion?.q50 },
+                  { k: "Wetter", mm: vera.fusion?.quantiles?.["0.75"] ?? vera.fusion?.q75 },
+                  { k: "Wet", mm: vera.fusion?.quantiles?.["0.9"] ?? vera.fusion?.q90 },
+                  { k: "Very wet", mm: vera.fusion?.quantiles?.["0.95"] ?? vera.fusion?.q95 },
+                  { k: "Extreme", mm: vera.fusion?.quantiles?.["0.99"] ?? vera.fusion?.q99 },
+                ]}
+              >
+                <CartesianGrid stroke="#cfe0dd" vertical={false} />
+                <XAxis dataKey="k" stroke="#4d6b70" fontSize={10} interval={0} angle={-20} height={48} />
+                <YAxis stroke="#4d6b70" fontSize={10} width={36} unit=" mm" />
+                <Tooltip formatter={(v: number) => `${round2(Number(v))} mm`} />
+                <Bar dataKey="mm" fill={COL.blend} radius={[6, 6, 0, 0]} name="Rain" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <AxisHint x="How unusual that rain total is" y="24-hour rain (mm)" />
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+const PARAM_LABEL: Record<string, { title: string; unit: string; plain: string }> = {
+  rainfall: { title: "Rain", unit: "mm / day", plain: "How much rain the blend expects in 24 h." },
+  temperature: { title: "Temperature", unit: "°C", plain: "Daytime high from the gated mix." },
+  heat_wave: { title: "Heat wave", unit: "chance", plain: "Share of members crossing IMD heat rules." },
+  wind: { title: "Wind (10 m)", unit: "km/h", plain: "Peak 10 m wind in the mix." },
+  gusts: { title: "Gusts", unit: "km/h", plain: "Peak gust vs the website hour." },
+  hub_wind: { title: "Hub-height wind", unit: "km/h", plain: "Wind at ~100 m (turbine height)." },
+  solar: { title: "Solar", unit: "W/m²", plain: "Incoming shortwave at the surface." },
+  fog: { title: "Fog / visibility", unit: "m", plain: "Visibility; lower metres = thicker fog." },
+  waves: { title: "Waves", unit: "m", plain: "Significant wave height (coast)." },
+  aqi: { title: "AQI / PM", unit: "index", plain: "CPCB station if present, else CAMS model." },
+  lightning: { title: "Lightning", unit: "chance", plain: "CAPE + thunder codes — not Damini." },
+  tropical_cyclone: { title: "Tropical cyclone", unit: "", plain: "Active GDACS storm in the India box, if any." },
+};
+
+function quantileBars(h: { q10?: number | null; q50?: number | null; q90?: number | null }) {
+  return [
+    { k: "Low", v: h.q10 ?? null },
+    { k: "Typical", v: h.q50 ?? null },
+    { k: "High", v: h.q90 ?? null },
+  ].filter((d) => d.v != null);
+}
+
+function ParamsSec({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
+  const allHeads = vera.parameters?.heads || [];
+  const skipped = allHeads.filter((h) => h.status === "not_wired").length;
+  const heads = allHeads.filter((h) => h.status !== "not_wired");
+  const by = Object.fromEntries(heads.map((h) => [h.id || "", h]));
+  const hours = (vera.hourly || []).filter((r) => (r.lead_h ?? 0) >= 0 && (r.lead_h ?? 0) < 24);
+  const hourlyCharts: { id: string; y: string; rows: { t: string; Blend: number | null; Website: number | null; Ensemble: number | null }[] }[] = [
+    {
+      id: "rainfall",
+      y: "mm in that hour",
+      rows: hours.map((r) => ({ t: istClock(r.t), Blend: r.moe ?? null, Website: r.om ?? null, Ensemble: r.ensemble ?? null })),
+    },
+    {
+      id: "temperature",
+      y: "°C",
+      rows: hours.map((r) => ({ t: istClock(r.t), Blend: r.moe_temp_c ?? null, Website: r.om_temp_c ?? null, Ensemble: r.ensemble_temp_c ?? null })),
+    },
+    {
+      id: "wind",
+      y: "km/h",
+      rows: hours.map((r) => ({ t: istClock(r.t), Blend: r.moe_wind_kmh ?? null, Website: r.om_wind_kmh ?? null, Ensemble: r.ensemble_wind_kmh ?? null })),
+    },
+    {
+      id: "heat_wave",
+      y: "WBGT °C",
+      rows: hours.map((r) => ({ t: istClock(r.t), Blend: r.moe_wbgt_c ?? null, Website: r.om_wbgt_c ?? null, Ensemble: r.ensemble_wbgt_c ?? null })),
+    },
+  ];
+  const chanceRows = [
+    { k: "Heat wave", v: Math.round(((by.heat_wave?.p_exceed ?? by.heat_wave?.q50) || 0) * (by.heat_wave?.p_exceed != null || (by.heat_wave?.q50 ?? 1) <= 1 ? 100 : 1)) },
+    { k: "Fog", v: Math.round((by.fog?.p_fog || 0) * 100) },
+    { k: "Lightning", v: Math.round((by.lightning?.p_lightning || 0) * 100) },
+    { k: "Heavy rain", v: Math.round((vera.fusion?.extremes?.p_ge_64_5 || 0) * 100) },
+  ];
+  return (
+    <div className="space-y-4">
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.secParams}</p>
+        <p className="mt-1 text-sm">{t.paramsHint}</p>
+        <p className="mt-1 text-[11px] text-neo-muted">
+          Showing {heads.length} heads with a number at this pin.
+          {skipped ? ` ${skipped} have no feed here (hidden).` : ""}
+        </p>
+        <div className="mt-3 overflow-auto">
+          <table className="w-full text-left text-[11px]">
+            <thead className="text-neo-muted">
+              <tr>
+                <th className="py-1">What</th>
+                <th>Typical (blend q50)</th>
+                <th>Low–high</th>
+                <th>Status</th>
+                <th>How to read it</th>
+              </tr>
+            </thead>
+            <tbody>
+              {heads.map((h) => {
+                const meta = PARAM_LABEL[h.id || ""] || { title: h.id || "—", unit: h.unit || "", plain: h.source || "" };
+                const lo = h.q10 ?? h.q50;
+                const hi = h.q90 ?? h.q95 ?? h.q50;
+                return (
+                  <tr key={h.id} className="border-t border-neo-line">
+                    <td className="py-2 font-semibold">{meta.title}</td>
+                    <td className="font-mono" style={{ color: COL.blend }}>
+                      {h.q50 != null ? `${round2(h.q50)} ${meta.unit}` : "—"}
+                    </td>
+                    <td className="font-mono text-neo-muted">
+                      {lo != null && hi != null ? `${round2(lo)} – ${round2(hi)}` : "—"}
+                    </td>
+                    <td>{h.status || "—"}</td>
+                    <td className="text-neo-muted">{meta.plain}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Next 24 hours — compare Blend vs Website</p>
+        <p className="text-[11px] text-neo-muted">Same IST hours on every chart. Purple blend · rust website · teal ensemble (satellite + NWP shape).</p>
+        <div className="mt-3 grid gap-4 lg:grid-cols-2">
+          {hourlyCharts.map((c) => (
+            <div key={c.id} className="neo-in p-3">
+              <p className="text-[11px] font-semibold">{PARAM_LABEL[c.id]?.title || c.id}</p>
+              <p className="text-[10px] text-neo-muted">{PARAM_LABEL[c.id]?.plain} Vertical: {c.y}.</p>
+              <div className="mt-2 h-44">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={c.rows}>
+                    <CartesianGrid stroke="#cfe0dd" vertical={false} />
+                    <XAxis dataKey="t" stroke="#4d6b70" fontSize={9} />
+                    <YAxis stroke="#4d6b70" fontSize={10} width={36} />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="Ensemble" stroke={COL.ensemble} strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="Blend" stroke={COL.blend} strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="Website" stroke={COL.om} strokeDasharray="4 3" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Range for each blended head</p>
+        <p className="text-[11px] text-neo-muted">
+          Low = drier / cooler / calmer tenth of the mix. Typical = the number we quote. High = wetter / hotter / windier tenth. Unit is on each chart.
+        </p>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {heads
+            .filter((h) => quantileBars(h).length >= 2)
+            .map((h) => (
+              <div key={h.id} className="neo-in p-3">
+                <p className="text-[11px] font-semibold">{PARAM_LABEL[h.id || ""]?.title || h.id}</p>
+                <p className="text-[10px] text-neo-muted">{PARAM_LABEL[h.id || ""]?.unit}</p>
+                <div className="mt-2 h-36">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={quantileBars(h)}>
+                      <CartesianGrid stroke="#cfe0dd" vertical={false} />
+                      <XAxis dataKey="k" stroke="#4d6b70" fontSize={9} />
+                      <YAxis stroke="#4d6b70" fontSize={10} width={32} />
+                      <Tooltip formatter={(v: number) => `${round2(Number(v))} ${PARAM_LABEL[h.id || ""]?.unit || ""}`} />
+                      <Bar dataKey="v" fill={COL.blend} radius={[6, 6, 0, 0]} name="Value" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ))}
+        </div>
+      </section>
+
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Chances (percent)</p>
+        <p className="text-[11px] text-neo-muted">Not a warning colour. 0% = unlikely, 100% = every member agrees it happens.</p>
+        <div className="mt-2 h-48">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chanceRows}>
+              <CartesianGrid stroke="#cfe0dd" vertical={false} />
+              <XAxis dataKey="k" stroke="#4d6b70" fontSize={11} />
+              <YAxis stroke="#4d6b70" fontSize={10} width={28} domain={[0, 100]} />
+              <Tooltip />
+              <Bar dataKey="v" fill={COL.nwp} radius={[6, 6, 0, 0]} name="Chance %" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </section>
     </div>
   );
@@ -910,8 +1121,9 @@ function LeadsSec({ vera }: { vera: VeraPack }) {
 }
 
 function ExplainSec({ vera }: { vera: VeraPack }) {
+  const attn = vera.gate?.cross_attn;
   return (
-    <section className="neo p-4">
+    <section className="neo space-y-3 p-4">
       <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Why these weights today</p>
       <ul className="mt-2 space-y-3 text-sm">
         {(vera.gate?.explain || []).map((e) => (
@@ -922,7 +1134,144 @@ function ExplainSec({ vera }: { vera: VeraPack }) {
           </li>
         ))}
       </ul>
+      {attn?.weights?.length ? (
+        <div className="overflow-auto">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">Cross-attention</p>
+          <p className="text-[10px] text-neo-muted">Forecasts query satellite / regime / historical / initiation / cold cloud.</p>
+          <table className="mt-2 w-full text-left text-[10px]">
+            <thead>
+              <tr>
+                <th className="py-1">Member</th>
+                {(attn.conditions || []).map((c) => (
+                  <th key={c}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(attn.members || []).map((m, i) => (
+                <tr key={m} className="border-t border-neo-line">
+                  <td className="py-1 font-mono">{m}</td>
+                  {(attn.weights?.[i] || []).map((v, j) => (
+                    <td key={j} className="font-mono" style={{ background: `rgba(142,68,173,${Math.min(1, v)})` }}>
+                      {v.toFixed(2)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function OmBlendSec({ vera, t }: { vera: VeraPack; t: Record<string, string> }) {
+  const pack = vera.performance?.om_blend;
+  const rows = pack?.issued_rows || [];
+  const chart = rows.map((r) => ({
+    t: istClock(r.t),
+    Blend: r.blend,
+    OpenMeteo: r.om_issued,
+    Obs: r.obs,
+  }));
+  const leads = Object.entries(pack?.by_lead || {}).map(([k, v]) => ({
+    k,
+    blend: v.blend?.mae,
+    om: v.om?.mae,
+  }));
+  return (
+    <div className="space-y-3">
+      <section className="neo p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.secOmBlend}</p>
+        <p className="mt-1 text-xs text-neo-muted">{t.omBlendCaption}</p>
+      </section>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Kpi
+          label={t.omBlendAgree}
+          value={pack?.agreement_mae != null ? String(pack.agreement_mae) : "—"}
+          sub={`${pack?.agreement_n ?? 0} ${t.omBlendHoursIssued}`}
+        />
+        <Kpi
+          label={t.omBlendSkill}
+          value={pack?.independent_obs && pack?.skill_vs_om != null ? String(pack.skill_vs_om) : t.omBlendNoSkill}
+          sub={pack?.independent_obs ? t.omBlendSkillHint : t.omBlendWaitObs}
+        />
+        <Kpi
+          label={t.omBlendCounts}
+          value={`${pack?.n_verified ?? 0} / ${pack?.n_issued ?? 0}`}
+          sub={t.omBlendVerified}
+        />
+      </div>
+      {chart.length ? (
+        <section className="neo p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.omBlendChart}</p>
+          <div className="mt-2 h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chart}>
+                <CartesianGrid stroke="#cfe0dd" vertical={false} />
+                <XAxis dataKey="t" fontSize={10} stroke="#4d6b70" />
+                <YAxis fontSize={10} width={32} stroke="#4d6b70" />
+                <Tooltip />
+                <Legend />
+                <Line dataKey="Blend" stroke={COL.blend} strokeWidth={2.4} dot={false} />
+                <Line dataKey="OpenMeteo" stroke={COL.om} strokeDasharray="4 3" dot={false} />
+                <Line dataKey="Obs" stroke="#1b4f72" strokeWidth={2} dot={false} connectNulls={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <AxisHint x={t.omBlendAxisX} y={t.omBlendAxisY} />
+        </section>
+      ) : (
+        <p className="text-sm text-neo-muted">{t.omBlendEmpty}</p>
+      )}
+      {leads.some((r) => r.blend != null || r.om != null) ? (
+        <section className="neo p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.omBlendByLead}</p>
+          <div className="mt-2 h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={leads}>
+                <CartesianGrid stroke="#cfe0dd" vertical={false} />
+                <XAxis dataKey="k" fontSize={10} stroke="#4d6b70" />
+                <YAxis fontSize={10} width={32} stroke="#4d6b70" />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="blend" name="Blend MAE" fill={COL.blend} radius={[6, 6, 0, 0]} />
+                <Bar dataKey="om" name="Open-Meteo MAE" fill={COL.om} radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      ) : null}
+      {rows.length ? (
+        <section className="neo overflow-x-auto p-4">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="text-neo-muted">
+                <th className="py-1">{t.omBlendValid}</th>
+                <th>Lead</th>
+                <th>Blend</th>
+                <th>OM issued</th>
+                <th>Obs</th>
+                <th>{t.omBlendSource}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(-24).map((r, i) => (
+                <tr key={`${r.t}-${r.lead_h}-${i}`} className="border-t border-neo-line font-mono">
+                  <td className="py-1">{istClock(r.t)}</td>
+                  <td>{r.lead_h ?? "—"}</td>
+                  <td>{round2(r.blend)}</td>
+                  <td>{round2(r.om_issued)}</td>
+                  <td>{r.obs == null ? t.omBlendPending : round2(r.obs)}</td>
+                  <td className="text-neo-muted">{r.obs_source || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -1091,12 +1440,12 @@ function IntraSec({ vera }: { vera: VeraPack }) {
           : { Ensemble: h.ensemble_mm, Blend: h.blend_mm, Website: h.website_mm }),
   }));
   const mins = (di === 0 ? day?.minutes_today : day?.peak_minutes) || [];
-  const mchart = mins.map((m) => ({
-    t: istClock(m.t),
-    Website: varK === "rain" ? m.website_mm_h ?? m.rain_mm_h : varK === "temp" ? m.temp_c : varK === "wind" ? m.wind_kmh : m.wbgt_c,
-    Blend: varK === "rain" ? m.blend_mm_h : varK === "temp" ? m.temp_c : varK === "wind" ? m.wind_kmh : m.wbgt_c,
-    Ensemble: varK === "rain" ? m.ensemble_mm_h : varK === "temp" ? m.temp_c : varK === "wind" ? m.wind_kmh : m.wbgt_c,
-  }));
+  const mchart = mins.map((m) => {
+    if (varK === "temp") return { t: istClock(m.t), Website: m.temp_c, Blend: m.blend_temp_c ?? m.temp_c, Ensemble: m.ensemble_temp_c ?? m.temp_c };
+    if (varK === "wind") return { t: istClock(m.t), Website: m.wind_kmh, Blend: m.blend_wind_kmh ?? m.wind_kmh, Ensemble: m.ensemble_wind_kmh ?? m.wind_kmh };
+    if (varK === "heat") return { t: istClock(m.t), Website: m.wbgt_c, Blend: m.blend_wbgt_c ?? m.wbgt_c, Ensemble: m.ensemble_wbgt_c ?? m.wbgt_c };
+    return { t: istClock(m.t), Website: m.website_mm_h ?? m.rain_mm_h, Blend: m.blend_mm_h, Ensemble: m.ensemble_mm_h };
+  });
   const web = mchart.map((m) => Number(m.Website || 0));
   const bl = mchart.map((m) => Number(m.Blend || 0));
   const n = Math.min(web.length, bl.length) || 1;
@@ -1105,6 +1454,8 @@ function IntraSec({ vera }: { vera: VeraPack }) {
   const total = mins.reduce((s, m) => s + Number(m.rain_mm || 0), 0);
   const yHour = varK === "rain" ? "Rain (mm in the hour)" : varK === "temp" ? "Temperature (°C)" : varK === "wind" ? "Wind (km/h)" : "WBGT heat (°C)";
   const yMin = varK === "rain" ? "Rain rate (mm/h)" : yHour;
+  const unit = varK === "rain" ? "mm/h" : varK === "temp" ? "°C" : varK === "wind" ? "km/h" : "°C WBGT";
+  const tipFmt = (v: number) => `${round2(v)} ${unit}`;
   return (
     <div className="space-y-3">
       <section className="neo p-4">
@@ -1138,7 +1489,7 @@ function IntraSec({ vera }: { vera: VeraPack }) {
               <CartesianGrid stroke="#cfe0dd" vertical={false} />
               <XAxis dataKey="t" fontSize={10} />
               <YAxis fontSize={10} width={36} />
-              <Tooltip />
+              <Tooltip formatter={(v: number) => tipFmt(Number(v))} />
               <Legend />
               <Line dataKey="Ensemble" stroke={COL.ensemble} strokeWidth={2.5} dot={false} />
               <Line dataKey="Blend" stroke={COL.blend} strokeWidth={2} dot={false} />
@@ -1158,7 +1509,7 @@ function IntraSec({ vera }: { vera: VeraPack }) {
                 <CartesianGrid stroke="#cfe0dd" vertical={false} />
                 <XAxis dataKey="t" fontSize={10} />
                 <YAxis fontSize={10} width={36} />
-                <Tooltip />
+                <Tooltip formatter={(v: number) => tipFmt(Number(v))} />
                 <Legend />
                 <Line dataKey="Ensemble" stroke={COL.ensemble} strokeWidth={2} dot={false} />
                 <Line dataKey="Blend" stroke={COL.blend} strokeWidth={2} dot={false} />
@@ -1172,14 +1523,21 @@ function IntraSec({ vera }: { vera: VeraPack }) {
       <section className="neo p-4">
         <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{day?.label === "Today" ? "15-minute shape (today)" : "Peak-hour 5-minute shape"}</p>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
-          <Kpi label="Peak rain rate" value={peak ? `${round2(peak)} mm/h` : "—"} />
-          <Kpi label="Rain in this strip" value={`${round2(total)} mm`} sub="sums to the locked hour" />
-          <Kpi label="Blend vs website MAE" value={mae != null ? `${round2(mae)} mm/h` : "Not available"} />
+          <Kpi
+            label={varK === "rain" ? "Peak rain rate" : varK === "temp" ? "Peak temperature" : varK === "wind" ? "Peak wind" : "Peak WBGT"}
+            value={peak ? `${round2(peak)} ${unit}` : "—"}
+          />
+          <Kpi
+            label={varK === "rain" ? "Rain in this strip" : "Blend vs website"}
+            value={varK === "rain" ? `${round2(total)} mm` : mae != null ? `${round2(mae)} ${unit}` : "—"}
+            sub={varK === "rain" ? "sums to the locked hour" : "mean absolute difference"}
+          />
+          <Kpi label="Blend vs website MAE" value={mae != null ? `${round2(mae)} ${unit}` : "Not available"} />
         </div>
         <div className="mt-2 flex flex-wrap gap-1">
           {(["rain", "temp", "wind", "heat"] as const).map((k) => (
             <button key={k} type="button" className={`neo-btn text-[11px] ${varK === k ? "neo-btn-on" : ""}`} onClick={() => setVarK(k)}>
-              {k}
+              {k === "rain" ? "Rain (mm/h)" : k === "temp" ? "Temperature (°C)" : k === "wind" ? "Wind (km/h)" : "Heat WBGT (°C)"}
             </button>
           ))}
         </div>
@@ -1189,7 +1547,7 @@ function IntraSec({ vera }: { vera: VeraPack }) {
               <CartesianGrid stroke="#cfe0dd" vertical={false} />
               <XAxis dataKey="t" fontSize={9} />
               <YAxis fontSize={10} width={36} />
-              <Tooltip />
+              <Tooltip formatter={(v: number) => tipFmt(Number(v))} />
               <Legend />
               <Line dataKey="Ensemble" stroke={COL.ensemble} strokeWidth={2} dot={false} />
               <Line dataKey="Blend" stroke={COL.blend} strokeWidth={2} dot={false} />

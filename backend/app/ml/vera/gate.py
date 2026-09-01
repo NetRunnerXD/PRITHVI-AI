@@ -87,6 +87,49 @@ def _softmax(xs: list[float]) -> list[float]:
     return [v / s for v in e]
 
 
+CONDITION_KEYS = ("satellite", "regime", "historical", "initiation", "cold_cloud")
+
+
+def _dot(a: list[float], b: list[float]) -> float:
+    n = min(len(a), len(b))
+    return sum(a[i] * b[i] for i in range(n))
+
+
+def cross_attention(
+    forecasts: list[list[float]],
+    conditions: list[list[float]],
+) -> tuple[list[float], list[list[float]]]:
+    """Aligned 5-way softmax over condition *strengths*, not mixed-unit embeddings."""
+    if not forecasts:
+        return [], []
+    if conditions and len(conditions) == 5 and all(len(c) == 1 for c in conditions):
+        base = [float(c[0]) for c in conditions]
+        matrix, boosts = [], []
+        for q in forecasts:
+            fam = float(q[3]) if len(q) > 3 else 0.0
+            lead = float(q[7]) if len(q) > 7 else 0.2
+            s = list(base)
+            if fam >= 0.5 and lead >= 0.4:
+                s[2] += 0.2
+                s[0] *= 0.9
+            elif fam < 0.5 and lead <= 0.2:
+                s[0] += 0.15
+                s[3] += 0.05
+            w = _softmax([max(0.05, x) for x in s])
+            matrix.append([round(x, 4) for x in w])
+            boosts.append(0.12 * (w[0] + w[3] + w[4] - 0.4))
+        return boosts, matrix
+    d = max(len(conditions[0]), 1) if conditions else 1
+    scale = math.sqrt(d)
+    matrix, boosts = [], []
+    for q in forecasts:
+        scores = [_dot(q, k) / scale for k in conditions]
+        w = _softmax(scores)
+        matrix.append([round(x, 4) for x in w])
+        boosts.append(0.0)
+    return boosts, matrix
+
+
 def kalman_smooth(prev: dict[str, float], curr: dict[str, float], q: float = 0.08, r: float = 0.25) -> dict[str, float]:
     keys = list(dict.fromkeys([*prev, *curr]))
     out = {}
@@ -190,9 +233,30 @@ def run(
     elev = float(f.get("elevation_m") or 50)
     skill = f.get("rolling_skill") if isinstance(f.get("rolling_skill"), dict) else {}
 
-    logits = []
+    soft = regime.get("soft_assignment") or regime.get("probabilities") or {}
+    if not isinstance(soft, dict):
+        soft = {}
+    regime_p = max((float(v) for v in soft.values()), default=0.35)
+    clim = historical.get("climatology") or {}
+    hist_z = abs(float(clim.get("mean") or 6) - 6.0) / 8.0
+    analogues = historical.get("analogues") or []
+    if analogues:
+        hist_z = max(hist_z, 0.25)
+    sat_score = max(0.08, sat_ok * (0.6 + 0.5 * ci + 0.4 * cold))
+    cond_vecs = [[sat_score], [max(0.08, regime_p)], [max(0.08, 0.2 + hist_z)], [max(0.08, 0.12 + 0.88 * ci)], [max(0.08, 0.12 + 0.88 * cold)]]
+    fcsts: list[list[float]] = []
     for sid in ids:
+        p0 = float(((members.get(sid) or {}).get("precip_days") or [0])[0] or 0)
+        t0 = float(((members.get(sid) or {}).get("temp_max") or [0])[0] or 0)
+        w0 = float(((members.get(sid) or {}).get("wind_max") or [0])[0] or 0)
+        fam = 1.0 if _family(sid) == "ai" else 0.0
+        fcsts.append([p0 / 40.0, t0 / 40.0, w0 / 40.0, fam, sat_ok, ci, cold, lead_hours / 120.0])
+    attn_boost, attn_mat = cross_attention(fcsts, cond_vecs)
+
+    logits = []
+    for i, sid in enumerate(ids):
         s = 0.4
+        s += attn_boost[i] if i < len(attn_boost) else 0.0
         if "ecmwf" in sid or "ifs" in sid:
             s += 0.35
         if "gfs" in sid:
@@ -273,14 +337,23 @@ def run(
             confidence[sid] = int(_clip(55 + float(w) * 35, 28, 94))
             reasons.setdefault(sid, _plain_reason(sid, float(w), fam, top, spread, ci, lead_hours, skill.get(sid)))
 
+    top_sid = max(sm, key=lambda k: sm[k]) if sm else None
+    top_cond = None
+    if top_sid and top_sid in ids and attn_mat:
+        row = attn_mat[ids.index(top_sid)]
+        if row:
+            j = max(range(len(row)), key=lambda i: row[i])
+            top_cond = CONDITION_KEYS[j] if j < len(CONDITION_KEYS) else str(j)
+
     return {
-        "method": "ViT spatial attention + Kalman + TV",
+        "method": "ViT + cross-attn + Kalman + TV",
         "members": ids,
         "weights": sm,
         "reasons": reasons,
         "confidence": confidence,
         "family": family,
         "by_window": by_window,
+        "cross_attn": {"members": ids, "conditions": list(CONDITION_KEYS), "weights": attn_mat},
         "lead_hours": lead_hours,
         "inputs": {
             "n_members": len(ids),
@@ -302,5 +375,10 @@ def run(
             {"factor": "satellite", "detail": "growing storm" if ci else "quiet IR", "shift": "Convective initiation raises near-term rain caution."},
             {"factor": "tail", "detail": "heavy/hot members upweighted" if (day0 and max(day0) >= 40) else "average-day loss", "shift": "Loss upweights extremes so the blend is not only tuned for ordinary days."},
             {"factor": "online", "detail": "Kalman vs last cycle", "shift": "Yesterday’s mix is eased toward today’s scores so weights do not jump."},
+            {
+                "factor": "cross_attention",
+                "detail": f"{top_sid or '—'} × {top_cond or '—'}",
+                "shift": "Forecasts query satellite, regime, and historical conditions so the mix can explain which context raised the top member.",
+            },
         ],
     }

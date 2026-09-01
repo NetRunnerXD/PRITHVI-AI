@@ -77,6 +77,12 @@ def member_daily_from_om(om: dict[str, Any]) -> dict[str, list]:
         "hourly_precip": _hourly(om, "precipitation")[:48],
         "hourly_temp": _hourly(om, "temperature_2m")[:48],
         "hourly_wind": _hourly(om, "wind_speed_10m")[:48],
+        "hourly_gust": _hourly(om, "wind_gusts_10m")[:48],
+        "hourly_shortwave": _hourly(om, "shortwave_radiation")[:48],
+        "hourly_vis": _hourly(om, "visibility")[:48],
+        "hourly_rh": _hourly(om, "relative_humidity_2m")[:48],
+        "gust_max": _daily(om, "wind_gusts_10m_max")[start:],
+        "shortwave_sum": _daily(om, "shortwave_radiation_sum")[start:],
     }
 
 

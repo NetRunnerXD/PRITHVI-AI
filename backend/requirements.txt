@@ -6,6 +6,10 @@ numpy>=1.26,<2.2
 pydantic==2.10.4
 pydantic-settings==2.7.1
 python-dotenv==1.0.1
+motor>=3.6.0
+pymongo>=4.10.1
+PyJWT==2.10.1
+bcrypt>=4.2.1
 openai==1.59.7
 langdetect==1.0.9
 pytest==8.3.4

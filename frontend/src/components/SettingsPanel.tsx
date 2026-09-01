@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
 import { API_BASE, apiUrl } from "@/lib/config";
+import { gpsFix, patchAlertLocation, patchProfile } from "@/lib/auth";
 import { DEFAULT_SETTINGS, useApp } from "@/lib/store";
+import { DistrictSearch } from "./DistrictSearch";
 import type { Density, TabId, ThemeId, UnitSys } from "@/types/dashboard";
 
 const THEMES: ThemeId[] = ["sand", "monsoon", "midnight", "ocean", "contrast"];
@@ -12,7 +14,8 @@ const TABS: TabId[] = ["home", "analytics", "data", "map", "model", "chat"];
 type LlmRow = { id: string; model: string; ok?: boolean };
 
 export function SettingsPanel() {
-  const { locale, setLocale, outputLocale, setOutputLocale, settings, setSettings, resetSettings } = useApp();
+  const { locale, setLocale, outputLocale, setOutputLocale, settings, setSettings, resetSettings, account, setAccount, setAuthModal, setLocation } =
+    useApp();
   const t = COPY[locale];
   const [llms, setLlms] = useState<LlmRow[]>([{ id: "ollama", model: "qwen2.5:3b" }]);
   useEffect(() => {
@@ -29,8 +32,112 @@ export function SettingsPanel() {
       stop = true;
     };
   }, []);
+  const [name, setName] = useState(account?.display_name || "");
+  const [sms, setSms] = useState(Boolean(account?.sms_opt_in));
+  const [acctMsg, setAcctMsg] = useState("");
+  useEffect(() => {
+    setName(account?.display_name || "");
+    setSms(Boolean(account?.sms_opt_in));
+  }, [account]);
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
+      <section className="neo space-y-3 p-4">
+        <h3 className="text-sm font-bold">{t.authAccount}</h3>
+        {account ? (
+          <>
+            <p className="text-xs text-neo-muted">{account.phone}</p>
+            <label className="block text-sm">
+              {t.authName}
+              <input className="neo-in mt-1 w-full px-3 py-2" value={name} onChange={(e) => setName(e.target.value)} />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={sms} onChange={(e) => setSms(e.target.checked)} />
+              {t.authSmsOptIn}
+            </label>
+            <button
+              className="neo-btn text-sm"
+              onClick={() => {
+                void patchProfile({ display_name: name, sms_opt_in: sms })
+                  .then((u) => {
+                    setAccount(u);
+                    setAcctMsg(t.authSaved);
+                  })
+                  .catch((e) => setAcctMsg(String(e)));
+              }}
+            >
+              {t.authSaveProfile}
+            </button>
+            <p className="text-xs font-semibold">{t.authAlertLocation}</p>
+            {account.location ? (
+              <p className="font-mono text-[11px] text-neo-muted">
+                {account.location.place || account.location.district} · {account.location.lat?.toFixed(4)}, {account.location.lon?.toFixed(4)}
+              </p>
+            ) : null}
+            <DistrictSearch
+              locale={locale}
+              onPick={(l) => {
+                void patchAlertLocation({ lat: l.lat, lon: l.lon, place: l.place_name || l.district, source: "manual" }).then((u) => {
+                  setAccount(u);
+                  setAcctMsg(t.authSaved);
+                });
+              }}
+            />
+            <button
+              className="neo-btn text-sm"
+              onClick={() => {
+                void gpsFix().then((fix) => {
+                  if (!fix) {
+                    setAcctMsg(t.authGpsFail);
+                    return;
+                  }
+                  void patchAlertLocation({ ...fix, source: "gps" }).then((u) => {
+                    setAccount(u);
+                    setAcctMsg(t.authSaved);
+                  });
+                });
+              }}
+            >
+              {t.authUseGps}
+            </button>
+            {account.location ? (
+              <button
+                className="neo-btn text-sm"
+                onClick={() => {
+                  const loc = account.location;
+                  if (!loc) return;
+                  void setLocation({
+                    id: `alert:${loc.lat},${loc.lon}`,
+                    label: loc.place || loc.district || "Alert location",
+                    country: "IN",
+                    state: loc.state || "",
+                    district: loc.district || loc.place || "",
+                    lat: loc.lat,
+                    lon: loc.lon,
+                    timezone: "Asia/Kolkata",
+                    crop_hint: "aman_rice",
+                    season_hint: "kharif",
+                    plot_m2: 400,
+                    place_kind: "place",
+                    place_name: loc.place || loc.district || undefined,
+                  });
+                }}
+              >
+                {t.authApplyDash}
+              </button>
+            ) : null}
+            {acctMsg ? <p className="text-xs text-neo-muted">{acctMsg}</p> : null}
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-neo-muted">{t.authSettingsHint}</p>
+            <button className="neo-btn text-sm" onClick={() => setAuthModal(true)}>
+              {t.authSignIn}
+            </button>
+          </>
+        )}
+      </section>
+
       <section className="neo space-y-3 p-4">
         <h3 className="text-sm font-bold">{t.theme}</h3>
         <div className="flex flex-wrap gap-2">

@@ -97,6 +97,38 @@ async def blend_hazards(loc: Location = Depends(loc_from_query)):
     }
 
 
+@router.get("/vera/parameters")
+async def vera_parameters(loc: Location = Depends(loc_from_query)):
+    snap = await build_snapshot(loc)
+    vera = (snap.predictions or {}).get("vera") or {}
+    return {
+        "location": snap.location.model_dump(),
+        "parameters": vera.get("parameters"),
+        "fusion": {k: (vera.get("fusion") or {}).get(k) for k in ("method", "q50", "q95", "q99", "eqmn")},
+        "train": _vera_train_status(),
+    }
+
+
+@router.post("/vera/train")
+async def vera_train(epochs: int = Query(default=20, ge=1, le=200)):
+    from app.ml.train import eqrn, swin_unet
+
+    eq = eqrn.train(epochs=epochs)
+    sw = swin_unet.train(epochs=min(epochs, 30))
+    return {"eqrn": eq, "swin": sw}
+
+
+@router.get("/vera/train")
+async def vera_train_status():
+    return _vera_train_status()
+
+
+def _vera_train_status() -> dict:
+    from app.ml.train import eqrn, swin_unet
+
+    return {"eqrn": eqrn.status(), "swin": swin_unet.status()}
+
+
 @router.get("/predictions")
 async def predictions(loc: Location = Depends(loc_from_query), source: str = "both"):
     snap = await build_snapshot(loc)
