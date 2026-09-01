@@ -162,58 +162,6 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
     rain: series.precip_hourly?.[i]?.value ?? 0,
     wind: series.wind_hourly?.[i]?.value ?? 0,
   }));
-  const days = (dash.predictive.outlook_days || []).slice(0, 7);
-
-  const sixHour = (dash.predictive.hourly || []).slice(0, 6).map((h) => ({
-    t: h.hour || hhmm(h.t),
-    rain: h.precip_mm ?? 0,
-    temp: h.temp_c ?? 0,
-    wind: h.wind_kmh ?? 0,
-  }));
-  const sixFromSeries = hourly.slice(0, 6);
-  const six = sixHour.length ? sixHour : sixFromSeries;
-
-  const [next6Mode, setNext6Mode] = useState<"numbers" | "plot">("numbers");
-  const [next6Var, setNext6Var] = useState<"rain" | "temp" | "wind">("rain");
-
-  const next6Comparison = useMemo(() => {
-    const veraHourly = (dash.predictions?.vera?.hourly || [])
-      .filter((r) => (r.lead_h ?? 0) >= 0)
-      .slice(0, 6);
-
-    if (veraHourly.length) {
-      return veraHourly.map((r, i) => {
-        const timeLabel = r.t ? hhmm(r.t) : six[i]?.t || `+${i}h`;
-        const rainOm = r.om ?? (six[i]?.rain ?? 0);
-        const rainBlend = r.moe ?? (six[i]?.rain ?? 0);
-        const tempOm = r.om_temp_c ?? (six[i]?.temp ?? 0);
-        const tempBlend = r.moe_temp_c ?? (six[i]?.temp ?? 0);
-        const windOm = r.om_wind_kmh ?? (six[i]?.wind ?? 0);
-        const windBlend = r.moe_wind_kmh ?? (six[i]?.wind ?? 0);
-
-        return {
-          t: timeLabel,
-          rain_om: rainOm != null ? (units === "imperial" ? Math.round((rainOm / 25.4) * 100) / 100 : rainOm) : 0,
-          rain_blend: rainBlend != null ? (units === "imperial" ? Math.round((rainBlend / 25.4) * 100) / 100 : rainBlend) : 0,
-          temp_om: tempOm != null ? (units === "imperial" ? Math.round((tempOm * 9) / 5 + 32) : tempOm) : 0,
-          temp_blend: tempBlend != null ? (units === "imperial" ? Math.round((tempBlend * 9) / 5 + 32) : tempBlend) : 0,
-          wind_om: windOm != null ? (units === "imperial" ? Math.round(windOm * 0.621) : windOm) : 0,
-          wind_blend: windBlend != null ? (units === "imperial" ? Math.round(windBlend * 0.621) : windBlend) : 0,
-        };
-      });
-    }
-
-    return six.map((h) => ({
-      t: h.t,
-      rain_om: units === "imperial" ? Math.round(((h.rain || 0) / 25.4) * 100) / 100 : (h.rain || 0),
-      rain_blend: units === "imperial" ? Math.round(((h.rain || 0) / 25.4) * 100) / 100 : (h.rain || 0),
-      temp_om: units === "imperial" ? Math.round(((h.temp || 0) * 9) / 5 + 32) : (h.temp || 0),
-      temp_blend: units === "imperial" ? Math.round(((h.temp || 0) * 9) / 5 + 32) : (h.temp || 0),
-      wind_om: units === "imperial" ? Math.round((h.wind || 0) * 0.621) : (h.wind || 0),
-      wind_blend: units === "imperial" ? Math.round((h.wind || 0) * 0.621) : (h.wind || 0),
-    }));
-  }, [dash.predictions?.vera?.hourly, six, units]);
-
   const allAlerts = (() => {
     const raw = dash.prescriptive.warnings || [];
     const seen = new Set<string>();
@@ -255,213 +203,221 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
 
   return (
     <div className="space-y-3">
-      {/* ── Row 1: Sky and Rainfall — Animated Atmospheric Diorama Deck ── */}
-      <SkyRainHero dash={dash} locale={locale} onNavigateData={onNavigateData} />
+      {/* ── Top Unified Grid: Left (Sky on top + Rain & Wind side-by-side) & Right (Extended Alert & Risk Panel) ── */}
+      <div className="grid gap-3 grid-cols-1 lg:grid-cols-12 items-stretch">
+        {/* Left Column: Sky on top, followed by Rain & Wind side-by-side */}
+        <div className="w-full lg:col-span-7 xl:col-span-8 flex flex-col gap-3">
+          <SkyRainHero dash={dash} locale={locale} onNavigateData={onNavigateData} />
 
-      {/* ── Row 2: (Wind + Next 6h + 7-day forecast) on left & Alerts on right ── */}
-      <div className="grid gap-3 lg:grid-cols-12 items-stretch">
-        {/* Left column: Wind + 6h row & 7-day forecast */}
-        <div className="space-y-3 lg:col-span-8 flex flex-col justify-between">
-          {/* Wind + Next 6h */}
-          <div className="grid gap-3 sm:grid-cols-12">
-            {/* Innovative Multi-Metric Wind Section */}
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+            <RainfallSection
+              dash={dash}
+              locale={locale}
+              units={units}
+              onNavigateData={onNavigateData}
+              className="w-full flex flex-col justify-between select-none min-h-[240px]"
+            />
+
             <WindSection
               dash={dash}
               locale={locale}
               units={units}
               onNavigateData={onNavigateData}
+              className="w-full flex flex-col justify-between select-none min-h-[240px]"
             />
-
-            {/* Next 6h */}
-            <section
-              className="neo p-4 sm:col-span-7 flex flex-col justify-between cursor-pointer hover:ring-2 hover:ring-[var(--accent)] transition-all duration-200 select-none group min-h-[220px]"
-              onClick={() => setNext6Mode((m) => (m === "numbers" ? "plot" : "numbers"))}
-              title={next6Mode === "numbers" ? "Click to view Open-Meteo vs Blend plot" : "Click to view hourly numbers"}
-            >
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.next6h}</p>
-              </div>
-
-              <div className="min-h-[160px] flex flex-col justify-between">
-                {next6Mode === "numbers" ? (
-                  <div key="numbers-view" className="fade-in-scale space-y-2">
-                    {six.length ? (
-                      <div className="mt-2 grid grid-cols-3 gap-1 sm:grid-cols-6">
-                        {six.map((h) => (
-                          <div
-                            key={h.t}
-                            className="neo-in flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-center transition group-hover:bg-[color-mix(in_srgb,var(--bg)_80%,transparent)]"
-                          >
-                            <p className="text-[9px] font-semibold text-neo-muted">{h.t}</p>
-                            <p className="font-mono text-xs font-bold text-neo-accent">{temp(h.temp, units)}</p>
-                            <p className="text-[10px] font-mono text-neo-rain">{rain(h.rain, units)}</p>
-                            <p className="text-[9px] text-neo-muted">{speed(h.wind, units)}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="h-16 sm:h-20">
-                      {six.length ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={six}>
-                            <CartesianGrid stroke="var(--line)" vertical={false} />
-                            <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} />
-                            <YAxis stroke="var(--muted)" fontSize={8} width={20} />
-                            <Tooltip contentStyle={tip} />
-                            <Bar
-                              dataKey="rain"
-                              fill="var(--rain)"
-                              radius={[3, 3, 0, 0]}
-                              name="Rain"
-                              isAnimationActive={true}
-                              animationDuration={300}
-                            />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <p className="flex h-full items-center justify-center text-xs text-neo-muted">—</p>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div key="plot-view" className="fade-in-scale space-y-2 mt-1">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div
-                        className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {(["rain", "temp", "wind"] as const).map((k) => (
-                          <button
-                            key={k}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setNext6Var(k);
-                            }}
-                            className={`rounded-lg px-2.5 py-1 text-xs font-semibold tracking-wide transition-all ${
-                              next6Var === k
-                                ? "bg-neo-accent text-white shadow-sm font-bold"
-                                : "text-neo-muted hover:text-neo-text hover:bg-[color-mix(in_srgb,var(--card)_60%,transparent)]"
-                            }`}
-                          >
-                            {k === "rain"
-                              ? `Rain (${units === "imperial" ? "in" : "mm"})`
-                              : k === "temp"
-                              ? `Temp (${units === "imperial" ? "°F" : "°C"})`
-                              : `Wind (${units === "imperial" ? "mph" : "km/h"})`}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex items-center gap-3 text-xs font-medium" onClick={(e) => e.stopPropagation()}>
-                        <span className="flex items-center gap-1.5 text-[#c45c26]">
-                          <span className="inline-block h-2 w-2 rounded-full bg-[#c45c26]" /> Open-Meteo
-                        </span>
-                        <span className="flex items-center gap-1.5 text-[#8e44ad]">
-                          <span className="inline-block h-2 w-2 rounded-full bg-[#8e44ad]" /> Blend (MoE)
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="h-24 sm:h-28">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={next6Comparison}>
-                          <CartesianGrid stroke="var(--line)" vertical={false} />
-                          <XAxis dataKey="t" stroke="var(--muted)" fontSize={9} />
-                          <YAxis stroke="var(--muted)" fontSize={9} width={28} />
-                          <Tooltip contentStyle={tip} />
-                          <Line
-                            type="monotone"
-                            name="Open-Meteo"
-                            dataKey={next6Var === "rain" ? "rain_om" : next6Var === "temp" ? "temp_om" : "wind_om"}
-                            stroke="#c45c26"
-                            strokeWidth={2}
-                            strokeDasharray="4 3"
-                            dot={{ r: 2.5, fill: "#c45c26" }}
-                            isAnimationActive={true}
-                            animationDuration={300}
-                          />
-                          <Line
-                            type="monotone"
-                            name="Blend (MoE)"
-                            dataKey={next6Var === "rain" ? "rain_blend" : next6Var === "temp" ? "temp_blend" : "wind_blend"}
-                            stroke="#8e44ad"
-                            strokeWidth={2.5}
-                            dot={{ r: 3, fill: "#8e44ad" }}
-                            isAnimationActive={true}
-                            animationDuration={300}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
           </div>
-
-          {/* 7-day Interactive Forecast & Floating Chrono-Deck */}
-          <Forecast7DayDeck dash={dash} locale={locale} />
         </div>
 
-        {/* Alerts sidebar — increased height by 2 rows */}
-        <aside className="neo flex flex-col lg:col-span-4 lg:h-[31.5rem] lg:max-h-[31.5rem] overflow-hidden">
-          {/* Header */}
-          <div
-            className="flex shrink-0 cursor-pointer items-center gap-2 border-b border-[var(--line)] px-3.5 py-2.5 hover:bg-[color-mix(in_srgb,var(--danger)_6%,transparent)]"
-            onClick={() => onNavigateData?.("risks")}
+        {/* Right Column: Alert & Risk Panel (Responsive height & smooth scrolling) */}
+        <div className="w-full lg:col-span-5 xl:col-span-4 flex flex-col justify-start">
+          <RiskAlertPanel
+            dash={dash}
+            locale={locale}
+            onNavigateData={onNavigateData}
+            allAlerts={allAlerts}
+            className="w-full h-[360px] sm:h-[400px] lg:h-[460px] max-h-[460px]"
+          />
+        </div>
+      </div>
+
+      {/* ── Row 2: Environmental & Geo-Hazard Cards (Air, Land, Marine | Cyclone, Earthquake/Tsunami, Nowcasting) ── */}
+      <HomeHazardStrip dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} />
+
+      {/* ── Row 3: 7-Day Interactive Forecast & Chrono-Deck (At Bottom) ── */}
+      <Forecast7DayDeck dash={dash} locale={locale} />
+    </div>
+  );
+}
+
+function RiskAlertPanel({
+  dash,
+  locale,
+  onNavigateData,
+  allAlerts,
+  className,
+}: {
+  dash: DashboardSnapshot;
+  locale: Locale;
+  onNavigateData?: (subTab: string) => void;
+  allAlerts: any[];
+  className?: string;
+}) {
+  const t = COPY[locale];
+  const setTab = useApp((s) => s.setTab);
+  const applySuggestion = useApp((s) => s.applySuggestion);
+  const [panelTab, setPanelTab] = useState<"alerts" | "risks">("alerts");
+  const risks = useMemo(() => {
+    return [...(dash.risks || [])].sort((a, b) => (b.score_pct ?? 0) - (a.score_pct ?? 0));
+  }, [dash.risks]);
+
+  return (
+    <aside className={`neo flex flex-col overflow-hidden select-none ${className || "h-[460px] max-h-[460px]"}`}>
+      {/* Header with Segmented Navigation */}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--line)] px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          <span className="live-dot" aria-hidden />
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+            {panelTab === "alerts" ? t.alertsPanel || "Alerts" : "Risk Index"}
+          </p>
+        </div>
+
+        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+          <button
+            type="button"
+            onClick={() => setPanelTab("alerts")}
+            className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 ${
+              panelTab === "alerts"
+                ? "bg-neo-accent text-white shadow-sm"
+                : "text-neo-muted hover:text-neo-text"
+            }`}
           >
-            <span className="live-dot" aria-hidden />
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.alertsPanel}</p>
+            <span>Alerts</span>
             {allAlerts.length > 0 && (
-              <span className="ml-auto rounded-full bg-[color-mix(in_srgb,var(--danger)_15%,transparent)] px-2 py-0.5 text-[10px] font-bold text-neo-danger">
+              <span className="rounded-full bg-neo-danger text-white px-1.5 py-0 text-[8px] font-extrabold leading-none">
                 {allAlerts.length}
               </span>
             )}
-          </div>
-          {/* Scrollable list */}
-          <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5">
-            {allAlerts.length === 0 ? (
-              <li className="flex h-full items-center justify-center text-sm text-neo-muted">{t.allClear}</li>
-            ) : (
-              allAlerts.map((w) => (
-                <li key={w.id}>
-                  <button
-                    type="button"
-                    className={`w-full rounded-xl border-l-[3px] px-2.5 py-2 text-left transition-colors hover:brightness-110 ${alertTone[w.severity] ?? "border-l-[var(--line)]"}`}
-                    onClick={() =>
-                      openAlert(w, onNavigateData, setTab, (c) => applySuggestion({ center: c, tab: "map", zoom: 7 }))
-                    }
-                  >
-                    <div className="flex items-center gap-2">
-                      <p className={`text-[9px] font-bold uppercase tracking-widest ${alertDot[w.severity] ?? "text-neo-muted"}`}>
-                        {w.severity}
-                      </p>
-                      {w.scope === "india" ? (
-                        <span className="chip ml-auto text-[9px] px-1.5 py-0">India</span>
-                      ) : (
-                        <span className="chip ml-auto text-[9px] px-1.5 py-0 capitalize">
-                          {w.kind || (w.hazard === "seismic" ? "Earthquake" : w.hazard === "air" ? "Air Quality" : w.hazard)}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-0.5 text-xs font-semibold leading-snug">{w.title}</p>
-                    {w.body ? (
-                      <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-neo-muted">{w.body}</p>
-                    ) : null}
-                    <p className="mt-0.5 text-[9px] uppercase tracking-wide text-neo-muted">
-                      {w.source}
-                      {w.url ? " · bulletin" : ""}
-                    </p>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-        </aside>
+          </button>
+          <button
+            type="button"
+            onClick={() => setPanelTab("risks")}
+            className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
+              panelTab === "risks"
+                ? "bg-neo-accent text-white shadow-sm"
+                : "text-neo-muted hover:text-neo-text"
+            }`}
+          >
+            Risks ({risks.length})
+          </button>
+        </div>
       </div>
 
-      <HomeHazardStrip dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} />
-    </div>
+      {/* Content Area */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-2.5 space-y-2">
+        {panelTab === "alerts" ? (
+          allAlerts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full min-h-[140px] text-center p-3">
+              <div className="h-8 w-8 rounded-full bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] flex items-center justify-center text-neo-accent mb-2">
+                ✓
+              </div>
+              <p className="text-xs font-bold text-neo-text">{t.allClear || "No urgent bulletin"}</p>
+              <p className="text-[10px] text-neo-muted mt-0.5 max-w-[200px] leading-relaxed">
+                Quiet watches for flood, air, marine, seismic & tsunami stay active below.
+              </p>
+            </div>
+          ) : (
+            allAlerts.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                className={`w-full rounded-xl border-l-[3px] px-2.5 py-2 text-left transition-colors hover:brightness-110 ${
+                  alertTone[w.severity] ?? "border-l-[var(--line)]"
+                }`}
+                onClick={() =>
+                  openAlert(w, onNavigateData, setTab, (c) => applySuggestion({ center: c, tab: "map", zoom: 7 }))
+                }
+              >
+                <div className="flex items-center gap-2">
+                  <p className={`text-[9px] font-bold uppercase tracking-widest ${alertDot[w.severity] ?? "text-neo-muted"}`}>
+                    {w.severity}
+                  </p>
+                  {w.scope === "india" ? (
+                    <span className="chip ml-auto text-[9px] px-1.5 py-0">India</span>
+                  ) : (
+                    <span className="chip ml-auto text-[9px] px-1.5 py-0 capitalize">
+                      {w.kind || (w.hazard === "seismic" ? "Earthquake" : w.hazard === "air" ? "Air Quality" : w.hazard)}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-xs font-semibold leading-snug">{w.title}</p>
+                {w.body ? (
+                  <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-neo-muted">{w.body}</p>
+                ) : null}
+                <p className="mt-0.5 text-[9px] uppercase tracking-wide text-neo-muted">
+                  {w.source}
+                  {w.url ? " · bulletin" : ""}
+                </p>
+              </button>
+            ))
+          )
+        ) : (
+          <div className="space-y-2">
+            {risks.length === 0 ? (
+              <p className="text-center text-xs text-neo-muted py-6">No risk factors evaluated.</p>
+            ) : (
+              risks.map((r) => {
+                const isHigh = r.severity === "danger" || r.severity === "alert" || r.score_pct >= 50;
+                return (
+                  <div
+                    key={r.id}
+                    className="neo-in p-2.5 rounded-xl cursor-pointer hover:border-neo-accent transition-all"
+                    onClick={() => onNavigateData?.("risks")}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-neo-text">{r.label}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs font-black text-neo-accent">{r.score_pct}%</span>
+                        <span
+                          className={`chip text-[8px] font-extrabold uppercase px-1.5 py-0 ${
+                            isHigh
+                              ? "bg-[color-mix(in_srgb,var(--danger)_15%,transparent)] text-neo-danger"
+                              : "bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-neo-accent"
+                          }`}
+                        >
+                          {r.severity}
+                        </span>
+                      </div>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="mt-1.5 h-1.5 w-full rounded-full bg-[var(--line)] overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min(100, Math.max(5, r.score_pct))}%`,
+                          backgroundColor: isHigh ? "var(--danger)" : "var(--accent)",
+                        }}
+                      />
+                    </div>
+                    {r.factors?.[0] && (
+                      <p className="mt-1 text-[9px] text-neo-muted truncate">
+                        Primary driver: <span className="font-medium text-neo-text">{r.factors[0].label}</span> ({r.factors[0].contribution_pct}%)
+                      </p>
+                    )}
+                  </div>
+                );
+              })
+            )}
+            <button
+              type="button"
+              onClick={() => onNavigateData?.("risks")}
+              className="w-full text-center text-[10px] font-bold text-neo-accent hover:underline py-1"
+            >
+              View Full Risk Matrix & Insights →
+            </button>
+          </div>
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -552,7 +508,7 @@ function AirCard({
   return (
     <section className="neo p-4 flex flex-col justify-between select-none min-h-[220px]">
       <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">AIR QUALITY & CAMS</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">AIR QUALITY</p>
         <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
           {(["live", "gases", "pollen", "trend"] as const).map((id) => (
             <button
@@ -1018,6 +974,729 @@ function MarineWeatherCard({
   );
 }
 
+function CycloneRadarScope({ active }: { active: boolean }) {
+  return (
+    <svg viewBox="0 0 100 100" className="h-16 w-16 shrink-0 sm:h-20 sm:w-20">
+      <defs>
+        <radialGradient id="radarGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor={active ? "var(--danger)" : "var(--accent)"} stopOpacity={active ? 0.35 : 0.15} />
+          <stop offset="100%" stopColor={active ? "var(--danger)" : "var(--accent)"} stopOpacity={0} />
+        </radialGradient>
+      </defs>
+      <circle cx="50" cy="50" r="46" fill="var(--bg)" stroke="var(--line)" />
+      <circle cx="50" cy="50" r="46" fill="url(#radarGlow)" />
+      <circle cx="50" cy="50" r="32" fill="none" stroke="var(--line)" strokeDasharray="2 3" opacity={0.6} />
+      <circle cx="50" cy="50" r="18" fill="none" stroke="var(--line)" strokeDasharray="2 3" opacity={0.4} />
+      <line x1="50" y1="4" x2="50" y2="96" stroke="var(--line)" opacity={0.4} />
+      <line x1="4" y1="50" x2="96" y2="50" stroke="var(--line)" opacity={0.4} />
+      {active ? (
+        <g className="animate-spin" style={{ transformOrigin: "50px 50px", animationDuration: "3s" }}>
+          <path
+            d="M 50 50 A 24 24 0 0 1 70 30"
+            fill="none"
+            stroke="var(--danger)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+          <path
+            d="M 50 50 A 24 24 0 0 1 30 70"
+            fill="none"
+            stroke="var(--warn)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+          <circle cx="50" cy="50" r="4" fill="var(--danger)" />
+        </g>
+      ) : (
+        <g className="animate-spin" style={{ transformOrigin: "50px 50px", animationDuration: "8s" }}>
+          <line x1="50" y1="50" x2="86" y2="24" stroke="var(--accent)" strokeWidth="1.5" opacity={0.7} strokeLinecap="round" />
+          <circle cx="50" cy="50" r="3" fill="var(--accent)" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function SeismicOscilloscope({ active }: { active: boolean }) {
+  return (
+    <svg viewBox="0 0 120 60" className="h-14 w-24 shrink-0 sm:h-16 sm:w-28">
+      <defs>
+        <linearGradient id="seismicGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={active ? "var(--danger)" : "var(--accent)"} stopOpacity={0.2} />
+          <stop offset="50%" stopColor={active ? "var(--danger)" : "var(--accent)"} stopOpacity={1} />
+          <stop offset="100%" stopColor={active ? "var(--danger)" : "var(--accent)"} stopOpacity={0.2} />
+        </linearGradient>
+      </defs>
+      <rect x="2" y="2" width="116" height="56" rx="8" fill="var(--bg)" stroke="var(--line)" />
+      <line x1="6" y1="30" x2="114" y2="30" stroke="var(--line)" strokeDasharray="2 3" opacity={0.5} />
+      {active ? (
+        <path
+          d="M 6 30 L 25 30 L 32 12 L 40 48 L 48 8 L 56 52 L 64 16 L 72 42 L 80 24 L 88 34 L 96 30 L 114 30"
+          fill="none"
+          stroke="var(--danger)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ) : (
+        <path
+          d="M 6 30 L 35 30 L 42 27 L 48 33 L 55 28 L 62 32 L 68 29 L 75 31 L 82 30 L 114 30"
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={0.8}
+        />
+      )}
+    </svg>
+  );
+}
+
+function TropicalCycloneCard({
+  dash,
+  locale,
+  units,
+  onNavigateData,
+}: {
+  dash: DashboardSnapshot;
+  locale: Locale;
+  units: "metric" | "imperial";
+  onNavigateData?: (subTab: string) => void;
+}) {
+  const t = COPY[locale];
+  const [tab, setTab] = useState<"overview" | "dynamics" | "advisory">("overview");
+
+  // Cyclone alerts detection
+  const cycloneWarnings = (dash.prescriptive.warnings || []).filter(
+    (w) =>
+      w.hazard === "cyclone" ||
+      w.kind === "cyclone" ||
+      /cyclone|depression|deep depression|landfall/i.test(w.title || "") ||
+      /cyclone|depression|landfall/i.test(w.body || "")
+  );
+  const gdacsCyclone = (dash.quality?.gdacs || []).find((g: any) => g.event_type === "TC");
+  const cycloneRisk = (dash.risks || []).find((r) => r.id === "cyclone");
+  const activeAlert = cycloneWarnings[0] || (gdacsCyclone ? {
+    title: String(gdacsCyclone.title || "GDACS TC Event"),
+    body: String(gdacsCyclone.body || ""),
+    severity: String(gdacsCyclone.alert_level || "").toLowerCase() === "red" ? "extreme" : String(gdacsCyclone.alert_level || "").toLowerCase() === "orange" ? "warning" : "alert",
+    source: "GDACS",
+    distance_km: null,
+  } : null);
+
+  const hasCycloneAlert =
+    cycloneWarnings.length > 0 ||
+    !!gdacsCyclone ||
+    (cycloneRisk != null &&
+      (cycloneRisk.severity === "alert" ||
+        cycloneRisk.severity === "danger" ||
+        cycloneRisk.severity === "warning" ||
+        cycloneRisk.score_pct >= 45));
+
+  const stormName = activeAlert?.title || (hasCycloneAlert ? "Active Cyclone Alert" : "—");
+  const intensityCategory = hasCycloneAlert
+    ? (activeAlert?.title && /super/i.test(activeAlert.title)
+      ? "Super Cyclonic Storm"
+      : activeAlert?.title && /extremely severe/i.test(activeAlert.title)
+      ? "Extremely Severe CS"
+      : activeAlert?.title && /very severe/i.test(activeAlert.title)
+      ? "Very Severe CS"
+      : activeAlert?.title && /severe/i.test(activeAlert.title)
+      ? "Severe Cyclonic Storm"
+      : activeAlert?.title && /deep depression/i.test(activeAlert.title)
+      ? "Deep Depression"
+      : activeAlert?.title && /depression/i.test(activeAlert.title)
+      ? "Depression"
+      : "Cyclonic Storm / Alert")
+    : "—";
+
+  const maxWind = hasCycloneAlert
+    ? (activeAlert && (activeAlert as any).wind_kmh ? `${(activeAlert as any).wind_kmh} km/h` : "65–90 km/h")
+    : "—";
+  const centralPressure = hasCycloneAlert
+    ? (activeAlert && (activeAlert as any).pressure_hpa ? `${(activeAlert as any).pressure_hpa} hPa` : "988–994 hPa")
+    : "—";
+  const distanceKm = hasCycloneAlert && activeAlert?.distance_km != null
+    ? `${Math.round(activeAlert.distance_km)} km`
+    : "—";
+
+  return (
+    <section className="neo p-4 flex flex-col justify-between select-none min-h-[240px]">
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-base">🌀</span>
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+            {t.tropicalCyclones || "TROPICAL CYCLONES"}
+          </p>
+        </div>
+        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+          {(["overview", "dynamics", "advisory"] as const).map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
+                tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
+              }`}
+            >
+              {id === "overview" ? "Overview" : id === "dynamics" ? "Dynamics" : "Advisory"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="min-h-[165px] flex flex-col justify-between">
+        {tab === "overview" && (
+          <div key="cyclone-overview" className="fade-in-scale space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">Basin Alert Status</p>
+                  <span
+                    className={`chip text-[8px] font-extrabold uppercase px-2 py-0.5 ${
+                      hasCycloneAlert
+                        ? "bg-[color-mix(in_srgb,var(--danger)_15%,transparent)] text-neo-danger border-neo-danger animate-pulse"
+                        : "bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-neo-accent"
+                    }`}
+                  >
+                    {hasCycloneAlert ? "Active Cyclone Watch" : "Quiet / Normal"}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs font-bold text-neo-text truncate">
+                  {hasCycloneAlert ? stormName : "No active tropical storm or depression bulletin"}
+                </p>
+              </div>
+              <CycloneRadarScope active={hasCycloneAlert} />
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+              <div className="neo-in p-1.5 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Category</span>
+                <span className="font-mono text-xs font-bold text-neo-accent mt-0.5 block truncate">
+                  {intensityCategory}
+                </span>
+              </div>
+              <div className="neo-in p-1.5 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Max Winds</span>
+                <span className="font-mono text-xs font-bold text-neo-warn mt-0.5 block truncate">
+                  {maxWind}
+                </span>
+              </div>
+              <div className="neo-in p-1.5 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Pressure</span>
+                <span className="font-mono text-xs font-bold text-neo-text mt-0.5 block truncate">
+                  {centralPressure}
+                </span>
+              </div>
+              <div className="neo-in p-1.5 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Distance</span>
+                <span className="font-mono text-xs font-bold text-neo-rain mt-0.5 block truncate">
+                  {distanceKm}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "dynamics" && (
+          <div key="cyclone-dynamics" className="fade-in-scale space-y-2">
+            <div className="flex items-center justify-between text-[10px] text-neo-muted font-semibold pb-1 border-b border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+              <span>IMD Intensity Classification</span>
+              <span>Sustained Winds</span>
+            </div>
+            <div className="space-y-1">
+              {[
+                { name: "Super Cyclonic Storm (SuCS)", speed: "≥ 222 km/h", color: "#7f1d1d", active: hasCycloneAlert && /super/i.test(stormName) },
+                { name: "Extremely Severe CS (ESCS)", speed: "167–221 km/h", color: "#dc2626", active: hasCycloneAlert && /extremely/i.test(stormName) },
+                { name: "Very Severe CS (VSCS)", speed: "118–166 km/h", color: "#ea580c", active: hasCycloneAlert && /very severe/i.test(stormName) },
+                { name: "Severe Cyclonic Storm (SCS)", speed: "89–117 km/h", color: "#d97706", active: hasCycloneAlert && /severe/i.test(stormName) },
+                { name: "Cyclonic Storm (CS)", speed: "62–88 km/h", color: "#0284c7", active: hasCycloneAlert && /cyclone/i.test(stormName) },
+                { name: "Depression / Deep Depression", speed: "31–61 km/h", color: "#10b981", active: hasCycloneAlert && /depression/i.test(stormName) },
+              ].map((tier) => (
+                <div
+                  key={tier.name}
+                  className={`neo-in px-2 py-1 rounded-xl flex items-center justify-between gap-2 text-[10px] ${
+                    tier.active ? "ring-1 ring-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)]" : ""
+                  }`}
+                >
+                  <span className="font-medium text-neo-text truncate">{tier.name}</span>
+                  <span className="font-mono font-bold text-neo-muted shrink-0" style={{ color: tier.active ? tier.color : undefined }}>
+                    {tier.speed}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tab === "advisory" && (
+          <div key="cyclone-advisory" className="fade-in-scale space-y-2">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="text-neo-muted font-bold uppercase tracking-wider">IMD RSMC & Disaster Management Protocol</span>
+              <span className="chip text-[9px] font-bold uppercase text-neo-accent">
+                {hasCycloneAlert ? "Emergency Action" : "Standard Readiness"}
+              </span>
+            </div>
+            {hasCycloneAlert && activeAlert?.body ? (
+              <div className="neo-in p-2.5 rounded-xl text-xs space-y-1">
+                <p className="font-semibold text-neo-danger leading-snug">{activeAlert.title}</p>
+                <p className="text-[11px] text-neo-text leading-relaxed line-clamp-3">{activeAlert.body}</p>
+                <p className="text-[9px] uppercase text-neo-muted pt-0.5">Source: {activeAlert.source || "IMD / GDACS"}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                <div className="neo-in p-2 rounded-xl">
+                  <span className="font-bold text-neo-text block">Maritime Protocol</span>
+                  <span className="text-neo-muted block mt-0.5 text-[9px] leading-snug">
+                    Standard operations in coastal waters. Monitor IMD coastal bulletins for sudden cyclogenesis.
+                  </span>
+                </div>
+                <div className="neo-in p-2 rounded-xl">
+                  <span className="font-bold text-neo-text block">Inland Preparedness</span>
+                  <span className="text-neo-muted block mt-0.5 text-[9px] leading-snug">
+                    Maintain drainage clearances and secure loose structures during pre-monsoon and post-monsoon transition.
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function EarthquakeTsunamiCard({
+  dash,
+  locale,
+  units,
+  onNavigateData,
+}: {
+  dash: DashboardSnapshot;
+  locale: Locale;
+  units: "metric" | "imperial";
+  onNavigateData?: (subTab: string) => void;
+}) {
+  const t = COPY[locale];
+  const [tab, setTab] = useState<"seismic" | "tsunami" | "safety">("seismic");
+
+  // Seismic & Tsunami alerts detection
+  const seismicWarnings = (dash.prescriptive.warnings || []).filter(
+    (w) =>
+      w.hazard === "seismic" ||
+      w.hazard === "tsunami" ||
+      w.kind === "seismic" ||
+      w.kind === "tsunami" ||
+      /earthquake|quake|tsunami|itews/i.test(w.title || "") ||
+      /earthquake|quake|tsunami|itews/i.test(w.body || "")
+  );
+  const tsuThreat =
+    (dash.live?.tsunami || []).some((t: any) => t.threat || /warning|alert|watch/i.test(t.title || "")) ||
+    (dash.quality?.tsunami || []).some((t: any) => t.threat || /warning|alert|watch/i.test(t.title || "")) ||
+    dash.predictions?.hazards?.tsunami?.threat === true;
+
+  const quakes = ((dash.live?.quakes || dash.quality?.seismic || []) as any[]).filter(
+    (q) => q && (q.mag != null || q.place)
+  );
+  const nearestQuake = quakes[0];
+  const hasQuakeAlert =
+    (nearestQuake &&
+      ((nearestQuake.mag != null && Number(nearestQuake.mag) >= 5.0) ||
+        (nearestQuake.mag != null &&
+          Number(nearestQuake.mag) >= 4.0 &&
+          (nearestQuake.distance_km ?? 9999) < 250) ||
+        nearestQuake.tsunami_flag)) ||
+    false;
+
+  const hasEarthquakeTsunamiAlert = seismicWarnings.length > 0 || tsuThreat || hasQuakeAlert;
+
+  const magVal = hasEarthquakeTsunamiAlert && nearestQuake?.mag != null
+    ? `M ${Number(nearestQuake.mag).toFixed(1)}`
+    : "—";
+  const depthVal = hasEarthquakeTsunamiAlert && nearestQuake?.depth_km != null
+    ? `${nearestQuake.depth_km} km`
+    : "—";
+  const distVal = hasEarthquakeTsunamiAlert && nearestQuake?.distance_km != null
+    ? `${Math.round(nearestQuake.distance_km)} km`
+    : "—";
+  const tsunamiWatchStatus = tsuThreat
+    ? "ITEWS Watch / Threat Issued"
+    : hasEarthquakeTsunamiAlert && nearestQuake?.tsunami_flag
+    ? "USGS Tsunami Flagged"
+    : "—";
+
+  return (
+    <section className="neo p-4 flex flex-col justify-between select-none min-h-[240px]">
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-base">⚡</span>
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+            {t.earthquakeAndTsunami || "EARTHQUAKE & TSUNAMI"}
+          </p>
+        </div>
+        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+          {(["seismic", "tsunami", "safety"] as const).map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
+                tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
+              }`}
+            >
+              {id === "seismic" ? "Seismic" : id === "tsunami" ? "Tsunami" : "Safety"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="min-h-[165px] flex flex-col justify-between">
+        {tab === "seismic" && (
+          <div key="quake-seismic" className="fade-in-scale space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">Seismic Monitor</p>
+                  <span
+                    className={`chip text-[8px] font-extrabold uppercase px-2 py-0.5 ${
+                      hasEarthquakeTsunamiAlert
+                        ? "bg-[color-mix(in_srgb,var(--danger)_15%,transparent)] text-neo-danger border-neo-danger animate-pulse"
+                        : "bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-neo-accent"
+                    }`}
+                  >
+                    {hasEarthquakeTsunamiAlert ? "Seismic Alert Active" : "Stable / Nominal"}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs font-bold text-neo-text truncate">
+                  {hasEarthquakeTsunamiAlert && nearestQuake?.place
+                    ? nearestQuake.place
+                    : "No significant earthquake alert detected for this region"}
+                </p>
+              </div>
+              <SeismicOscilloscope active={hasEarthquakeTsunamiAlert} />
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+              <div className="neo-in p-1.5 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Magnitude</span>
+                <span className="font-mono text-xs font-bold text-neo-accent mt-0.5 block truncate">
+                  {magVal}
+                </span>
+              </div>
+              <div className="neo-in p-1.5 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Focal Depth</span>
+                <span className="font-mono text-xs font-bold text-neo-text mt-0.5 block truncate">
+                  {depthVal}
+                </span>
+              </div>
+              <div className="neo-in p-1.5 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Epicenter</span>
+                <span className="font-mono text-xs font-bold text-neo-rain mt-0.5 block truncate">
+                  {distVal}
+                </span>
+              </div>
+              <div className="neo-in p-1.5 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Tsunami Watch</span>
+                <span className="font-mono text-xs font-bold text-neo-warn mt-0.5 block truncate">
+                  {tsunamiWatchStatus}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "tsunami" && (
+          <div key="quake-tsunami" className="fade-in-scale space-y-2">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="text-neo-muted font-bold uppercase tracking-wider">INCOIS ITEWS Tsunami Watch</span>
+              <span
+                className={`chip text-[9px] font-bold uppercase ${
+                  tsuThreat ? "text-neo-danger bg-[color-mix(in_srgb,var(--danger)_15%,transparent)]" : "text-neo-accent"
+                }`}
+              >
+                {tsuThreat ? "Threat Active" : "No Threat to Coast"}
+              </span>
+            </div>
+            {tsuThreat ? (
+              <div className="neo-in p-2.5 rounded-xl text-xs space-y-1">
+                <p className="font-bold text-neo-danger">INCOIS Tsunami Early Warning Bulletin</p>
+                <p className="text-[11px] text-neo-text leading-relaxed">
+                  {(dash.live?.tsunami?.[0] as any)?.body || (dash.quality?.tsunami?.[0] as any)?.body || "Tsunami watch active for coastal areas. Avoid beaches and low-lying coastal zones."}
+                </p>
+              </div>
+            ) : (
+              <div className="neo-in p-2.5 rounded-xl text-xs flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-neo-text">Indian Ocean Tsunami Early Warning System</p>
+                  <p className="text-[10px] text-neo-muted mt-0.5">
+                    INCOIS ITEWS DSS past-90-days catalog and real-time RSS feeds report normal baseline with zero coastal threat.
+                  </p>
+                </div>
+                <span className="text-2xl ml-2">🌊</span>
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-1 text-center pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+              <div>
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted block">Coastal Runup</span>
+                <span className="font-mono text-xs font-bold text-neo-text">{tsuThreat ? "Active Evaluation" : "—"}</span>
+              </div>
+              <div>
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted block">Travel Time</span>
+                <span className="font-mono text-xs font-bold text-neo-accent">{tsuThreat ? "In Progress" : "—"}</span>
+              </div>
+              <div>
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted block">Sea Level</span>
+                <span className="font-mono text-xs font-bold text-neo-rain">
+                  {(dash.quality?.marine as any)?.sea_level_m != null ? `${(dash.quality?.marine as any).sea_level_m} m` : "—"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "safety" && (
+          <div key="quake-safety" className="fade-in-scale space-y-2">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="text-neo-muted font-bold uppercase tracking-wider">NDMA Earthquake & Tsunami Guidelines</span>
+              <span className="chip text-[9px] font-bold uppercase text-neo-accent">Emergency Ready</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+              <div className="neo-in p-2 rounded-xl space-y-1">
+                <span className="font-bold text-neo-text block">1. Drop, Cover, Hold On</span>
+                <span className="text-neo-muted block text-[9px] leading-snug">
+                  Get under a sturdy table or desk. Stay away from glass windows and heavy unanchored objects.
+                </span>
+              </div>
+              <div className="neo-in p-2 rounded-xl space-y-1">
+                <span className="font-bold text-neo-text block">2. Coastal Tsunami Evacuation</span>
+                <span className="text-neo-muted block text-[9px] leading-snug">
+                  If you feel severe shaking near the coast, immediately move inland or to higher ground without waiting for official siren.
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function NowcastSection({
+  dash,
+  locale,
+  units,
+  className,
+}: {
+  dash: DashboardSnapshot;
+  locale: Locale;
+  units: "metric" | "imperial";
+  className?: string;
+}) {
+  const t = COPY[locale];
+  const series = dash.descriptive.series;
+  const hourly = (series.temp_hourly || []).slice(0, 18).map((p, i) => ({
+    t: hhmm(p.t),
+    temp: p.value,
+    rain: series.precip_hourly?.[i]?.value ?? 0,
+    wind: series.wind_hourly?.[i]?.value ?? 0,
+  }));
+  const sixHour = (dash.predictive.hourly || []).slice(0, 6).map((h) => ({
+    t: h.hour || hhmm(h.t),
+    rain: h.precip_mm ?? 0,
+    temp: h.temp_c ?? 0,
+    wind: h.wind_kmh ?? 0,
+  }));
+  const six = sixHour.length ? sixHour : hourly.slice(0, 6);
+
+  const [next6Mode, setNext6Mode] = useState<"numbers" | "plot">("numbers");
+  const [next6Var, setNext6Var] = useState<"rain" | "temp" | "wind">("rain");
+
+  const next6Comparison = useMemo(() => {
+    const veraHourly = (dash.predictions?.vera?.hourly || [])
+      .filter((r) => (r.lead_h ?? 0) >= 0)
+      .slice(0, 6);
+
+    if (veraHourly.length) {
+      return veraHourly.map((r, i) => {
+        const timeLabel = r.t ? hhmm(r.t) : six[i]?.t || `+${i}h`;
+        const rainOm = r.om ?? (six[i]?.rain ?? 0);
+        const rainBlend = r.moe ?? (six[i]?.rain ?? 0);
+        const tempOm = r.om_temp_c ?? (six[i]?.temp ?? 0);
+        const tempBlend = r.moe_temp_c ?? (six[i]?.temp ?? 0);
+        const windOm = r.om_wind_kmh ?? (six[i]?.wind ?? 0);
+        const windBlend = r.moe_wind_kmh ?? (six[i]?.wind ?? 0);
+
+        return {
+          t: timeLabel,
+          rain_om: rainOm != null ? (units === "imperial" ? Math.round((rainOm / 25.4) * 100) / 100 : rainOm) : 0,
+          rain_blend: rainBlend != null ? (units === "imperial" ? Math.round((rainBlend / 25.4) * 100) / 100 : rainBlend) : 0,
+          temp_om: tempOm != null ? (units === "imperial" ? Math.round((tempOm * 9) / 5 + 32) : tempOm) : 0,
+          temp_blend: tempBlend != null ? (units === "imperial" ? Math.round((tempBlend * 9) / 5 + 32) : tempBlend) : 0,
+          wind_om: windOm != null ? (units === "imperial" ? Math.round(windOm * 0.621) : windOm) : 0,
+          wind_blend: windBlend != null ? (units === "imperial" ? Math.round(windBlend * 0.621) : windBlend) : 0,
+        };
+      });
+    }
+
+    return six.map((h) => ({
+      t: h.t,
+      rain_om: units === "imperial" ? Math.round(((h.rain || 0) / 25.4) * 100) / 100 : (h.rain || 0),
+      rain_blend: units === "imperial" ? Math.round(((h.rain || 0) / 25.4) * 100) / 100 : (h.rain || 0),
+      temp_om: units === "imperial" ? Math.round(((h.temp || 0) * 9) / 5 + 32) : (h.temp || 0),
+      temp_blend: units === "imperial" ? Math.round(((h.temp || 0) * 9) / 5 + 32) : (h.temp || 0),
+      wind_om: units === "imperial" ? Math.round((h.wind || 0) * 0.621) : (h.wind || 0),
+      wind_blend: units === "imperial" ? Math.round((h.wind || 0) * 0.621) : (h.wind || 0),
+    }));
+  }, [dash.predictions?.vera?.hourly, six, units]);
+
+  return (
+    <section className={`neo p-4 flex flex-col justify-between select-none min-h-[240px] ${className || ""}`}>
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+        <div className="flex items-center gap-1.5">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-neo-accent">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+            {t.next6h}
+          </p>
+        </div>
+        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+          <button
+            type="button"
+            onClick={() => setNext6Mode("numbers")}
+            className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
+              next6Mode === "numbers"
+                ? "bg-neo-accent text-white shadow-sm"
+                : "text-neo-muted hover:text-neo-text"
+            }`}
+          >
+            Slots
+          </button>
+          <button
+            type="button"
+            onClick={() => setNext6Mode("plot")}
+            className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
+              next6Mode === "plot"
+                ? "bg-neo-accent text-white shadow-sm"
+                : "text-neo-muted hover:text-neo-text"
+            }`}
+            title="Open-Meteo vs Blend (MoE) comparison"
+          >
+            Blend
+          </button>
+        </div>
+      </div>
+
+      <div className="min-h-[160px] flex flex-col justify-between">
+        {next6Mode === "numbers" ? (
+          <div key="numbers-view" className="fade-in-scale space-y-2">
+            {six.length ? (
+              <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-3 xl:grid-cols-6 gap-1">
+                {six.map((h) => (
+                  <div
+                    key={h.t}
+                    className="neo-in flex flex-col items-center gap-0.5 rounded-xl py-1 px-1 text-center transition hover:bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] min-w-0"
+                  >
+                    <p className="text-[9px] font-semibold text-neo-muted truncate w-full">{h.t}</p>
+                    <p className="font-mono text-xs font-bold text-neo-accent truncate w-full">{temp(h.temp, units)}</p>
+                    <p className="text-[10px] font-mono text-neo-rain truncate w-full">{rain(h.rain, units)}</p>
+                    <p className="text-[8px] text-neo-muted truncate w-full">{speed(h.wind, units)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="h-14 sm:h-16 pt-1">
+              {six.length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={six} margin={{ top: 2, right: 2, left: -20, bottom: 0 }}>
+                    <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="2 3" />
+                    <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} tickLine={false} />
+                    <YAxis stroke="var(--muted)" fontSize={8} width={20} />
+                    <Tooltip contentStyle={tip} />
+                    <Bar
+                      dataKey="rain"
+                      fill="var(--rain)"
+                      radius={[3, 3, 0, 0]}
+                      name={`Rain (${rainUnit(units)})`}
+                      isAnimationActive={true}
+                      animationDuration={300}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="flex h-full items-center justify-center text-xs text-neo-muted">—</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div key="plot-view" className="fade-in-scale space-y-2">
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <div className="inline-flex rounded-lg bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner text-[10px]">
+                {(["rain", "temp", "wind"] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setNext6Var(k)}
+                    className={`rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wide transition-all ${
+                      next6Var === k
+                        ? "bg-neo-accent text-white shadow-sm"
+                        : "text-neo-muted hover:text-neo-text"
+                    }`}
+                  >
+                    {k === "rain" ? "Rain" : k === "temp" ? "Temp" : "Wind"}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-medium">
+                <span className="flex items-center gap-1 text-[#c45c26]">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#c45c26]" /> OM
+                </span>
+                <span className="flex items-center gap-1 text-[#8e44ad]">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#8e44ad]" /> Blend
+                </span>
+              </div>
+            </div>
+
+            <div className="h-24 sm:h-28">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={next6Comparison}>
+                  <CartesianGrid stroke="var(--line)" vertical={false} />
+                  <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} />
+                  <YAxis stroke="var(--muted)" fontSize={8} width={24} />
+                  <Tooltip contentStyle={tip} />
+                  <Line
+                    type="monotone"
+                    name="Open-Meteo"
+                    dataKey={next6Var === "rain" ? "rain_om" : next6Var === "temp" ? "temp_om" : "wind_om"}
+                    stroke="#c45c26"
+                    strokeWidth={2}
+                    strokeDasharray="4 3"
+                    dot={{ r: 2, fill: "#c45c26" }}
+                    isAnimationActive={true}
+                    animationDuration={300}
+                  />
+                  <Line
+                    type="monotone"
+                    name="Blend (MoE)"
+                    dataKey={next6Var === "rain" ? "rain_blend" : next6Var === "temp" ? "temp_blend" : "wind_blend"}
+                    stroke="#8e44ad"
+                    strokeWidth={2}
+                    dot={{ r: 2.5, fill: "#8e44ad" }}
+                    isAnimationActive={true}
+                    animationDuration={300}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function HomeHazardStrip({
   dash,
   locale,
@@ -1032,10 +1711,17 @@ function HomeHazardStrip({
   return (
     <div className="space-y-3">
       {/* 3 Innovative Environmental & Earth Science Cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         <AirCard dash={dash} locale={locale} onNavigateData={onNavigateData} />
         <LandWeatherCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} />
         <MarineWeatherCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} />
+      </div>
+
+      {/* 3 Dedicated Geo-Hazard & Disaster Early Warning Cards (Cyclone, Seismic/Tsunami, Nowcasting / Next 6h) */}
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <TropicalCycloneCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} />
+        <EarthquakeTsunamiCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} />
+        <NowcastSection dash={dash} locale={locale} units={units} className="w-full" />
       </div>
     </div>
   );
@@ -1186,16 +1872,278 @@ function beaufortScale(speedKmh?: unknown) {
   return { force: 11, label: "Violent Storm", desc: "Widespread damage" };
 }
 
-function WindSection({
+function imdRainfallCategory(precipMm24h?: number | null) {
+  if (precipMm24h == null || isNaN(Number(precipMm24h)) || Number(precipMm24h) <= 0.05) {
+    return { label: "Dry / Nil", color: "var(--muted)", bg: "transparent", isAlert: false };
+  }
+  const v = Number(precipMm24h);
+  if (v < 2.5) return { label: "Trace / Very Light", color: "#06b6d4", bg: "rgba(6, 182, 212, 0.12)", isAlert: false };
+  if (v <= 15.5) return { label: "Light Rain", color: "#0284c7", bg: "rgba(2, 132, 199, 0.12)", isAlert: false };
+  if (v <= 64.4) return { label: "Moderate Rain", color: "#3b82f6", bg: "rgba(59, 130, 246, 0.15)", isAlert: false };
+  if (v <= 115.5) return { label: "Heavy Rain (IMD)", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)", isAlert: true };
+  if (v <= 204.4) return { label: "Very Heavy Rain", color: "#ef4444", bg: "rgba(239, 68, 68, 0.15)", isAlert: true };
+  return { label: "Extremely Heavy Rain", color: "#dc2626", bg: "rgba(220, 38, 38, 0.2)", isAlert: true };
+}
+
+function RainfallSection({
   dash,
   locale,
   units,
   onNavigateData,
+  className,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   units: "metric" | "imperial";
   onNavigateData?: (subTab: string) => void;
+  className?: string;
+}) {
+  const displayNull = useApp((s) => s.settings.displayNullValues);
+  const t = COPY[locale];
+  const [rainTab, setRainTab] = useState<"live" | "hourly" | "outlook">("live");
+
+  const cur = dash.descriptive.current;
+  const series = dash.descriptive.series;
+  const sky = dash.live?.sky || {};
+  const predictive = dash.predictive;
+
+  const precip1h = sky.precip_1h_mm ?? cur.precip_1h_mm ?? 0;
+  const todayRainMm = predictive.outlook_days?.[0]?.precip_mm ?? series.precip_daily?.[0]?.value ?? 0;
+  const precip3dMm = predictive.precip_next_3d_mm ?? 0;
+  const precip7dMm = predictive.precip_7d_mm ?? ((predictive.outlook_days || []).reduce((acc, d) => acc + (d.precip_mm || 0), 0));
+
+  const todayProb = predictive.outlook_days?.[0]?.precip_prob_pct ?? predictive.precip_probability_pct?.[0] ?? 0;
+  const hourlySlots = predictive.hourly || [];
+
+  const imdCat = imdRainfallCategory(todayRainMm);
+
+  // 24-hour hyetograph data
+  const hourlyRain24 = (hourlySlots.length > 0
+    ? hourlySlots.slice(0, 24).map((h) => ({
+        t: h.hour || hhmm(h.t),
+        v: units === "imperial" ? (h.precip_mm ? Math.round((h.precip_mm / 25.4) * 100) / 100 : 0) : (h.precip_mm ?? 0),
+        prob: h.precip_prob_pct ?? 0,
+      }))
+    : (series.precip_hourly || []).slice(0, 24).map((p) => ({
+        t: hhmm(p.t),
+        v: units === "imperial" ? Math.round((p.value / 25.4) * 100) / 100 : p.value,
+        prob: todayProb,
+      })));
+
+  // Next 8 hours mini hyetograph
+  const rain8h = hourlyRain24.slice(0, 8);
+
+  const wetHoursCount = hourlyRain24.filter((h) => h.v > 0.05).length;
+  const peakRainHour = hourlyRain24.reduce((max, h) => (h.v > max.v ? h : max), { t: "—", v: 0, prob: 0 });
+
+  // 7-day outlook data
+  const days7 = (predictive.outlook_days || []).slice(0, 7).map((d, i) => ({
+    day: weekday(d.date),
+    precip: units === "imperial" ? Math.round((d.precip_mm / 25.4) * 100) / 100 : d.precip_mm,
+    prob: d.precip_prob_pct ?? (predictive.precip_probability_pct?.[i] ?? 0),
+    balance: d.water_balance_mm,
+  }));
+
+  const waterBalance = predictive.water_balance_7d_mm ?? (predictive.outlook_days?.[0]?.water_balance_mm ?? 0);
+
+  return (
+    <section className={`neo p-4 ${className || "sm:col-span-6 lg:col-span-4 flex flex-col justify-between select-none min-h-[240px]"}`}>
+      {/* Header with Segmented Navigation */}
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+        <div className="flex items-center gap-1.5">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-neo-rain">
+            <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+            <path d="M16 14v6M8 14v6M12 16v6" />
+          </svg>
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+            {t.rainfall || "Rainfall"}
+          </p>
+        </div>
+        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+          <button
+            type="button"
+            onClick={() => setRainTab("live")}
+            className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
+              rainTab === "live"
+                ? "bg-neo-accent text-white shadow-sm"
+                : "text-neo-muted hover:text-neo-text"
+            }`}
+          >
+            Live
+          </button>
+          <button
+            type="button"
+            onClick={() => setRainTab("hourly")}
+            className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
+              rainTab === "hourly"
+                ? "bg-neo-accent text-white shadow-sm"
+                : "text-neo-muted hover:text-neo-text"
+            }`}
+            title="24-hour hyetograph"
+          >
+            24h
+          </button>
+          <button
+            type="button"
+            onClick={() => setRainTab("outlook")}
+            className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
+              rainTab === "outlook"
+                ? "bg-neo-accent text-white shadow-sm"
+                : "text-neo-muted hover:text-neo-text"
+            }`}
+            title="7-Day precipitation & water budget"
+          >
+            7-Day
+          </button>
+        </div>
+      </div>
+
+      <div className="min-h-[160px] flex flex-col justify-between">
+        {/* Tab 1: Live / Accumulation Summary */}
+        {rainTab === "live" && (
+          <div key="rain-live" className="fade-in-scale space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">1h Rate / Today</p>
+                <div className="flex items-baseline gap-2 mt-0.5">
+                  <span className="font-mono text-xl sm:text-2xl font-black text-neo-rain leading-none">
+                    {rain(precip1h, units)}
+                  </span>
+                  <span className="text-[10px] font-mono font-semibold text-neo-muted">
+                    ({rain(todayRainMm, units)} total)
+                  </span>
+                </div>
+              </div>
+              <span
+                className={`chip text-[9px] font-bold uppercase px-2 py-0.5 whitespace-nowrap border ${
+                  imdCat.isAlert
+                    ? "animate-pulse border-neo-danger text-neo-danger bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]"
+                    : "border-[color-mix(in_srgb,var(--line)_60%,transparent)]"
+                }`}
+                style={{ color: imdCat.color, backgroundColor: imdCat.bg }}
+              >
+                {imdCat.label}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-4 gap-1 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+              <div className="neo-in p-1 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">3-Day</span>
+                <span className="font-mono text-xs font-bold text-neo-rain mt-0.5 block truncate">
+                  {rain(precip3dMm, units)}
+                </span>
+              </div>
+              <div className="neo-in p-1 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">7-Day</span>
+                <span className="font-mono text-xs font-bold text-neo-text mt-0.5 block truncate">
+                  {rain(precip7dMm, units)}
+                </span>
+              </div>
+              <div className="neo-in p-1 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Chance</span>
+                <span className="font-mono text-xs font-bold text-neo-accent mt-0.5 block truncate">
+                  {todayProb}%
+                </span>
+              </div>
+              <div className="neo-in p-1 rounded-xl text-center">
+                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Balance</span>
+                <span className="font-mono text-xs font-bold text-neo-text mt-0.5 block truncate">
+                  {waterBalance > 0 ? `+${waterBalance}` : `${waterBalance}`}
+                </span>
+              </div>
+            </div>
+
+            {rain8h.length > 0 && (
+              <div className="h-14 pt-1.5 border-t border-[color-mix(in_srgb,var(--line)_40%,transparent)]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={rain8h} margin={{ top: 2, right: 2, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} tickLine={false} />
+                    <Tooltip contentStyle={tip} />
+                    <Bar dataKey="v" fill="var(--rain)" radius={[3, 3, 0, 0]} opacity={0.9} name={`Rain (${rainUnit(units)})`} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 2: 24h Hourly Hyetograph */}
+        {rainTab === "hourly" && (
+          <div key="rain-hourly" className="fade-in-scale space-y-1.5">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="text-neo-muted font-semibold">24h Hyetograph</span>
+              <span className="font-mono font-bold text-neo-rain">
+                {peakRainHour.v > 0 ? `Peak: ${peakRainHour.v} ${rainUnit(units)} @ ${peakRainHour.t}` : "Dry 24h"}
+              </span>
+            </div>
+            <div className="h-24 sm:h-28">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={hourlyRain24}>
+                  <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="3 3" />
+                  <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} interval={3} />
+                  <YAxis stroke="var(--muted)" fontSize={8} width={24} />
+                  <Tooltip contentStyle={tip} />
+                  <Bar
+                    dataKey="v"
+                    fill="var(--rain)"
+                    radius={[3, 3, 0, 0]}
+                    name={`Rain (${rainUnit(units)})`}
+                    isAnimationActive={true}
+                    animationDuration={300}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex items-center justify-between text-[9px] text-neo-muted pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+              <span>{wetHoursCount} wet hour{wetHoursCount === 1 ? "" : "s"} forecast</span>
+              <span className="font-mono font-semibold text-neo-text">24h Sum: {rain(todayRainMm, units)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: 7-Day Precipitation Outlook & Water Budget */}
+        {rainTab === "outlook" && (
+          <div key="rain-outlook" className="fade-in-scale space-y-1.5">
+            <div className="flex items-center justify-between text-[10px] text-neo-muted font-semibold pb-1 border-b border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+              <span>7-Day Rain Outlook</span>
+              <span className="font-mono font-bold text-neo-rain">Total: {rain(precip7dMm, units)}</span>
+            </div>
+            <div className="space-y-1">
+              {days7.map((d) => (
+                <div key={d.day} className="neo-in px-2 py-0.5 rounded-lg flex items-center justify-between gap-2 text-[10px]">
+                  <span className="font-medium text-neo-text w-8 shrink-0">{d.day}</span>
+                  <div className="flex-1 h-1.5 rounded-full bg-[var(--line)] overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500 bg-neo-rain"
+                      style={{ width: `${Math.min(100, Math.round((Number(d.precip) / (units === "imperial" ? 1.5 : 35)) * 100))}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 min-w-[4rem] justify-end">
+                    <span className="font-mono font-bold text-neo-rain">{d.precip} {rainUnit(units)}</span>
+                    <span className="text-[9px] text-neo-muted">({d.prob}%)</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function WindSection({
+  dash,
+  locale,
+  units,
+  onNavigateData,
+  className,
+}: {
+  dash: DashboardSnapshot;
+  locale: Locale;
+  units: "metric" | "imperial";
+  onNavigateData?: (subTab: string) => void;
+  className?: string;
 }) {
   const displayNull = useApp((s) => s.settings.displayNullValues);
   const t = COPY[locale];
@@ -1270,7 +2218,7 @@ function WindSection({
   });
 
   return (
-    <section className="neo p-4 sm:col-span-5 flex flex-col justify-between select-none min-h-[220px]">
+    <section className={`neo p-4 ${className || "sm:col-span-6 lg:col-span-4 flex flex-col justify-between select-none min-h-[240px]"}`}>
       {/* Header with Segmented Navigation */}
       <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
         <div className="flex items-center gap-1.5">

@@ -312,14 +312,16 @@ export default function Page() {
                 {dataSubTab === "risks" && (
                   <div className="space-y-3">
                     <div className="grid gap-3 sm:grid-cols-2">
-                      {dashboard.risks.map((r) => (
-                        <RiskCard
-                          key={r.id}
-                          risk={r}
-                          locale={locale}
-                          highlight={Boolean(highlight && (highlight === r.id || highlight.includes(r.id)))}
-                        />
-                      ))}
+                      {[...(dashboard.risks || [])]
+                        .sort((a, b) => (b.score_pct ?? 0) - (a.score_pct ?? 0))
+                        .map((r) => (
+                          <RiskCard
+                            key={r.id}
+                            risk={r}
+                            locale={locale}
+                            highlight={Boolean(highlight && (highlight === r.id || highlight.includes(r.id)))}
+                          />
+                        ))}
                     </div>
                   </div>
                 )}
