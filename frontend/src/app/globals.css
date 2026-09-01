@@ -293,6 +293,21 @@ select.neo-in {
   }
 }
 
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.fade-in-scale {
+  animation: fadeInScale 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .level-ok {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
@@ -322,3 +337,101 @@ select.neo-in {
     display: none !important;
   }
 }
+
+/* ── Mobile bottom tab bar ── */
+.mobile-bottom-bar {
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  box-shadow: 0 -4px 20px color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+[data-theme="midnight"] .mobile-bottom-bar {
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Safe area for mobile body to not hide behind bottom bar */
+@media (max-width: 1023px) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* Sky & Rainfall Physics Animations */
+@keyframes solar-corona {
+  0%, 100% { transform: scale(1); opacity: 0.75; filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.4)); }
+  50% { transform: scale(1.08); opacity: 0.95; filter: drop-shadow(0 0 16px rgba(245, 158, 11, 0.7)); }
+}
+
+@keyframes celestial-drift {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.2; transform: scale(0.85); }
+  50% { opacity: 0.9; transform: scale(1.15); }
+}
+
+@keyframes cloud-parallax-deep {
+  0% { transform: translateX(-3%); }
+  50% { transform: translateX(3%); }
+  100% { transform: translateX(-3%); }
+}
+
+@keyframes cloud-parallax-fore {
+  0% { transform: translateX(4%); }
+  50% { transform: translateX(-4%); }
+  100% { transform: translateX(4%); }
+}
+
+@keyframes raindrop-fall {
+  0% { transform: translateY(-30px); opacity: 0; }
+  15% { opacity: 0.9; }
+  90% { opacity: 0.85; }
+  100% { transform: translateY(85px); opacity: 0; }
+}
+
+@keyframes droplet-splash {
+  0% { transform: scale(0.1); opacity: 0.9; stroke-width: 2px; }
+  60% { opacity: 0.6; }
+  100% { transform: scale(1.6); opacity: 0; stroke-width: 0.5px; }
+}
+
+@keyframes storm-lightning-flash {
+  0%, 88%, 93%, 100% { opacity: 0; }
+  89%, 91% { opacity: 0.85; filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.9)); }
+  90% { opacity: 0.2; }
+  92% { opacity: 0.6; }
+}
+
+@keyframes mist-rolling-wave {
+  0% { transform: translateX(0) scaleY(1); opacity: 0.35; }
+  50% { transform: translateX(-15px) scaleY(1.1); opacity: 0.6; }
+  100% { transform: translateX(0) scaleY(1); opacity: 0.35; }
+}
+
+.anim-solar-corona {
+  animation: solar-corona 4s ease-in-out infinite;
+}
+
+.anim-celestial-drift {
+  animation: celestial-drift 6s ease-in-out infinite;
+}
+
+.anim-cloud-deep {
+  animation: cloud-parallax-deep 14s ease-in-out infinite;
+}
+
+.anim-cloud-fore {
+  animation: cloud-parallax-fore 9s ease-in-out infinite;
+}
+
+.anim-storm-flash {
+  animation: storm-lightning-flash 5.5s ease-in-out infinite;
+}
+
+.anim-mist-wave {
+  animation: mist-rolling-wave 8s ease-in-out infinite;
+}
+
