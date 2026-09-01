@@ -85,13 +85,15 @@ def _hits(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         st = r.get("state") or ""
         name = r.get("name") or st
         lat, lon = r.get("lat"), r.get("lon")
+        loc_str = f"{name} ({st})" if (name and st and name != st) else (name or st or "India")
         if int(r.get("flood_score") or 0) >= 75:
             out.append(
                 {
                     "kind": "flood",
                     "state": st,
-                    "title": f"Predicted flood warning — {st} ({name})",
-                    "body": f"Capital scan flood score {r.get('flood_score')}%; 3-day rain {r.get('precip_3d_mm')} mm.",
+                    "district": name,
+                    "title": f"{loc_str} — Severe Flood Warning",
+                    "body": f"River discharge surge and flood score {r.get('flood_score')}%; 3-day precipitation {r.get('precip_3d_mm')} mm.",
                     "lat": lat,
                     "lon": lon,
                 }
@@ -101,8 +103,9 @@ def _hits(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 {
                     "kind": "drought",
                     "state": st,
-                    "title": f"Predicted drought warning — {st} ({name})",
-                    "body": f"Capital scan drought score {r.get('drought_score')}%; 3-day rain {r.get('precip_3d_mm')} mm.",
+                    "district": name,
+                    "title": f"{loc_str} — Severe Drought Advisory",
+                    "body": f"Precipitation deficit and drought score {r.get('drought_score')}%; soil moisture depleting.",
                     "lat": lat,
                     "lon": lon,
                 }
@@ -112,8 +115,9 @@ def _hits(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 {
                     "kind": "heatwave",
                     "state": st,
-                    "title": f"Predicted heatwave — {st} ({name})",
-                    "body": f"Capital Tmax {r.get('temp_max_c')} °C.",
+                    "district": name,
+                    "title": f"{loc_str} — Extreme Heatwave Warning",
+                    "body": f"Severe thermal stress; peak afternoon temperature reaching {r.get('temp_max_c')} °C.",
                     "lat": lat,
                     "lon": lon,
                 }
@@ -123,8 +127,9 @@ def _hits(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 {
                     "kind": "rainfall",
                     "state": st,
-                    "title": f"Predicted very heavy rain — {st} ({name})",
-                    "body": f"3-day rain {r.get('precip_3d_mm')} mm at HQ.",
+                    "district": name,
+                    "title": f"{loc_str} — Very Heavy Rainfall Alert",
+                    "body": f"Heavy atmospheric precipitation band with 3-day accumulation exceeding {r.get('precip_3d_mm')} mm.",
                     "lat": lat,
                     "lon": lon,
                 }

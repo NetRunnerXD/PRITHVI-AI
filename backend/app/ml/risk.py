@@ -109,6 +109,7 @@ def _card(rid: str, label: str, weights: dict, norms: dict[str, float],
         Factor(id=k, label=weights[k][0], contribution_pct=contrib[k])
         for k in weights
     ]
+    factors.sort(key=lambda f: f.contribution_pct, reverse=True)
     return RiskCard(
         id=rid,
         label=label,

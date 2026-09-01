@@ -68,4 +68,4 @@ def test_official_odisha_rain_suppresses_model_duplicate():
     out = _warnings(_nadia(), caps, 10, {"weather_code": 1}, [], [], None, scan_hits=hits)
     rain = [w for w in out if w.kind == "rainfall" and "Odisha" in (w.title + " ".join(w.states))]
     assert any(w.source == "imd-cap" for w in rain)
-    assert not any(w.source == "rituchakra-scan" for w in rain)
+    assert not any(w.source == "prithvi-netra" for w in rain)
