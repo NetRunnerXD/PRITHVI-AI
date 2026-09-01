@@ -35,6 +35,38 @@ def alert_belongs(item: dict, loc: Location) -> bool:
     return not foreign_states_in(blob, loc)
 
 
+def is_warning_or_worse(item: dict) -> bool:
+    blob = f"{item.get('title') or ''} {item.get('body') or ''} {item.get('severity') or ''}".lower()
+    if item.get("severity") in {"extreme", "warning"}:
+        return True
+    return any(
+        x in blob
+        for x in (
+            "extreme",
+            "red alert",
+            "orange",
+            "very heavy",
+            "extremely heavy",
+            "cloudburst",
+            "flash flood",
+            "cyclone",
+            "cyclonic storm",
+            "heat wave",
+            "heatwave",
+            "drought",
+            "tsunami warning",
+            "severe thunderstorm",
+        )
+    )
+
+
+def national_severe_belongs(item: dict, loc: Location) -> bool:
+    """Warning/extreme other-state rows are in-scope everywhere in India."""
+    if is_warning_or_worse(item):
+        return True
+    return alert_belongs(item, loc)
+
+
 def port_relevant(loc: Location) -> bool:
     return hugli_relevant(loc=loc)
 

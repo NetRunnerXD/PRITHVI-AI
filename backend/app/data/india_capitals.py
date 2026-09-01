@@ -200,3 +200,16 @@ def capital_of(q: str | None) -> dict | None:
 
 def all_capital_names() -> list[str]:
     return sorted({r["name"] for r in _CAPITALS.values()})
+
+
+def all_capitals() -> list[dict]:
+    """One HQ point per state/UT (deduped by coordinates)."""
+    seen: set[tuple] = set()
+    out: list[dict] = []
+    for r in _CAPITALS.values():
+        k = (round(float(r["lat"]), 3), round(float(r["lon"]), 3))
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(dict(r))
+    return out

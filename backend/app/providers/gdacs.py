@@ -5,16 +5,24 @@ from __future__ import annotations
 from typing import Any
 
 from app import cache
+from app.data.india_mask import in_india
 from app.providers.http import client
+
+_FOREIGN = (
+    "philippines", "indonesia", "myanmar", "vietnam", "malaysia", "thailand",
+    "china", "japan", "somalia", "madagascar", "mozambique", "oman", "yemen",
+    "bangladesh", "nepal", "bhutan", "sri lanka", "pakistan", "afghanistan",
+)
 
 RSS = "https://www.gdacs.org/xml/rss.xml"
 SEARCH = "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH"
 
 
 def _in_box(lat: float | None, lon: float | None) -> bool:
+    """Coarse India bbox only — not SE Asia. Fine filter is in_india / India mention."""
     if lat is None or lon is None:
         return False
-    return -15 <= float(lat) <= 40 and 40 <= float(lon) <= 130
+    return 6.4 <= float(lat) <= 37.5 and 66.0 <= float(lon) <= 98.0
 
 
 def _mentions_india(row: dict[str, Any]) -> bool:
@@ -41,18 +49,36 @@ def parse_events(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             lon_f = float(lon) if lon is not None else None
         except (TypeError, ValueError):
             lat_f = lon_f = None
-        if not _in_box(lat_f, lon_f) and not _mentions_india(row):
+        india = _mentions_india(row)
+        on_land = lat_f is not None and lon_f is not None and in_india(lat_f, lon_f)
+        in_seas = lat_f is not None and lon_f is not None and _in_box(lat_f, lon_f)
+        blob = " ".join(
+            str(row.get(k) or "")
+            for k in ("country", "name", "description", "iso3", "eventname")
+        ).lower()
+        foreign = any(f in blob for f in _FOREIGN)
+        if foreign and not india:
             continue
+        if not india and not on_land:
+            if not (et in {"TC", "TS"} and in_seas):
+                continue
         name = row.get("name") or row.get("eventname") or row.get("country") or et
+        eid = str(row.get("eventid") or row.get("eventId") or name)[:64]
+        url = None
+        if row.get("url"):
+            url = str(row.get("url"))
+        elif eid:
+            url = f"https://www.gdacs.org/report.aspx?eventid={eid}"
         out.append(
             {
-                "id": str(row.get("eventid") or row.get("eventId") or name)[:64],
+                "id": eid,
                 "title": f"GDACS {et} · {name}"[:160],
                 "body": str(row.get("description") or row.get("alertlevel") or "")[:400],
                 "event_type": et,
                 "alert_level": row.get("alertlevel") or row.get("alertLevel"),
                 "lat": lat_f,
                 "lon": lon_f,
+                "url": url,
                 "source": "GDACS",
             }
         )

@@ -18,6 +18,13 @@ class EarlyWarning(BaseModel):
     issued_at: str | None = None
     distance_km: float | None = None
     scope: str | None = None
+    url: str | None = None
+    href_kind: str | None = None
+    expires_at: str | None = None
+    states: list[str] = []
+    kind: str | None = None
+    lat: float | None = None
+    lon: float | None = None
 
 
 class CurrentConditions(BaseModel):

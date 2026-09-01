@@ -107,13 +107,19 @@ def is_national_severe(title: str, body: str = "") -> bool:
         for x in (
             "extreme",
             "red alert",
+            "orange",
             "very heavy",
             "extremely heavy",
             "cyclone",
+            "cyclonic storm",
             "depression",
             "severe thunderstorm",
+            "cloudburst",
+            "flash flood",
             "heat wave",
             "heatwave",
+            "cold wave",
+            "drought",
             "tsunami warning",
         )
     )

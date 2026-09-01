@@ -4,6 +4,16 @@ from app.services.locality import alert_belongs, port_relevant
 from .isolation import loc
 
 
+def test_sachet_chhattisgarh_watch_dropped_but_red_kept_national():
+    from app.services.locality import national_severe_belongs
+
+    home = loc("Howrah")
+    watch = {"title": "Yellow watch for Chhattisgarh", "body": "Light rain over Raipur."}
+    red = {"title": "Red alert for Chhattisgarh", "body": "Extremely heavy rain over Raipur."}
+    assert not national_severe_belongs(watch, home)
+    assert national_severe_belongs(red, home)
+
+
 def test_sachet_chhattisgarh_item_dropped_for_howrah():
     home = loc("Howrah")
     foreign = {"title": "Orange warning for Chhattisgarh", "body": "Heavy rain over Raipur."}

@@ -541,7 +541,7 @@ Chat and search share the same pipeline (`resolve_named_place` then `resolve_ind
 
 `resolve_location()` with no query still defaults to Haldia. `data(place=…)` uses `resolve_india_place` and returns `unknown_place` instead of the pin.
 
-**Pin isolation (every tab):** a Howrah dashboard / scan / alerts list must not quote Chhattisgarh (or any other state). `districts_in_state("Howrah")` is empty — a town is not a state, and must **not** fall back to all-India. `rank_districts` on an unknown state returns `{ranked: [], error: unknown_state}` and does not fetch. Sachet/CAP rows that name another state are dropped (`services/locality.py`). Hooghly port signal only attaches for Howrah / Haldia / Kolkata / adjacent Hugli districts — not Jaipur or Malda. Nearby map points must stay within a few degrees of the pin.
+**Pin isolation (every tab):** a Howrah dashboard / scan must not quote another state's *watch/yellow* bulletins. `districts_in_state("Howrah")` is empty — a town is not a state, and must **not** fall back to all-India. `rank_districts` on an unknown state returns `{ranked: [], error: unknown_state}` and does not fetch. Sachet/CAP **watch** rows that name another state are dropped (`services/locality.py`). **Exception:** extreme/warning (red/orange/severe predicted) alerts for any Indian state are shown on every pin (`scope: india`). Hooghly port signal only attaches for Howrah / Haldia / Kolkata / adjacent Hugli districts — not Jaipur or Malda. Nearby map points must stay within a few degrees of the pin. Foreign-country GDACS/USGS (Philippines, Indonesia, etc.) never appear.
 
 Dashboard query: `district`, `place`, `lat`, `lon`. Frontend sends `place_name` as `place`.
 

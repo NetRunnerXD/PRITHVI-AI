@@ -16,6 +16,7 @@ from typing import Any
 import httpx
 
 from app import cache
+from app.data.india_mask import in_india
 from app.providers.http import client
 
 USGS = "https://earthquake.usgs.gov/fdsnws/event/1/query"
@@ -24,6 +25,21 @@ INCOIS_FEEDS = (
     "https://tsunami.incois.gov.in/itews/DSS/eqrss.xml",
     "https://tsunami.incois.gov.in/TEWS/eqrss.xml",
 )
+
+
+def _quake_india(q: dict[str, Any]) -> bool:
+    place = (q.get("place") or "").lower()
+    if any(x in place for x in ("indonesia", "sumatra", "java", "philippines", "myanmar", "burma", "bangladesh")):
+        if "india" not in place and "andaman" not in place:
+            return False
+    lat, lon = q.get("lat"), q.get("lon")
+    if lat is not None and lon is not None:
+        try:
+            if in_india(float(lat), float(lon)):
+                return True
+        except (TypeError, ValueError):
+            pass
+    return any(x in place for x in ("india", "andaman", "nicobar", "lakshadweep"))
 
 
 def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -95,10 +111,10 @@ async def recent_quakes(lat: float, lon: float, limit: int = 8) -> tuple[list[di
     if hit is None:
         params = {
             "format": "csv",
-            "minlatitude": 5,
-            "maxlatitude": 38,
-            "minlongitude": 60,
-            "maxlongitude": 100,
+            "minlatitude": 6.5,
+            "maxlatitude": 37.5,
+            "minlongitude": 68,
+            "maxlongitude": 97.5,
             "orderby": "time",
             "limit": 20,
             "starttime": (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%d"),
@@ -111,6 +127,7 @@ async def recent_quakes(lat: float, lon: float, limit: int = 8) -> tuple[list[di
         except Exception:
             return [], "error"
     out = parse_usgs_csv(hit if isinstance(hit, str) else "", lat, lon)
+    out = [q for q in out if _quake_india(q)]
     out.sort(
         key=lambda x: (
             x.get("nst") in (None, 0),
@@ -147,10 +164,10 @@ async def emsc_quakes(lat: float, lon: float, limit: int = 8) -> tuple[list[dict
     if hit is None:
         params = {
             "format": "json",
-            "minlat": 5,
-            "maxlat": 38,
-            "minlon": 60,
-            "maxlon": 100,
+            "minlat": 6.5,
+            "maxlat": 37.5,
+            "minlon": 68,
+            "maxlon": 97.5,
             "orderby": "time",
             "limit": 20,
             "starttime": (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d"),
@@ -197,6 +214,7 @@ async def emsc_quakes(lat: float, lon: float, limit: int = 8) -> tuple[list[dict
                 "tsunami_flag": False,
             }
         )
+    out = [q for q in out if _quake_india(q)]
     return out[:limit], "ok"
 
 

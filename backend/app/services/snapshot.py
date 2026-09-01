@@ -38,6 +38,7 @@ from app.providers import (
 )
 from app.science.astro import at_pin as moon_at
 from app.science.pollen_in import estimate as pollen_india
+from app.services.alerts import assemble_warnings
 from app.schemas.dashboard import (
     CurrentConditions,
     DashboardSnapshot,
@@ -294,189 +295,9 @@ def _warnings(
     quakes: list[dict],
     tsunami: list[dict],
     naqi: dict | None,
+    **kwargs: Any,
 ) -> list[EarlyWarning]:
-    local = imd.alerts_for_location(caps, loc)
-    out: list[EarlyWarning] = []
-    seen_titles: set[str] = set()
-    local_ids = {str(a.get("id")) for a in local}
-    for a in local[:8]:
-        raw_title = a.get("title") or "IMD alert"
-        title = imd.humanize_cap_title(raw_title, a.get("body") or "", loc.place_name or loc.district)
-        norm_key = re.sub(r"[^a-z0-9]", "", title.lower())
-        if norm_key in seen_titles:
-            continue
-        seen_titles.add(norm_key)
-        if sum(1 for w in out if w.source == "imd-cap") >= 3:
-            break
-        body = imd.clean_cap_body(a.get("body") or "", title=title, raw_title=raw_title)
-        out.append(
-            EarlyWarning(
-                id=str(a.get("id"))[:64],
-                severity=imd.severity_from_title(raw_title + " " + title),
-                title=title,
-                body=body,
-                lenses=["predictive", "prescriptive"],
-                linked_risk_id="flood" if "rain" in title.lower() else None,
-                source="imd-cap",
-                hazard="weather",
-                issued_at=a.get("published"),
-                scope="local",
-            )
-        )
-    for a in imd.national_severe(caps):
-        if str(a.get("id")) in local_ids:
-            continue
-        raw_title = a.get("title") or "IMD alert"
-        loc_hint = imd.extract_region_hint(raw_title, a.get("body") or "")
-        tag = f"{loc_hint} (India)" if loc_hint and loc_hint.lower() != "india" else "India"
-        title = imd.humanize_cap_title(raw_title, a.get("body") or "", tag)
-        norm_key = re.sub(r"[^a-z0-9]", "", title.lower())
-        if norm_key in seen_titles:
-            continue
-        seen_titles.add(norm_key)
-        sev = imd.severity_from_title(raw_title + " " + title)
-        if sev not in {"extreme", "warning", "alert"}:
-            continue
-        body = imd.clean_cap_body(a.get("body") or "", title=title, raw_title=raw_title)
-        out.append(
-            EarlyWarning(
-                id=f"in_{str(a.get('id'))[:56]}",
-                severity=sev,
-                title=title,
-                body=body,
-                lenses=["predictive"],
-                source="imd-cap",
-                hazard="weather",
-                issued_at=a.get("published"),
-                scope="india",
-            )
-        )
-    if flood_score >= 70 and not any(w.hazard == "flood" or "rain" in (w.title or "").lower() for w in out):
-        out.insert(
-            0,
-            EarlyWarning(
-                id="model_flood",
-                severity="warning",
-                title="Modelled flood risk is high for this district",
-                body="Weighted risk from rainfall anomaly, GloFAS discharge and soil saturation.",
-                lenses=["predictive"],
-                linked_risk_id="flood",
-                source="open-meteo-flood + local-ml-v2",
-                hazard="flood",
-            )
-        )
-    if f.get("discharge_trend") == "rising" and flood_score >= 55:
-        if not any(w.id == "model_flood" for w in out):
-            out.append(
-                EarlyWarning(
-                    id="om_discharge_rise",
-                    severity="alert",
-                    title="River discharge is rising",
-                    body=f"Open-Meteo GloFAS trend is rising. Model flood score {flood_score}%.",
-                    lenses=["predictive"],
-                    linked_risk_id="flood",
-                    source="open-meteo-flood",
-                    hazard="flood",
-                )
-            )
-    naqi_val = (naqi or {}).get("value")
-    if naqi_val is not None and int(naqi_val) >= 201:
-        out.append(
-            EarlyWarning(
-                id="cpcb_aqi",
-                severity="warning" if int(naqi_val) >= 301 else "alert",
-                title=f"CPCB National AQI {int(naqi_val)} — {(naqi or {}).get('category') or 'unhealthy'}",
-                body=f"Station {(naqi or {}).get('station') or loc.district}. Dominant {(naqi or {}).get('dominant_pollutant') or 'n/a'}.",
-                lenses=["prescriptive"],
-                linked_risk_id="air_quality",
-                source="data.gov.in / CPCB",
-                hazard="air",
-            )
-        )
-    wave = f.get("wave_height_m")
-    if wave is not None and float(wave) >= 2.5:
-        out.append(
-            EarlyWarning(
-                id="om_marine_wave",
-                severity="warning" if float(wave) >= 4 else "alert",
-                title=f"Significant wave height {float(wave):.1f} m",
-                body="Open-Meteo marine forecast. Coastal / offshore operations should check INCOIS sea-state bulletins.",
-                lenses=["predictive"],
-                source="open-meteo-marine",
-                hazard="marine",
-            )
-        )
-    for q in quakes or []:
-        mag = float(q.get("mag") or 0)
-        dist = q.get("distance_km")
-        near = dist is not None and float(dist) <= 500
-        if mag >= 6.0 or (mag >= 4.5 and near):
-            out.append(
-                EarlyWarning(
-                    id=str(q.get("id") or f"usgs_{mag}"),
-                    severity="warning" if mag >= 6 else "alert",
-                    title=(
-                        f"M{mag:.1f} earthquake {int(dist)} km from {loc.district}"
-                        if near and dist is not None
-                        else f"M{mag:.1f} earthquake — {q.get('place') or 'India region'}"
-                    ),
-                    body=q.get("place") or "USGS FDSN event in the India–Indian Ocean box.",
-                    lenses=["predictive"],
-                    source="usgs-fdsn",
-                    hazard="seismic",
-                    issued_at=q.get("time_iso"),
-                    distance_km=float(dist) if dist is not None else None,
-                    scope="local" if near else "india",
-                )
-            )
-        elif q.get("tsunami_flag") and mag >= 6:
-            out.append(
-                EarlyWarning(
-                    id=str(q.get("id") or "usgs_tsunami_flag"),
-                    severity="warning",
-                    title=f"USGS tsunami flag on M{mag:.1f} event",
-                    body="Confirm against INCOIS ITEWS — USGS flag is not an Indian tsunami warning.",
-                    lenses=["predictive"],
-                    source="usgs-fdsn",
-                    hazard="tsunami",
-                    issued_at=q.get("time_iso"),
-                )
-            )
-    for i, item in enumerate((tsunami or [])[:4]):
-        title = item.get("title") or "INCOIS ITEWS bulletin"
-        low = title.lower() + " " + (item.get("body") or "").lower()
-        if any(x in low for x in ("no threat", "no tsunami", "does not exist", "all clear", "nil")) and not item.get("threat"):
-            continue
-        if item.get("threat") or any(x in low for x in ("warning", "alert", "threat")):
-            sev = "warning"
-        else:
-            continue
-        out.append(
-            EarlyWarning(
-                id=f"incois_{i}",
-                severity=sev,
-                title=title[:160],
-                body=(item.get("body") or "")[:280],
-                lenses=["predictive", "prescriptive"],
-                source="incois-itews",
-                hazard="tsunami",
-                scope="india",
-            )
-        )
-    code = int(f.get("weather_code") or 0)
-    if code >= 95 and not any(w.hazard == "weather" and "thunder" in (w.title or "").lower() for w in out):
-        out.append(
-            EarlyWarning(
-                id="om_storm",
-                severity="alert",
-                title="Thunderstorm in the current sky condition",
-                body=f"Open-Meteo WMO weather code {code} at {loc.district}.",
-                lenses=["predictive"],
-                source="open-meteo",
-                hazard="weather",
-            )
-        )
-    return out
+    return assemble_warnings(loc, caps, flood_score, f, quakes, tsunami, naqi, **kwargs)
 
 
 def _vis_km(meters: float | None) -> float | None:
@@ -844,67 +665,10 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
                 who=str(a.get("who") or "household / farm"),
             ),
         )
-    warnings = _warnings(loc, obs["caps"], flood.score_pct, f, obs.get("quakes") or [], obs.get("tsunami") or [], obs.get("naqi"))
-    for g in obs.get("gdacs") or []:
-        et = str(g.get("event_type") or "").upper()
-        lvl = str(g.get("alert_level") or "").lower()
-        if et not in {"TC", "TS", "EQ"}:
-            continue
-        if et == "EQ" and lvl not in {"orange", "red"}:
-            continue
-        if et == "TC" and lvl in {"green"}:
-            continue
-        if any(w.id == f"gdacs_{g.get('id')}" for w in warnings):
-            continue
-        warnings.append(
-            EarlyWarning(
-                id=f"gdacs_{g.get('id')}",
-                severity="warning" if lvl in {"orange", "red"} or et in {"TC", "TS"} else "alert",
-                title=str(g.get("title") or f"GDACS {et}")[:160],
-                body=str(g.get("body") or g.get("alert_level") or "")[:280],
-                lenses=["predictive"],
-                source="gdacs",
-                hazard="weather" if et == "TC" else ("tsunami" if et == "TS" else "seismic"),
-                scope="india",
-            )
-        )
-    for a in warnings:
-        if a.source in {"imd-cap", "IMD CAP"} or "imd" in (a.source or "").lower():
-            act = next((x for x in actions if x.template_id and str(x.template_id).startswith("nowcast_")), None)
-            extra = ""
-            if act:
-                extra = f" Do: {act.action}"
-            a.body = (a.body or "") + extra
-    from app.services.locality import alert_belongs, port_relevant
+    from app.services.locality import port_relevant
 
     port = obs.get("port") or {}
-    if port.get("active") and port_relevant(loc):
-        warnings.insert(
-            0,
-            EarlyWarning(
-                id="imd_port_hooghly",
-                severity="alert",
-                title=f"Hooghly port signal {port.get('signal') or ''}".strip(),
-                body="IMD coastal bulletin for Kolkata & Haldia. Category watch only — does not change millimetres.",
-                lenses=["prescriptive"],
-                source="imd-port",
-                hazard="marine",
-            ),
-        )
-    local_sachet = [it for it in (obs.get("sachet") or []) if alert_belongs(it, loc)]
-    for i, item in enumerate(local_sachet[:2]):
-        warnings.append(
-            EarlyWarning(
-                id=f"sachet_{i}",
-                severity="watch",
-                title=imd.humanize_cap_title(item.get("title") or "SACHET alert", item.get("body") or "", loc.district),
-                body=imd.clean_cap_body(item.get("body") or "", title=item.get("title") or "", raw_title=item.get("title") or "")
-                or "NDMA SACHET. Timing prior only.",
-                lenses=["prescriptive"],
-                source="sachet-ndma",
-                hazard="weather",
-            )
-        )
+    warnings: list[EarlyWarning] = []
     if port_relevant(loc):
         science["port"] = {**(port or {}), "relevant": True}
     else:
@@ -927,6 +691,39 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
         live_sat = {**live_sat, "imerg": obs.get("imerg")}
     vera = _vera_pack(f, loc, live_sat)
     f["vera_gate_weights"] = (vera.get("gate") or {}).get("weights") or {}
+    scan_hits: list[dict] = []
+    try:
+        from app.services.alert_scan import capital_warning_hits
+
+        scan_hits = await capital_warning_hits()
+    except Exception:
+        scan_hits = []
+    conv = ((science.get("nowcast") or {}).get("convective") or {})
+    cloudburst = conv.get("cloudburst") if isinstance(conv.get("cloudburst"), dict) else conv
+    warnings = _warnings(
+        loc,
+        obs["caps"],
+        flood.score_pct,
+        f,
+        obs.get("quakes") or [],
+        obs.get("tsunami") or [],
+        obs.get("naqi"),
+        gdacs_rows=obs.get("gdacs") or [],
+        sachet_rows=obs.get("sachet") or [],
+        port=port,
+        risks=risks,
+        vera=vera,
+        nowcast=nc,
+        convective=cloudburst if isinstance(cloudburst, dict) else {},
+        scan_hits=scan_hits,
+    )
+    for a in warnings:
+        if a.source in {"imd-cap", "IMD CAP"} or "imd" in (a.source or "").lower():
+            act = next((x for x in actions if x.template_id and str(x.template_id).startswith("nowcast_")), None)
+            extra = ""
+            if act:
+                extra = f" Do: {act.action}"
+            a.body = (a.body or "") + extra
     dual = build_dual_predictions(f)
     sources = [k for k, v in obs["status"].items() if v == "ok"]
     sources.append("local-ml-v2")

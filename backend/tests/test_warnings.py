@@ -33,7 +33,7 @@ def test_warnings_multi_hazard_sources():
             "mag": 5.1,
             "distance_km": 120,
             "place": "12 km W of Barddhaman",
-            "time_iso": "2026-08-17T01:00:00+00:00",
+            "time_iso": "2026-08-31T01:00:00+00:00",
         }
     ]
     tsunami = [{"title": "INCOIS: No tsunami threat for Indian coast", "body": "All clear."}]

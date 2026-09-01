@@ -229,7 +229,7 @@ NCS has no public JSON (not scraped).
 |---|---|---|
 | ITEWS title, body, threat, mag, region, origin, lat/lon | Fetched | INCOIS catalog / RSS |
 | Default “no threat for India” text | Fetched | When the catalog is quiet |
-| GDACS event type, name, alert, lat/lon | Fetched | Indian Ocean basin + India-affected |
+| GDACS event type, name, alert, lat/lon | Fetched | India land / India-affected only (not PH/ID/SE Asia) |
 | IMD CAP warnings | Fetched | CAP RSS (not IMD REST) |
 | Sachet / NDMA CAP | Fetched | State + India RSS |
 | Hooghly / Haldia port signal | Fetched | Best-effort scrape; hugli belt only |
