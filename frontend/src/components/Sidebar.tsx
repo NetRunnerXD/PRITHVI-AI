@@ -17,6 +17,7 @@ import {
   IconPredicted,
   IconRefresh,
   IconSettings,
+  IconUser,
 } from "./Icons";
 
 const TABS: { id: TabId; Icon: ComponentType<{ className?: string }> }[] = [
@@ -30,8 +31,22 @@ const TABS: { id: TabId; Icon: ComponentType<{ className?: string }> }[] = [
 ];
 
 export function Sidebar() {
-  const { locale, setLocale, tab, setTab, dashboard, refresh, sidebarOpen, setSidebarOpen, favorites, recent, setLocation } =
-    useApp();
+  const {
+    locale,
+    setLocale,
+    tab,
+    setTab,
+    dashboard,
+    refresh,
+    sidebarOpen,
+    setSidebarOpen,
+    favorites,
+    recent,
+    setLocation,
+    account,
+    setAuthModal,
+    signOut,
+  } = useApp();
   const t = COPY[locale];
   const tabLabel: Record<TabId, string> = {
     home: t.tabHome,
@@ -234,6 +249,26 @@ export function Sidebar() {
               ))}
             </div>
           </div>
+
+          {account ? (
+            <button
+              className={`neo-btn flex items-center justify-center gap-2 py-2 text-xs ${sidebarOpen ? "w-full" : "w-full px-0"}`}
+              onClick={() => signOut()}
+              title={account.display_name}
+            >
+              <IconUser className="h-4 w-4 shrink-0 text-neo-accent" />
+              {sidebarOpen ? <span className="truncate">{t.authSignOut}</span> : null}
+            </button>
+          ) : (
+            <button
+              className={`neo-btn flex items-center justify-center gap-2 py-2 text-xs ${sidebarOpen ? "w-full" : "w-full px-0"}`}
+              onClick={() => setAuthModal(true)}
+              title={t.authSignIn}
+            >
+              <IconUser className="h-4 w-4 shrink-0 text-neo-accent" />
+              {sidebarOpen ? <span className="truncate">{t.authSignIn}</span> : null}
+            </button>
+          )}
 
           <button
             className={`neo-btn group flex items-center justify-center gap-2 py-2 text-xs font-bold transition-all hover:border-[var(--accent)] ${

@@ -13,6 +13,7 @@ import { PredictionsPanel } from "@/components/PredictionsPanel";
 import { RiskCard } from "@/components/RiskCard";
 import { SciencePanel } from "@/components/SciencePanel";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { AuthModal } from "@/components/AuthModal";
 import { Sidebar } from "@/components/Sidebar";
 import { SquareMap } from "@/components/SquareMap";
 import { ThemeBoot } from "@/components/ThemeBoot";
@@ -37,6 +38,7 @@ export default function Page() {
     error,
     refresh,
     quietRefresh,
+    loadAccount,
     setLocation,
     favorites,
     toggleFavorite,
@@ -56,7 +58,8 @@ export default function Page() {
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    void loadAccount();
+  }, [refresh, loadAccount]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -113,6 +116,7 @@ export default function Page() {
     <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col gap-3 p-2 pb-20 sm:p-3 sm:pb-20 lg:flex-row lg:p-4 lg:pb-4">
       <ThemeBoot />
       <Sidebar />
+      <AuthModal />
       <div className="min-w-0 flex-1 space-y-3">
         <header className="neo relative z-50 flex flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
           <DistrictSearch locale={locale} onPick={(l) => setLocation(l)} />
