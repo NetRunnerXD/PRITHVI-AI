@@ -2,9 +2,9 @@
 
 import type { ReactNode } from "react";
 
-type Props = { className?: string; title?: string };
+type Props = { className?: string; title?: string; style?: React.CSSProperties };
 
-function Svg({ className, title, children }: Props & { children: ReactNode }) {
+function Svg({ className, title, style, children }: Props & { children: ReactNode }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -15,6 +15,7 @@ function Svg({ className, title, children }: Props & { children: ReactNode }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className || "h-[18px] w-[18px] shrink-0"}
+      style={style}
       aria-hidden={title ? undefined : true}
       role={title ? "img" : undefined}
     >
@@ -220,3 +221,30 @@ export function IconChevronDown(p: Props) {
     </Svg>
   );
 }
+
+export function IconCross(p: Props) {
+  return (
+    <Svg {...p}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </Svg>
+  );
+}
+
+export function IconSend(p: Props) {
+  return (
+    <Svg {...p}>
+      <path d="m22 2-7 20-4-9-9-4Z" />
+      <path d="M22 2 11 13" />
+    </Svg>
+  );
+}
+
+export function IconSparkle(p: Props) {
+  return (
+    <Svg {...p}>
+      <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
+    </Svg>
+  );
+}
+

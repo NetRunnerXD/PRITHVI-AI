@@ -124,6 +124,7 @@ type State = {
   outputLocale: ReplyLocale;
   sidebarOpen: boolean;
   pendingAsk: string | null;
+  floatChatOpen: boolean;
   favorites: Location[];
   recent: Location[];
   settings: AppSettings;
@@ -131,6 +132,8 @@ type State = {
   resetSettings: () => void;
   setSidebarOpen: (v: boolean) => void;
   setPendingAsk: (q: string | null) => void;
+  setFloatChatOpen: (v: boolean) => void;
+  openFloatChat: (prompt?: string) => void;
   setLocale: (l: Locale) => void;
   setOutputLocale: (l: ReplyLocale) => void;
   setTab: (t: TabId) => void;
@@ -178,6 +181,7 @@ export const useApp = create<State>((set, get) => ({
   outputLocale: "en",
   sidebarOpen: true,
   pendingAsk: null,
+  floatChatOpen: false,
   favorites: [],
   recent: [],
   setSettings: (p) => {
@@ -193,6 +197,14 @@ export const useApp = create<State>((set, get) => ({
   },
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setPendingAsk: (pendingAsk) => set({ pendingAsk }),
+  setFloatChatOpen: (floatChatOpen) => set({ floatChatOpen }),
+  openFloatChat: (prompt) => {
+    if (prompt) {
+      set({ floatChatOpen: true, pendingAsk: prompt });
+    } else {
+      set({ floatChatOpen: true });
+    }
+  },
   setLocale: (locale) => {
     const settings = { ...get().settings, locale };
     if (typeof window !== "undefined") window.localStorage.setItem(SET_KEY, JSON.stringify(settings));

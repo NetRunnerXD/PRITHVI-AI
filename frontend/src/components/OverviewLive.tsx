@@ -14,8 +14,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { DashboardSnapshot } from "@/types/dashboard";
+import type { DashboardSnapshot, EarlyWarning, Location } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
+import { searchPlaces } from "@/lib/api";
 import { useApp } from "@/lib/store";
 import { dist, rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
 import { Forecast7DayDeck } from "./Forecast7DayDeck";
@@ -111,6 +112,514 @@ const alertDot: Record<string, string> = {
   alert: "text-neo-accent2",
   watch: "text-neo-accent",
 };
+
+// Known Indian capitals & major cities coordinates for instant offline location switching
+const INDIA_CITIES_MAP: Record<string, { city: string; state: string; lat: number; lon: number }> = {
+  patna: { city: "Patna", state: "Bihar", lat: 25.5941, lon: 85.1376 },
+  delhi: { city: "Delhi", state: "Delhi", lat: 28.6139, lon: 77.209 },
+  "new delhi": { city: "New Delhi", state: "Delhi", lat: 28.6139, lon: 77.209 },
+  mumbai: { city: "Mumbai", state: "Maharashtra", lat: 19.076, lon: 72.8777 },
+  kolkata: { city: "Kolkata", state: "West Bengal", lat: 22.5726, lon: 88.3639 },
+  chennai: { city: "Chennai", state: "Tamil Nadu", lat: 13.0827, lon: 80.2707 },
+  bengaluru: { city: "Bengaluru", state: "Karnataka", lat: 12.9716, lon: 77.5946 },
+  bangalore: { city: "Bengaluru", state: "Karnataka", lat: 12.9716, lon: 77.5946 },
+  hyderabad: { city: "Hyderabad", state: "Telangana", lat: 17.385, lon: 78.4867 },
+  ahmedabad: { city: "Ahmedabad", state: "Gujarat", lat: 23.0225, lon: 72.5714 },
+  gandhinagar: { city: "Gandhinagar", state: "Gujarat", lat: 23.2156, lon: 72.6369 },
+  shillong: { city: "Shillong", state: "Meghalaya", lat: 25.5788, lon: 91.8933 },
+  guwahati: { city: "Guwahati", state: "Assam", lat: 26.1445, lon: 91.7362 },
+  bhubaneswar: { city: "Bhubaneswar", state: "Odisha", lat: 20.2961, lon: 85.8245 },
+  puri: { city: "Puri", state: "Odisha", lat: 19.8135, lon: 85.8312 },
+  jaipur: { city: "Jaipur", state: "Rajasthan", lat: 26.9124, lon: 75.7873 },
+  lucknow: { city: "Lucknow", state: "Uttar Pradesh", lat: 26.8467, lon: 80.9462 },
+  kanpur: { city: "Kanpur", state: "Uttar Pradesh", lat: 26.4499, lon: 80.3319 },
+  varanasi: { city: "Varanasi", state: "Uttar Pradesh", lat: 25.3176, lon: 82.9739 },
+  bhopal: { city: "Bhopal", state: "Madhya Pradesh", lat: 23.2599, lon: 77.4126 },
+  indore: { city: "Indore", state: "Madhya Pradesh", lat: 22.7196, lon: 75.8577 },
+  chandigarh: { city: "Chandigarh", state: "Chandigarh", lat: 30.7333, lon: 76.7794 },
+  shimla: { city: "Shimla", state: "Himachal Pradesh", lat: 31.1048, lon: 77.1734 },
+  dehradun: { city: "Dehradun", state: "Uttarakhand", lat: 30.3165, lon: 78.0322 },
+  srinagar: { city: "Srinagar", state: "Jammu and Kashmir", lat: 34.0837, lon: 74.7973 },
+  jammu: { city: "Jammu", state: "Jammu and Kashmir", lat: 32.7266, lon: 74.857 },
+  ranchi: { city: "Ranchi", state: "Jharkhand", lat: 23.3441, lon: 85.3096 },
+  raipur: { city: "Raipur", state: "Chhattisgarh", lat: 21.2514, lon: 81.6296 },
+  amaravati: { city: "Amaravati", state: "Andhra Pradesh", lat: 16.5418, lon: 80.515 },
+  visakhapatnam: { city: "Visakhapatnam", state: "Andhra Pradesh", lat: 17.6868, lon: 83.2185 },
+  thiruvananthapuram: { city: "Thiruvananthapuram", state: "Kerala", lat: 8.5241, lon: 76.9366 },
+  kochi: { city: "Kochi", state: "Kerala", lat: 9.9312, lon: 76.2673 },
+  panaji: { city: "Panaji", state: "Goa", lat: 15.4909, lon: 73.8278 },
+  gangtok: { city: "Gangtok", state: "Sikkim", lat: 27.3389, lon: 88.6065 },
+  itanagar: { city: "Itanagar", state: "Arunachal Pradesh", lat: 27.0844, lon: 93.6053 },
+  kohima: { city: "Kohima", state: "Nagaland", lat: 25.6751, lon: 94.1086 },
+  imphal: { city: "Imphal", state: "Manipur", lat: 24.817, lon: 93.9368 },
+  aizawl: { city: "Aizawl", state: "Mizoram", lat: 23.7271, lon: 92.7176 },
+  agartala: { city: "Agartala", state: "Tripura", lat: 23.8315, lon: 91.2868 },
+  "port blair": { city: "Port Blair", state: "Andaman and Nicobar", lat: 11.6234, lon: 92.7265 },
+  puducherry: { city: "Puducherry", state: "Puducherry", lat: 11.9416, lon: 79.8083 },
+  kavaratti: { city: "Kavaratti", state: "Lakshadweep", lat: 10.5667, lon: 72.6417 },
+  silvassa: { city: "Silvassa", state: "Dadra and Nagar Haveli", lat: 20.2763, lon: 73.0083 },
+  daman: { city: "Daman", state: "Daman and Diu", lat: 20.3974, lon: 72.8328 },
+  leh: { city: "Leh", state: "Ladakh", lat: 34.1526, lon: 77.5771 },
+};
+
+const STATE_NAMES = [
+  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
+  "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra",
+  "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim",
+  "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+  "Andaman and Nicobar", "Chandigarh", "Dadra and Nagar Haveli", "Daman and Diu", "Delhi",
+  "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
+];
+
+function parseAlertLocation(w: any, currentLoc?: Location | null) {
+  const rawTitle = (w.title || "").trim();
+  const rawBody = (w.body || "").trim();
+  const combined = `${rawTitle} ${rawBody} ${w.district || ""} ${w.state || ""}`;
+
+  let city = (w.district || w.place_name || w.place || "").trim();
+  let state = (w.state || (w.states && w.states[0]) || "").trim();
+  let lat = w.lat != null ? Number(w.lat) : null;
+  let lon = w.lon != null ? Number(w.lon) : null;
+
+  // Sanitize national/generic keywords from city & state
+  const isGeneric = (str: string) => {
+    const s = str.toLowerCase().trim();
+    return s === "india" || s === "national" || s === "pan-india" || s === "all india" || s === "cap-india" || s === "imd-cap";
+  };
+
+  if (isGeneric(city)) city = "";
+  if (isGeneric(state)) state = "";
+
+  // 1. Check if title starts with City (State), e.g. "Patna (Bihar) — Severe Flood Warning"
+  const parenMatch = rawTitle.match(/^([A-Za-z\s]+)\s*\(([^)]+)\)/);
+  if (parenMatch) {
+    const p1 = parenMatch[1].trim();
+    const p2 = parenMatch[2].trim();
+    const isP1Generic = isGeneric(p1);
+    const isP2Generic = isGeneric(p2);
+    const isP2State = STATE_NAMES.some((s) => s.toLowerCase() === p2.toLowerCase());
+    const isP1State = STATE_NAMES.some((s) => s.toLowerCase() === p1.toLowerCase());
+
+    if (isP1Generic && isP2State) {
+      state = p2;
+    } else if (isP2Generic && isP1State) {
+      state = p1;
+    } else if (isP2State) {
+      city = p1;
+      state = p2;
+    } else if (isP1State) {
+      city = p2;
+      state = p1;
+    }
+  }
+
+  // 2. Check title with dash: e.g. "Predicted flood warning — Bihar (Patna)" or "Severe Weather Alert — Jharkhand"
+  if (!city || !state) {
+    const dashMatch = rawTitle.match(/—\s*([^—]+)$/);
+    if (dashMatch) {
+      const rest = dashMatch[1].trim();
+      const subParen = rest.match(/^([A-Za-z\s]+)\s*\(([^)]+)\)/);
+      if (subParen) {
+        const s1 = subParen[1].trim();
+        const s2 = subParen[2].trim();
+        const isS1Generic = isGeneric(s1);
+        const isS2Generic = isGeneric(s2);
+        const isS1State = STATE_NAMES.some((s) => s.toLowerCase() === s1.toLowerCase());
+        const isS2State = STATE_NAMES.some((s) => s.toLowerCase() === s2.toLowerCase());
+
+        if (isS1Generic && isS2State) {
+          state = s2;
+        } else if (isS2Generic && isS1State) {
+          state = s1;
+        } else if (isS1State) {
+          state = s1;
+          city = s2;
+        } else if (isS2State) {
+          city = s1;
+          state = s2;
+        }
+      } else if (rest.includes(",")) {
+        const parts = rest.split(",");
+        const cCandidate = parts[0].trim();
+        const sCandidate = parts[1].trim();
+        if (!isGeneric(cCandidate)) city = cCandidate;
+        if (!isGeneric(sCandidate)) state = sCandidate;
+      } else {
+        const isState = STATE_NAMES.some((s) => s.toLowerCase() === rest.toLowerCase());
+        if (isState) state = rest;
+      }
+    }
+  }
+
+  // 3. Scan for known cities in INDIA_CITIES_MAP
+  if (!city || !state) {
+    for (const [k, v] of Object.entries(INDIA_CITIES_MAP)) {
+      const regex = new RegExp(`\\b${k}\\b`, "i");
+      if (regex.test(combined)) {
+        if (!city) city = v.city;
+        if (!state) state = v.state;
+        if (lat == null) lat = v.lat;
+        if (lon == null) lon = v.lon;
+        break;
+      }
+    }
+  }
+
+  // 4. Scan for known state names
+  if (!state) {
+    for (const s of STATE_NAMES) {
+      const regex = new RegExp(`\\b${s}\\b`, "i");
+      if (regex.test(combined)) {
+        state = s;
+        break;
+      }
+    }
+  }
+
+  // 5. Clean up any remaining generic words
+  if (isGeneric(city)) city = "";
+  if (isGeneric(state)) state = "";
+
+  // 6. If city is empty but state is known, check capital
+  if (!city && state) {
+    const cap = Object.values(INDIA_CITIES_MAP).find((c) => c.state.toLowerCase() === state.toLowerCase());
+    if (cap) {
+      city = cap.city;
+      if (lat == null) lat = cap.lat;
+      if (lon == null) lon = cap.lon;
+    }
+  }
+
+  // 7. Fallback to current dashboard location if completely blank
+  if (!city && !state && currentLoc) {
+    city = currentLoc.district || currentLoc.place_name || "Local Area";
+    state = currentLoc.state || "India";
+    if (lat == null) lat = currentLoc.lat;
+    if (lon == null) lon = currentLoc.lon;
+  }
+
+  // Standardized formatting: District/City (State), e.g. Patna (Bihar) or Ranchi (Jharkhand)
+  let placeFormatted = "";
+  if (city && state && city.toLowerCase() !== state.toLowerCase()) {
+    placeFormatted = `${city} (${state})`;
+  } else if (city && !state) {
+    placeFormatted = `${city} (India)`;
+  } else if (state) {
+    placeFormatted = `${state} (Statewide)`;
+    city = state;
+  } else {
+    placeFormatted = "National Watch (India)";
+    city = "India";
+    state = "India";
+  }
+
+  // Clean hazard subtitle
+  let hazardLabel = w.kind || w.hazard || "Warning";
+  if (hazardLabel === "aqi" || hazardLabel === "air") hazardLabel = "Air Quality Warning";
+  else if (hazardLabel === "rainfall") hazardLabel = "Heavy Rainfall Advisory";
+  else if (hazardLabel === "flood") hazardLabel = "Severe Flood Warning";
+  else if (hazardLabel === "cloudburst") hazardLabel = "Cloudburst Torrent";
+  else if (hazardLabel === "thunderstorm" || hazardLabel === "lightning") hazardLabel = "Thunderstorm & Squall";
+  else if (hazardLabel === "cyclone") hazardLabel = "Tropical Cyclone Alert";
+  else if (hazardLabel === "heatwave") hazardLabel = "Heatwave Advisory";
+  else if (hazardLabel === "drought") hazardLabel = "Agricultural Drought";
+  else if (hazardLabel === "seismic") hazardLabel = "Earthquake Tremor";
+  else if (hazardLabel === "tsunami") hazardLabel = "Tsunami Threat Watch";
+  else if (hazardLabel === "marine") hazardLabel = "Marine Sea-State Alert";
+  else if (hazardLabel === "wind") hazardLabel = "High Wind Squall";
+  else hazardLabel = "Severe Weather Alert";
+
+  return {
+    placeFormatted,
+    hazardLabel,
+    city: city || state || "India",
+    state: state || "India",
+    lat,
+    lon,
+  };
+}
+
+interface AlertCluster {
+  id: string;
+  placeFormatted: string;
+  city: string;
+  state: string;
+  lat: number | null;
+  lon: number | null;
+  distKm: number | null;
+  isCurrentLoc: boolean;
+  highestSeverity: string;
+  isExtreme: boolean;
+  isWarning: boolean;
+  alerts: any[];
+  hazardItems: Array<{
+    theme: any;
+    label: string;
+    hazardLabel: string;
+    guidance: {
+      category: string;
+      threat: string;
+      guidance: string;
+      action: string;
+    };
+    alert: any;
+  }>;
+  compositeTitle: string;
+  compositeGuidance: string;
+  compositeAction: string;
+  primaryTheme: any;
+}
+
+function groupAlertsByLocation(
+  alerts: any[],
+  currentLoc?: Location | null
+): AlertCluster[] {
+  const map = new Map<string, any[]>();
+
+  for (const w of alerts) {
+    const locInfo = parseAlertLocation(w, currentLoc);
+    const key = locInfo.placeFormatted.toLowerCase().trim();
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+    map.get(key)!.push(w);
+  }
+
+  const curLat = currentLoc?.lat;
+  const curLon = currentLoc?.lon;
+
+  const severityRank: Record<string, number> = {
+    extreme: 10,
+    danger: 9,
+    critical: 8,
+    severe: 8,
+    warning: 7,
+    alert: 6,
+    watch: 5,
+    advisory: 4,
+    notice: 3,
+    normal: 1,
+  };
+
+  const clusters: AlertCluster[] = [];
+
+  map.forEach((rawGroup, key) => {
+    const firstLoc = parseAlertLocation(rawGroup[0], currentLoc);
+    const city = firstLoc.city;
+    const state = firstLoc.state;
+    const lat = firstLoc.lat;
+    const lon = firstLoc.lon;
+    const placeFormatted = firstLoc.placeFormatted;
+
+    const isCurrentLoc =
+      !!currentLoc &&
+      (currentLoc.district.toLowerCase() === city.toLowerCase() ||
+        (lat != null && lon != null && curLat != null && curLon != null && Math.abs(lat - curLat) < 0.05 && Math.abs(lon - curLon) < 0.05));
+
+    const distKm =
+      curLat != null && curLon != null && lat != null && lon != null
+        ? haversineKm(curLat, curLon, lat, lon)
+        : null;
+
+    let maxRank = 0;
+    let highestSeverity = "Warning";
+    for (const item of rawGroup) {
+      const s = (item.severity || "warning").toLowerCase();
+      const r = severityRank[s] || 4;
+      if (r > maxRank) {
+        maxRank = r;
+        highestSeverity = item.severity || "Warning";
+      }
+    }
+
+    const isExtreme = maxRank >= 8;
+    const isWarning = maxRank >= 6 && !isExtreme;
+
+    // Build distinct hazard themes & guidance for items in this location
+    const hazardItems = rawGroup.map((a) => {
+      const l = parseAlertLocation(a, currentLoc);
+      const theme = getHazardTheme(a.kind || a.hazard);
+      const guidance = getGeneralizedAlertGuidance(a);
+      return {
+        theme,
+        label: theme.label,
+        hazardLabel: l.hazardLabel,
+        guidance,
+        alert: a,
+      };
+    });
+
+    const primaryTheme = hazardItems[0].theme;
+
+    let compositeTitle = "";
+    let compositeGuidance = "";
+    let compositeAction = "";
+
+    if (rawGroup.length === 1) {
+      const h0 = hazardItems[0];
+      compositeTitle = h0.hazardLabel;
+      compositeGuidance = h0.guidance.guidance;
+      compositeAction = h0.guidance.action;
+    } else {
+      // Natural, clean multi-hazard headlines without messy brackets
+      const distinctLabels = Array.from(new Set(hazardItems.map((h) => h.label)));
+      if (distinctLabels.length === 2) {
+        compositeTitle = `${distinctLabels[0]} & ${distinctLabels[1]}`;
+      } else if (distinctLabels.length === 3) {
+        compositeTitle = `${distinctLabels[0]}, ${distinctLabels[1]} & ${distinctLabels[2]}`;
+      } else {
+        compositeTitle = `${distinctLabels[0]}, ${distinctLabels[1]} & +${distinctLabels.length - 2} Hazards`;
+      }
+
+      const distinctThreats = Array.from(new Set(hazardItems.map((h) => h.guidance.guidance)));
+      compositeGuidance = distinctThreats.slice(0, 2).join(" ");
+
+      const distinctActions = Array.from(new Set(hazardItems.map((h) => h.guidance.action)));
+      compositeAction = distinctActions.slice(0, 2).join("; ");
+    }
+
+    clusters.push({
+      id: `cluster_${key}_${rawGroup.length}`,
+      placeFormatted,
+      city,
+      state,
+      lat,
+      lon,
+      distKm,
+      isCurrentLoc,
+      highestSeverity,
+      isExtreme,
+      isWarning,
+      alerts: rawGroup,
+      hazardItems,
+      compositeTitle,
+      compositeGuidance,
+      compositeAction,
+      primaryTheme,
+    });
+  });
+
+  // Extreme first -> Active location -> Closest distance
+  return clusters.sort((a, b) => {
+    if (a.isExtreme && !b.isExtreme) return -1;
+    if (!a.isExtreme && b.isExtreme) return 1;
+
+    if (a.isCurrentLoc && !b.isCurrentLoc) return -1;
+    if (!a.isCurrentLoc && b.isCurrentLoc) return 1;
+
+    const distA = a.distKm ?? 9999;
+    const distB = b.distKm ?? 9999;
+    return distA - distB;
+  });
+}
+
+function getGeneralizedAlertGuidance(w: any) {
+  const k = (w.kind || w.hazard || "").toLowerCase();
+  const title = (w.title || "").toLowerCase();
+
+  if (k === "rainfall" || title.includes("rain") || title.includes("precip")) {
+    return {
+      category: "Hydrometeorological Threat",
+      threat: "Intense downpours with elevated precipitation rates.",
+      guidance: "High probability of localized street waterlogging, urban drainage congestion, and slippery highways.",
+      action: "Avoid waterlogged underpasses, check storm drains, and defer non-essential transit in low-lying sectors.",
+    };
+  }
+  if (k === "flood" || title.includes("flood") || title.includes("discharge")) {
+    return {
+      category: "Hydrological Inundation",
+      threat: "River discharge surge and rapid overland runoff.",
+      guidance: "Riparian floodplains and low-lying settlements face imminent flood water ingress.",
+      action: "Move valuables and livestock to higher ground, avoid riverbanks, and adhere to local emergency directives.",
+    };
+  }
+  if (k === "cloudburst" || title.includes("cloudburst")) {
+    return {
+      category: "Convective Flash Flood",
+      threat: "Extreme localized cloudburst downpour.",
+      guidance: "Torrential runoff, sudden debris streams, and violent flash floods likely in hillside and drainage basins.",
+      action: "Evacuate low riverbeds and mountain water channels immediately without waiting for warnings.",
+    };
+  }
+  if (k === "thunderstorm" || k === "lightning" || title.includes("thunder") || title.includes("lightning") || title.includes("squall")) {
+    return {
+      category: "Severe Convective / Squall",
+      threat: "Active thunderstorm cells with cloud-to-ground lightning.",
+      guidance: "Sudden damaging wind gusts, lightning hazard, and intense short-duration rainfall.",
+      action: "Take sturdy indoor shelter, stay away from tall trees and metal poles, and disconnect sensitive electronics.",
+    };
+  }
+  if (k === "cyclone" || title.includes("cyclone") || title.includes("depression")) {
+    return {
+      category: "Tropical Cyclonic System",
+      threat: "Deep cyclonic vortex generating gale-force squalls.",
+      guidance: "Dangerous storm surges, destructive coastal gusts, and extensive squally rainbands.",
+      action: "Secure lightweight rooftops, suspend all maritime/boating operations, and keep emergency supplies ready.",
+    };
+  }
+  if (k === "heatwave" || title.includes("heat")) {
+    return {
+      category: "Thermal Heatwave Advisory",
+      threat: "Dangerous ambient heat index and thermal stress.",
+      guidance: "High risk of heat exhaustion, cramps, and dehydration, especially for elders and outdoor workers.",
+      action: "Avoid midday sun between 11 AM – 4 PM, drink oral rehydration fluids, and wear light breathable clothing.",
+    };
+  }
+  if (k === "drought" || title.includes("drought")) {
+    return {
+      category: "Agricultural Moisture Deficit",
+      threat: "Prolonged rainfall deficit and root-zone moisture depletion.",
+      guidance: "Crop water stress and depleting surface groundwater storage.",
+      action: "Adopt soil mulching, implement deficit drip irrigation, and conserve domestic water supplies.",
+    };
+  }
+  if (k === "aqi" || k === "air" || title.includes("aqi") || title.includes("air")) {
+    return {
+      category: "Atmospheric Air Quality",
+      threat: "Elevated particulate pollution (PM2.5 / PM10 / Smog).",
+      guidance: "Air quality index in hazardous zone with heightened risk of respiratory and ocular irritation.",
+      action: "Wear N95 respirators outdoors, avoid outdoor exertion, and keep indoor air purifiers operational.",
+    };
+  }
+  if (k === "seismic" || title.includes("earthquake") || title.includes("quake")) {
+    return {
+      category: "Seismological Event",
+      threat: "Crustal tectonic ground motion.",
+      guidance: "Ground tremor recorded in seismic zone with potential localized aftershocks.",
+      action: "Follow 'Drop, Cover, and Hold On'. Check utility gas lines and structural walls before re-entering buildings.",
+    };
+  }
+  if (k === "tsunami" || title.includes("tsunami")) {
+    return {
+      category: "Oceanic Tsunami Watch",
+      threat: "Oceanic seismic disturbance and potential wave anomaly.",
+      guidance: "Hazardous coastal sea-level fluctuations and strong marine currents.",
+      action: "Move away from sea beaches, harbors, and low-lying coastal fringes to higher inland terrain immediately.",
+    };
+  }
+  if (k === "marine" || title.includes("marine") || title.includes("wave")) {
+    return {
+      category: "Marine Sea-State Advisory",
+      threat: "High swell breakers and turbulent coastal surf.",
+      guidance: "Dangerous navigational conditions for small craft and artisanal fishing vessels.",
+      action: "Fishermen advised not to venture into open deep waters; port cautionary signals active.",
+    };
+  }
+  if (k === "wind" || title.includes("wind")) {
+    return {
+      category: "Gale / High Wind Advisory",
+      threat: "Strong wind gusts and turbulent squalls.",
+      guidance: "Risk of broken tree limbs, dislodged signages, and temporary utility interruptions.",
+      action: "Park vehicles clear of large trees and secure loose construction scaffolding.",
+    };
+  }
+  return {
+    category: "Official Disaster Advisory",
+    threat: "Severe meteorological or environmental advisory active.",
+    guidance: "Elevated risk conditions evaluated for this administrative jurisdiction.",
+    action: "Monitor verified government bulletins and follow local civil defense advisories.",
+  };
+}
 
 function openAlert(w: { url?: string | null; href_kind?: string | null; lat?: number | null; lon?: number | null; kind?: string | null }, onNavigateData?: (sub: string) => void, setTab?: (t: "map" | "analytics" | "model" | "data") => void, setMapFocus?: (c: [number, number]) => void) {
   if (w.url && (w.href_kind === "bulletin" || /^https?:/i.test(w.url))) {
@@ -249,6 +758,323 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
   );
 }
 
+// Precision Vector SVG Icons for Professional Alert Presentation (Zero Emojis)
+function IconPin({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-3.5 h-3.5"}>
+      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+
+function IconShieldAlert({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-3.5 h-3.5"}>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      <path d="M12 8v4" />
+      <path d="M12 16h.01" />
+    </svg>
+  );
+}
+
+function IconWarningSign({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-3.5 h-3.5"}>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+function IconFileBulletin({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-3.5 h-3.5"}>
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <line x1="10" y1="9" x2="8" y2="9" />
+    </svg>
+  );
+}
+
+function IconMapNavigator({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-3.5 h-3.5"}>
+      <polygon points="3 11 22 2 13 21 11 13 3 11" />
+    </svg>
+  );
+}
+
+function IconExternal({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-3 h-3"}>
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
+function IconCross({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-4 h-4"}>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+function IconSparkle({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-3.5 h-3.5"}>
+      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+    </svg>
+  );
+}
+
+function IconCyclone({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-4 h-4"}>
+      <path d="M12 2a10 10 0 0 0-7.07 17.07M12 22a10 10 0 0 0 7.07-17.07" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M8.5 8.5a5 5 0 0 1 7 0" />
+      <path d="M15.5 15.5a5 5 0 0 1-7 0" />
+    </svg>
+  );
+}
+
+function IconSeismic({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-4 h-4"}>
+      <path d="M2 12h3l2.5-6 4 12 3.5-9 2 6 2-3h5" />
+    </svg>
+  );
+}
+
+function IconTsunamiWave({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-5 h-5"}>
+      <path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+      <path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+      <path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+    </svg>
+  );
+}
+
+// Vivid, Eye-Catching Emergency & Hazard Theme Palette
+const HAZARD_THEMES: Record<
+  string,
+  {
+    color: string;
+    borderClass: string;
+    badgeBg: string;
+    badgeText: string;
+    cardBg: string;
+    label: string;
+  }
+> = {
+  rainfall: {
+    color: "#2563eb",
+    borderClass: "border-l-blue-500 dark:border-l-blue-400",
+    badgeBg: "rgba(37, 99, 235, 0.12)",
+    badgeText: "#2563eb",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #2563eb 8%), var(--card))",
+    label: "Heavy Rainfall",
+  },
+  flood: {
+    color: "#0284c7",
+    borderClass: "border-l-sky-500 dark:border-l-sky-400",
+    badgeBg: "rgba(2, 132, 199, 0.12)",
+    badgeText: "#0284c7",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #0284c7 8%), var(--card))",
+    label: "Flood & Inundation",
+  },
+  thunderstorm: {
+    color: "#8b5cf6",
+    borderClass: "border-l-violet-500 dark:border-l-violet-400",
+    badgeBg: "rgba(139, 92, 246, 0.12)",
+    badgeText: "#8b5cf6",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #8b5cf6 8%), var(--card))",
+    label: "Thunderstorm Squall",
+  },
+  lightning: {
+    color: "#a855f7",
+    borderClass: "border-l-purple-500 dark:border-l-purple-400",
+    badgeBg: "rgba(168, 85, 247, 0.12)",
+    badgeText: "#a855f7",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #a855f7 8%), var(--card))",
+    label: "Lightning Hazard",
+  },
+  cloudburst: {
+    color: "#4f46e5",
+    borderClass: "border-l-indigo-500 dark:border-l-indigo-400",
+    badgeBg: "rgba(79, 70, 229, 0.12)",
+    badgeText: "#4f46e5",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #4f46e5 8%), var(--card))",
+    label: "Cloudburst Torrent",
+  },
+  cyclone: {
+    color: "#e11d48",
+    borderClass: "border-l-rose-500 dark:border-l-rose-400",
+    badgeBg: "rgba(225, 29, 72, 0.12)",
+    badgeText: "#e11d48",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #e11d48 8%), var(--card))",
+    label: "Tropical Cyclone",
+  },
+  heatwave: {
+    color: "#ea580c",
+    borderClass: "border-l-orange-500 dark:border-l-orange-400",
+    badgeBg: "rgba(234, 88, 12, 0.12)",
+    badgeText: "#ea580c",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #ea580c 8%), var(--card))",
+    label: "Heatwave Advisory",
+  },
+  drought: {
+    color: "#d97706",
+    borderClass: "border-l-amber-500 dark:border-l-amber-400",
+    badgeBg: "rgba(217, 119, 6, 0.12)",
+    badgeText: "#d97706",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #d97706 8%), var(--card))",
+    label: "Agricultural Drought",
+  },
+  aqi: {
+    color: "#059669",
+    borderClass: "border-l-emerald-500 dark:border-l-emerald-400",
+    badgeBg: "rgba(5, 150, 105, 0.12)",
+    badgeText: "#059669",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #059669 8%), var(--card))",
+    label: "Air Quality (AQI)",
+  },
+  seismic: {
+    color: "#c2410c",
+    borderClass: "border-l-amber-600 dark:border-l-amber-500",
+    badgeBg: "rgba(194, 65, 12, 0.12)",
+    badgeText: "#c2410c",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #c2410c 8%), var(--card))",
+    label: "Seismic Motion",
+  },
+  tsunami: {
+    color: "#0d9488",
+    borderClass: "border-l-teal-500 dark:border-l-teal-400",
+    badgeBg: "rgba(13, 148, 136, 0.12)",
+    badgeText: "#0d9488",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #0d9488 8%), var(--card))",
+    label: "Tsunami Early Watch",
+  },
+  marine: {
+    color: "#0284c7",
+    borderClass: "border-l-cyan-500 dark:border-l-cyan-400",
+    badgeBg: "rgba(2, 132, 199, 0.12)",
+    badgeText: "#0284c7",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #0284c7 8%), var(--card))",
+    label: "Marine Sea-State",
+  },
+  wind: {
+    color: "#06b6d4",
+    borderClass: "border-l-cyan-500 dark:border-l-cyan-400",
+    badgeBg: "rgba(6, 182, 212, 0.12)",
+    badgeText: "#06b6d4",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #06b6d4 8%), var(--card))",
+    label: "High Wind Squall",
+  },
+};
+
+function getHazardTheme(hazardOrKind?: string) {
+  const k = (hazardOrKind || "").toLowerCase().trim();
+  if (k.includes("rain") || k.includes("precip")) return HAZARD_THEMES.rainfall;
+  if (k.includes("flood") || k.includes("discharge")) return HAZARD_THEMES.flood;
+  if (k.includes("cloudburst")) return HAZARD_THEMES.cloudburst;
+  if (k.includes("thunder") || k.includes("squall")) return HAZARD_THEMES.thunderstorm;
+  if (k.includes("lightning")) return HAZARD_THEMES.lightning;
+  if (k.includes("cyclone") || k.includes("depression")) return HAZARD_THEMES.cyclone;
+  if (k.includes("heat")) return HAZARD_THEMES.heatwave;
+  if (k.includes("drought")) return HAZARD_THEMES.drought;
+  if (k.includes("aqi") || k.includes("air") || k.includes("pm2")) return HAZARD_THEMES.aqi;
+  if (k.includes("seismic") || k.includes("earthquake") || k.includes("quake")) return HAZARD_THEMES.seismic;
+  if (k.includes("tsunami")) return HAZARD_THEMES.tsunami;
+  if (k.includes("marine") || k.includes("wave")) return HAZARD_THEMES.marine;
+  if (k.includes("wind") || k.includes("gale")) return HAZARD_THEMES.wind;
+  return HAZARD_THEMES.rainfall;
+}
+
+// Great-circle Haversine Distance (in km)
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
+
+// Clean and parse official CAP JSON or text bulletins
+function formatOfficialBulletin(body?: string | null, rawTitle?: string): {
+  headline?: string;
+  description: string;
+  instructions?: string;
+  areaDesc?: string;
+  severity?: string;
+  urgency?: string;
+  isStructuredJson: boolean;
+} {
+  const text = (body || rawTitle || "").trim();
+  if (!text) {
+    return { description: "Official meteorological warning bulletin in effect for this region.", isStructuredJson: false };
+  }
+
+  // Attempt to parse JSON string or extract JSON block
+  let parsed: Record<string, any> | null = null;
+  if (text.startsWith("{") && text.endsWith("}")) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+  } else {
+    const jsonMatch = text.match(/\{[\s\S]*"headline"[\s\S]*\}/) || text.match(/\{[\s\S]*"description"[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch {
+        parsed = null;
+      }
+    }
+  }
+
+  if (parsed && typeof parsed === "object") {
+    return {
+      headline: parsed.headline || parsed.event || parsed.title || undefined,
+      description: parsed.description || parsed.msg || parsed.summary || parsed.details || text,
+      instructions: parsed.instruction || parsed.instructions || parsed.action || undefined,
+      areaDesc: parsed.areaDesc || parsed.area || parsed.scope || undefined,
+      severity: parsed.severity || parsed.level || undefined,
+      urgency: parsed.urgency || undefined,
+      isStructuredJson: true,
+    };
+  }
+
+  // Clean XML tags, CAP markers, and clean whitespace
+  const cleaned = text
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\b(CAP-India|NDMA|IMD)\s*::\s*/gi, "")
+    .replace(/\\n/g, "\n")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return {
+    description: cleaned || "Official meteorological warning in effect.",
+    isStructuredJson: false,
+  };
+}
+
 function RiskAlertPanel({
   dash,
   locale,
@@ -264,160 +1090,758 @@ function RiskAlertPanel({
 }) {
   const t = COPY[locale];
   const setTab = useApp((s) => s.setTab);
+  const setLocation = useApp((s) => s.setLocation);
+  const openFloatChat = useApp((s) => s.openFloatChat);
   const applySuggestion = useApp((s) => s.applySuggestion);
   const [panelTab, setPanelTab] = useState<"alerts" | "risks">("alerts");
+  const [selectedCluster, setSelectedCluster] = useState<AlertCluster | null>(null);
+
   const risks = useMemo(() => {
     return [...(dash.risks || [])].sort((a, b) => (b.score_pct ?? 0) - (a.score_pct ?? 0));
   }, [dash.risks]);
 
+  const clusters = useMemo(() => {
+    return groupAlertsByLocation(allAlerts, dash.location);
+  }, [allAlerts, dash.location]);
+
+  const handleSwitchLocation = (locInfo: {
+    city: string;
+    state: string;
+    lat?: number | null;
+    lon?: number | null;
+    placeFormatted: string;
+  }) => {
+    if (locInfo.lat != null && locInfo.lon != null) {
+      setLocation({
+        id: `loc_${locInfo.lat}_${locInfo.lon}`,
+        label: `${locInfo.city}, ${locInfo.state}`,
+        district: locInfo.city,
+        state: locInfo.state,
+        country: "India",
+        lat: Number(locInfo.lat),
+        lon: Number(locInfo.lon),
+        timezone: "Asia/Kolkata",
+        crop_hint: "Rice",
+        place_name: locInfo.city,
+      });
+      return;
+    }
+
+    const key = locInfo.city.toLowerCase().trim();
+    const matched =
+      INDIA_CITIES_MAP[key] ||
+      Object.values(INDIA_CITIES_MAP).find(
+        (c) => c.state.toLowerCase() === locInfo.state.toLowerCase() || c.city.toLowerCase() === key
+      );
+
+    if (matched) {
+      setLocation({
+        id: `loc_${matched.lat}_${matched.lon}`,
+        label: `${matched.city}, ${matched.state}`,
+        district: matched.city,
+        state: matched.state,
+        country: "India",
+        lat: matched.lat,
+        lon: matched.lon,
+        timezone: "Asia/Kolkata",
+        crop_hint: "Rice",
+        place_name: matched.city,
+      });
+      return;
+    }
+
+    searchPlaces(`${locInfo.city}, ${locInfo.state}`).then((res) => {
+      if (res && res[0]) {
+        setLocation(res[0]);
+      }
+    });
+  };
+
   return (
-    <aside className={`neo flex flex-col overflow-hidden select-none ${className || "h-[460px] max-h-[460px]"}`}>
-      {/* Header with Segmented Navigation */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--line)] px-3 py-2">
-        <div className="flex items-center gap-1.5">
-          <span className="live-dot" aria-hidden />
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
-            {panelTab === "alerts" ? t.alertsPanel || "Alerts" : "Risk Index"}
-          </p>
+    <>
+      <aside className={`neo flex flex-col overflow-hidden select-none ${className || "h-[460px] max-h-[460px]"}`}>
+        {/* Header with Segmented Navigation */}
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--line)] px-3 py-2">
+          <div className="flex items-center gap-1.5">
+            <span className="live-dot" aria-hidden />
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+              {panelTab === "alerts" ? t.alertsPanel || "Alerts" : "Risk Index"}
+            </p>
+          </div>
+
+          <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+            <button
+              type="button"
+              onClick={() => setPanelTab("alerts")}
+              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                panelTab === "alerts"
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : "text-neo-muted hover:text-neo-text"
+              }`}
+            >
+              <span>Alerts</span>
+              {allAlerts.length > 0 && (
+                <span className="rounded-full bg-gradient-to-r from-rose-500 to-red-600 text-white px-1.5 py-0.5 text-[8px] font-black leading-none shadow-sm animate-pulse">
+                  {allAlerts.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPanelTab("risks")}
+              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
+                panelTab === "risks"
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : "text-neo-muted hover:text-neo-text"
+              }`}
+            >
+              Risks ({risks.length})
+            </button>
+          </div>
         </div>
 
-        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-          <button
-            type="button"
-            onClick={() => setPanelTab("alerts")}
-            className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 ${
-              panelTab === "alerts"
-                ? "bg-neo-accent text-white shadow-sm"
-                : "text-neo-muted hover:text-neo-text"
-            }`}
-          >
-            <span>Alerts</span>
-            {allAlerts.length > 0 && (
-              <span className="rounded-full bg-neo-danger text-white px-1.5 py-0 text-[8px] font-extrabold leading-none">
-                {allAlerts.length}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => setPanelTab("risks")}
-            className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-              panelTab === "risks"
-                ? "bg-neo-accent text-white shadow-sm"
-                : "text-neo-muted hover:text-neo-text"
-            }`}
-          >
-            Risks ({risks.length})
-          </button>
-        </div>
-      </div>
-
-      {/* Content Area */}
-      <div className="min-h-0 flex-1 overflow-y-auto p-2.5 space-y-2">
-        {panelTab === "alerts" ? (
-          allAlerts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full min-h-[140px] text-center p-3">
-              <div className="h-8 w-8 rounded-full bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] flex items-center justify-center text-neo-accent mb-2">
-                ✓
-              </div>
-              <p className="text-xs font-bold text-neo-text">{t.allClear || "No urgent bulletin"}</p>
-              <p className="text-[10px] text-neo-muted mt-0.5 max-w-[200px] leading-relaxed">
-                Quiet watches for flood, air, marine, seismic & tsunami stay active below.
-              </p>
-            </div>
-          ) : (
-            allAlerts.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                className={`w-full rounded-xl border-l-[3px] px-2.5 py-2 text-left transition-colors hover:brightness-110 ${
-                  alertTone[w.severity] ?? "border-l-[var(--line)]"
-                }`}
-                onClick={() =>
-                  openAlert(w, onNavigateData, setTab, (c) => applySuggestion({ center: c, tab: "map", zoom: 7 }))
-                }
-              >
-                <div className="flex items-center gap-2">
-                  <p className={`text-[9px] font-bold uppercase tracking-widest ${alertDot[w.severity] ?? "text-neo-muted"}`}>
-                    {w.severity}
-                  </p>
-                  {w.scope === "india" ? (
-                    <span className="chip ml-auto text-[9px] px-1.5 py-0">India</span>
-                  ) : (
-                    <span className="chip ml-auto text-[9px] px-1.5 py-0 capitalize">
-                      {w.kind || (w.hazard === "seismic" ? "Earthquake" : w.hazard === "air" ? "Air Quality" : w.hazard)}
-                    </span>
-                  )}
+        {/* Content Area with Custom Scrollbar */}
+        <div className="modal-scrollbar min-h-0 flex-1 overflow-y-auto p-2.5 space-y-2.5">
+          {panelTab === "alerts" ? (
+            clusters.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full min-h-[140px] text-center p-4">
+                <div className="h-8 w-8 rounded-full bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] flex items-center justify-center text-neo-accent mb-2">
+                  <IconShieldAlert className="w-4 h-4" />
                 </div>
-                <p className="mt-0.5 text-xs font-semibold leading-snug">{w.title}</p>
-                {w.body ? (
-                  <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-neo-muted">{w.body}</p>
-                ) : null}
-                <p className="mt-0.5 text-[9px] uppercase tracking-wide text-neo-muted">
-                  {w.source}
-                  {w.url ? " · bulletin" : ""}
+                <p className="text-xs font-bold text-neo-text">{t.allClear || "No urgent bulletin"}</p>
+                <p className="text-[10px] text-neo-muted mt-0.5 max-w-[220px] leading-relaxed">
+                  Prithvi-Netra scans for flood, air, marine, seismic & tsunami quiet watches remain active.
                 </p>
-              </button>
-            ))
-          )
-        ) : (
-          <div className="space-y-2">
-            {risks.length === 0 ? (
-              <p className="text-center text-xs text-neo-muted py-6">No risk factors evaluated.</p>
+              </div>
             ) : (
-              risks.map((r) => {
-                const isHigh = r.severity === "danger" || r.severity === "alert" || r.score_pct >= 50;
+              clusters.map((cluster) => {
+                const theme = cluster.primaryTheme;
+
                 return (
                   <div
-                    key={r.id}
-                    className="neo-in p-2.5 rounded-xl cursor-pointer hover:border-neo-accent transition-all"
-                    onClick={() => onNavigateData?.("risks")}
+                    key={cluster.id}
+                    className={`group relative w-full rounded-2xl border-l-[5px] p-3 text-left transition-all hover:shadow-lg hover:-translate-y-0.5 cursor-pointer border border-[var(--line)] ${theme.borderClass}`}
+                    style={{ background: theme.cardBg }}
+                    onClick={() => handleSwitchLocation(cluster)}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-neo-text">{r.label}</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-xs font-black text-neo-accent">{r.score_pct}%</span>
+                    {/* Top Row: Place Heading: City (State) + Highest Severity Badge + Multi-Threat Counter */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <div
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md"
+                          style={{ backgroundColor: `color-mix(in srgb, ${theme.color} 15%, transparent)`, color: theme.color }}
+                        >
+                          <IconPin className="w-3 h-3" />
+                        </div>
+                        <h4 className="text-xs font-black text-neo-text tracking-tight leading-snug break-words">
+                          {cluster.placeFormatted}
+                        </h4>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {cluster.alerts.length > 1 ? (
+                          <span className="chip text-[8px] font-black uppercase px-2 py-0.5 rounded-md border border-[var(--line)] bg-[color-mix(in_srgb,var(--card)_80%,var(--line))] text-neo-muted">
+                            {cluster.alerts.length} Hazards Active
+                          </span>
+                        ) : (
+                          <span
+                            className="chip text-[8px] font-bold px-2 py-0.5 rounded-md border"
+                            style={{
+                              color: theme.color,
+                              backgroundColor: `color-mix(in srgb, ${theme.color} 10%, var(--card))`,
+                              borderColor: `color-mix(in srgb, ${theme.color} 30%, transparent)`,
+                            }}
+                          >
+                            {theme.label}
+                          </span>
+                        )}
                         <span
-                          className={`chip text-[8px] font-extrabold uppercase px-1.5 py-0 ${
-                            isHigh
-                              ? "bg-[color-mix(in_srgb,var(--danger)_15%,transparent)] text-neo-danger"
-                              : "bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-neo-accent"
+                          className={`chip text-[8px] font-black uppercase px-2 py-0.5 rounded-md shadow-sm ${
+                            cluster.isExtreme
+                              ? "bg-gradient-to-r from-red-600 to-rose-600 text-white font-extrabold"
+                              : cluster.isWarning
+                              ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold"
+                              : "bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-extrabold"
                           }`}
                         >
-                          {r.severity}
+                          {cluster.highestSeverity}
                         </span>
                       </div>
                     </div>
-                    {/* Progress bar */}
-                    <div className="mt-1.5 h-1.5 w-full rounded-full bg-[var(--line)] overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{
-                          width: `${Math.min(100, Math.max(5, r.score_pct))}%`,
-                          backgroundColor: isHigh ? "var(--danger)" : "var(--accent)",
-                        }}
-                      />
-                    </div>
-                    {r.factors?.[0] && (
-                      <p className="mt-1 text-[9px] text-neo-muted truncate">
-                        Primary driver: <span className="font-medium text-neo-text">{r.factors[0].label}</span> ({r.factors[0].contribution_pct}%)
-                      </p>
+
+                    {/* Multi-Hazard Micro-Pills Row */}
+                    {cluster.alerts.length > 1 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {cluster.hazardItems.map((hi, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-1 text-[8.5px] font-bold px-2 py-0.5 rounded-lg border shadow-xs"
+                            style={{
+                              color: hi.theme.color,
+                              backgroundColor: `color-mix(in srgb, ${hi.theme.color} 10%, var(--card))`,
+                              borderColor: `color-mix(in srgb, ${hi.theme.color} 30%, transparent)`,
+                            }}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: hi.theme.color }} />
+                            <span>{hi.label}</span>
+                          </span>
+                        ))}
+                      </div>
                     )}
+
+                    {/* Hazard Title (Synthesized / Non-redundant) */}
+                    <p
+                      className="mt-1.5 text-xs font-black leading-snug tracking-tight"
+                      style={{ color: theme.color }}
+                    >
+                      {cluster.compositeTitle}
+                    </p>
+
+                    {/* Synthesized Impact Message */}
+                    <p className="mt-1 text-[10px] leading-relaxed text-neo-text font-normal line-clamp-2">
+                      {cluster.compositeGuidance}
+                    </p>
+
+                    {/* Action directive snippet */}
+                    <div
+                      className="mt-2 flex items-start gap-1.5 text-[9px] p-2 rounded-xl border font-medium"
+                      style={{
+                        backgroundColor: `color-mix(in srgb, ${theme.color} 8%, var(--card))`,
+                        borderColor: `color-mix(in srgb, ${theme.color} 25%, transparent)`,
+                      }}
+                    >
+                      <IconWarningSign
+                        className="w-3.5 h-3.5 shrink-0 mt-0.5"
+                        style={{ color: theme.color }}
+                      />
+                      <span className="line-clamp-1 font-bold text-neo-text">{cluster.compositeAction}</span>
+                    </div>
+
+                    {/* Bottom Action Strip with Distance & Directives */}
+                    <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)] text-[9px]">
+                      <div className="flex items-center gap-1.5 font-mono">
+                        {cluster.isCurrentLoc ? (
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Active Location
+                          </span>
+                        ) : cluster.distKm != null ? (
+                          <span className="font-medium text-neo-muted flex items-center gap-1">
+                            <IconMapNavigator className="w-2.5 h-2.5" />
+                            {cluster.distKm} km from pin
+                          </span>
+                        ) : (
+                          <span className="font-medium text-neo-muted">Regional Scope</span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSwitchLocation(cluster);
+                          }}
+                          className="font-bold text-neo-accent hover:underline flex items-center gap-1"
+                          title={`Switch dashboard location to ${cluster.placeFormatted}`}
+                        >
+                          <span>Switch Pin</span>
+                          <IconExternal className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedCluster(cluster);
+                          }}
+                          className="rounded-lg bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] border border-[color-mix(in_srgb,var(--accent)_25%,transparent)] px-2 py-0.5 font-bold text-neo-accent hover:bg-neo-accent hover:text-white transition-all flex items-center gap-1 shadow-sm"
+                        >
+                          <IconFileBulletin className="w-2.5 h-2.5" />
+                          <span>Details</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 );
               })
+            )
+          ) : (
+            <div className="space-y-2">
+              {risks.length === 0 ? (
+                <p className="text-center text-xs text-neo-muted py-6">No risk factors evaluated.</p>
+              ) : (
+                risks.map((r) => {
+                  const score = r.score_pct ?? 0;
+                  const isSevere = score >= 70 || r.severity === "danger" || r.severity === "extreme";
+                  const isElevated = !isSevere && (score >= 40 || r.severity === "warning" || r.severity === "alert");
+
+                  const toneColor = isSevere
+                    ? "text-rose-600 dark:text-rose-400"
+                    : isElevated
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-slate-600 dark:text-slate-400";
+
+                  const barBg = isSevere
+                    ? "bg-rose-600 dark:bg-rose-500"
+                    : isElevated
+                    ? "bg-amber-500 dark:bg-amber-500"
+                    : "bg-slate-400/80 dark:bg-slate-500/80";
+
+                  const badgeStyle = isSevere
+                    ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20"
+                    : isElevated
+                    ? "bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/20"
+                    : "bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/20";
+
+                  const topFactor = [...(r.factors || [])].sort(
+                    (a, b) => (b.contribution_pct ?? 0) - (a.contribution_pct ?? 0)
+                  )[0];
+                  const topContrib = topFactor?.contribution_pct ?? 0;
+
+                  return (
+                    <div
+                      key={r.id}
+                      className="neo-in p-2.5 rounded-xl cursor-pointer hover:border-[color-mix(in_srgb,var(--line)_60%,var(--accent))] transition-all border border-[var(--line)]"
+                      onClick={() => onNavigateData?.("risks")}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-neo-text">{r.label}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`font-mono text-xs font-black ${toneColor}`}>
+                            {score}%
+                          </span>
+                          <span className={`chip text-[8px] font-extrabold uppercase px-2 py-0.5 rounded-md border ${badgeStyle}`}>
+                            {r.severity}
+                          </span>
+                        </div>
+                      </div>
+                      {/* Progress bar */}
+                      <div className="mt-1.5 h-1.5 w-full rounded-full bg-[color-mix(in_srgb,var(--line)_70%,transparent)] overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${barBg}`}
+                          style={{
+                            width: `${Math.min(100, Math.max(5, score))}%`,
+                          }}
+                        />
+                      </div>
+                      {score === 0 || topContrib === 0 ? (
+                        <p className="mt-1.5 text-[9px] text-neo-muted truncate flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/80 inline-block shrink-0" />
+                          <span>Nominal baseline · No active risk drivers</span>
+                        </p>
+                      ) : (
+                        <p className="mt-1.5 text-[9px] text-neo-muted truncate">
+                          Primary driver: <span className="font-semibold text-neo-text">{topFactor.label}</span> ({topContrib}%)
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+              <button
+                type="button"
+                onClick={() => onNavigateData?.("risks")}
+                className="w-full text-center text-[10px] font-bold text-neo-accent hover:underline py-1"
+              >
+                View Full Risk Matrix & Insights →
+              </button>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* In-Depth Warning Details Modal Dialog (Multi-Hazard Cluster, Zero Emojis, Sleek Scrollbar & JSON Cleaner) */}
+      {selectedCluster && (
+        <AlertDetailModal
+          cluster={selectedCluster}
+          dash={dash}
+          onClose={() => setSelectedCluster(null)}
+          onSwitchLocation={handleSwitchLocation}
+          onOpenMap={(c) => {
+            applySuggestion({ center: c, tab: "map", zoom: 8 });
+            setSelectedCluster(null);
+          }}
+          onAskAssistant={(prompt) => {
+            openFloatChat(prompt);
+            setSelectedCluster(null);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function AlertDetailModal({
+  cluster,
+  dash,
+  onClose,
+  onSwitchLocation,
+  onOpenMap,
+  onAskAssistant,
+}: {
+  cluster: AlertCluster;
+  dash: DashboardSnapshot;
+  onClose: () => void;
+  onSwitchLocation: (loc: {
+    city: string;
+    state: string;
+    lat?: number | null;
+    lon?: number | null;
+    placeFormatted: string;
+  }) => void;
+  onOpenMap: (center: [number, number]) => void;
+  onAskAssistant: (prompt: string) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<number>(-1); // -1 = Composite Synthesis Overview, 0..N = Individual Bulletin
+
+  const isMulti = cluster.alerts.length > 1;
+  const currentHazard = activeTab >= 0 ? cluster.hazardItems[activeTab] : cluster.hazardItems[0];
+  const activeAlert = activeTab >= 0 ? cluster.alerts[activeTab] : cluster.alerts[0];
+  const theme = activeTab >= 0 ? currentHazard.theme : cluster.primaryTheme;
+  const bulletin = formatOfficialBulletin(activeAlert.body, activeAlert.title);
+
+  const cleanSourceName = (src?: string) => {
+    const s = (src || "").toLowerCase();
+    if (s.includes("rituchakra") || s.includes("prithvi") || s.includes("scan")) {
+      return "Prithvi-Netra AI National Radar";
+    }
+    if (s.includes("imd") || s.includes("cap")) {
+      return "IMD CAP National Early Warning Network";
+    }
+    if (s.includes("cpcb") || s.includes("data.gov")) {
+      return "Central Pollution Control Board (CPCB)";
+    }
+    if (s.includes("flood") || s.includes("discharge")) {
+      return "Global Hydrological Discharge Model";
+    }
+    return src || "Official Early Warning Feed";
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-2xl max-h-[88vh] flex flex-col rounded-3xl border border-[var(--line)] shadow-2xl bg-[var(--card)] select-none text-left overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Top Header Bar */}
+        <div
+          className="flex items-start justify-between gap-3 p-5 border-b border-[var(--line)] shrink-0"
+          style={{ backgroundColor: theme.cardBg }}
+        >
+          <div>
+            <div className="flex items-center gap-2">
+              <IconPin className="w-4 h-4 text-neo-accent" />
+              <h2 className="text-lg sm:text-xl font-black text-neo-text tracking-tight">
+                {cluster.placeFormatted}
+              </h2>
+            </div>
+            <p className="mt-0.5 text-xs sm:text-sm font-black" style={{ color: theme.color }}>
+              {activeTab === -1 ? cluster.compositeTitle : currentHazard.hazardLabel}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className={`chip text-[9px] font-black uppercase px-2.5 py-1 ${
+                cluster.isExtreme
+                  ? "bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 font-extrabold"
+                  : cluster.isWarning
+                  ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-extrabold"
+                  : "bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 font-extrabold"
+              }`}
+            >
+              {activeTab === -1 ? cluster.highestSeverity : (activeAlert.severity || cluster.highestSeverity)}
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-8 w-8 rounded-full bg-[color-mix(in_srgb,var(--line)_80%,transparent)] border border-[var(--line)] flex items-center justify-center text-neo-muted hover:text-neo-text hover:bg-[var(--line)] transition-colors"
+            >
+              <IconCross className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Multi-Hazard Tab Switcher if cluster has multiple active alerts */}
+        {isMulti && (
+          <div className="flex items-center gap-1.5 px-5 py-2.5 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_70%,transparent)] overflow-x-auto modal-scrollbar shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab(-1)}
+              className={`px-3 py-1 rounded-xl text-xs font-black transition-all shrink-0 ${
+                activeTab === -1
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : "bg-[var(--card)] border border-[var(--line)] text-neo-muted hover:text-neo-text"
+              }`}
+            >
+              Overview Synthesis ({cluster.alerts.length})
+            </button>
+            {cluster.hazardItems.map((hi, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setActiveTab(idx)}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 border flex items-center gap-1.5 ${
+                  activeTab === idx
+                    ? "text-white shadow-sm font-black"
+                    : "bg-[var(--card)] text-neo-muted hover:text-neo-text"
+                }`}
+                style={{
+                  borderColor: activeTab === idx ? hi.theme.color : "var(--line)",
+                  backgroundColor: activeTab === idx ? hi.theme.color : undefined,
+                }}
+              >
+                <span>{hi.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Scrollable Content Area with Custom Scrollbar */}
+        <div className="modal-scrollbar min-h-0 flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Location Switch Banner */}
+          <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] border border-[color-mix(in_srgb,var(--accent)_30%,transparent)]">
+            <div className="text-xs min-w-0">
+              <p className="font-black text-neo-text flex items-center gap-1.5">
+                <IconMapNavigator className="w-3.5 h-3.5 text-neo-accent shrink-0" />
+                <span>Target Sector:</span>
+                <span className="text-neo-accent font-black break-words">{cluster.placeFormatted}</span>
+                {cluster.distKm != null && !cluster.isCurrentLoc && (
+                  <span className="text-[10px] font-mono text-neo-muted font-normal">({cluster.distKm} km away)</span>
+                )}
+              </p>
+              <p className="text-[10px] text-neo-muted mt-0.5 leading-relaxed">
+                {cluster.isCurrentLoc
+                  ? "Active location currently loaded in the dashboard."
+                  : "Switch active dashboard pin to load localized radar, hyetograph, and 7-day forecast."}
+              </p>
+            </div>
+            {!cluster.isCurrentLoc && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSwitchLocation(cluster);
+                  onClose();
+                }}
+                className="px-3.5 py-1.5 text-xs font-black rounded-xl bg-neo-accent text-white hover:brightness-110 shadow-sm transition-all shrink-0 flex items-center gap-1"
+              >
+                <span>Switch Pin</span>
+                <IconExternal className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {activeTab === -1 ? (
+            /* Composite Synthesis Overview Mode */
+            <div className="space-y-4">
+              {/* Multi-Hazard Matrix */}
+              <div className="neo-in p-4 rounded-2xl space-y-3 border border-[var(--line)]">
+                <div className="flex items-center gap-2">
+                  <IconShieldAlert className="w-4 h-4 text-neo-accent shrink-0" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-neo-accent">
+                    Compound Threat Assessment
+                  </h3>
+                </div>
+                <div className="space-y-2.5 text-xs">
+                  {cluster.hazardItems.map((hi, i) => (
+                    <div
+                      key={i}
+                      className="p-3 rounded-xl border border-[var(--line)]"
+                      style={{ backgroundColor: `color-mix(in srgb, ${hi.theme.color} 6%, var(--card))` }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-black text-xs" style={{ color: hi.theme.color }}>
+                          {hi.hazardLabel}
+                        </span>
+                        <span className="chip text-[8px] font-extrabold uppercase px-2 py-0.5 rounded-md border border-[var(--line)]">
+                          {hi.alert.severity || "Warning"}
+                        </span>
+                      </div>
+                      <p className="text-neo-text mt-1 text-xs leading-relaxed font-medium">
+                        {hi.guidance.threat} {hi.guidance.guidance}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Integrated Public Directives */}
+              <div className="p-3.5 rounded-2xl bg-[color-mix(in_srgb,var(--warn)_10%,transparent)] border border-[color-mix(in_srgb,var(--warn)_25%,transparent)] space-y-2">
+                <span className="font-black text-neo-warn text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                  <IconWarningSign className="w-3.5 h-3.5 text-neo-warn shrink-0" />
+                  Consolidated Emergency Action Directives:
+                </span>
+                <ul className="space-y-1.5 text-xs text-neo-text font-medium pl-1">
+                  {Array.from(new Set(cluster.hazardItems.map((h) => h.guidance.action))).map((action, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="font-bold text-neo-warn">•</span>
+                      <span>{action}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : (
+            /* Specific Hazard Bulletin View */
+            <div className="space-y-4">
+              {/* Section 1: Generalized Public Threat Assessment & Safety Protocol */}
+              <div className="neo-in p-4 rounded-2xl space-y-2.5 border border-[var(--line)]">
+                <div className="flex items-center gap-2">
+                  <IconShieldAlert className="w-4 h-4 text-neo-accent shrink-0" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-neo-accent">
+                    {currentHazard.guidance.category} — Safety Protocol
+                  </h3>
+                </div>
+                <div className="space-y-2 text-xs">
+                  <div>
+                    <span className="font-bold text-neo-muted text-[10px] uppercase tracking-wider block">
+                      Threat Assessment:
+                    </span>
+                    <p className="text-neo-text leading-relaxed font-semibold mt-0.5">{currentHazard.guidance.threat}</p>
+                  </div>
+                  <div>
+                    <span className="font-bold text-neo-muted text-[10px] uppercase tracking-wider block">
+                      Environmental Impact:
+                    </span>
+                    <p className="text-neo-text leading-relaxed mt-0.5">{currentHazard.guidance.guidance}</p>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-[color-mix(in_srgb,var(--warn)_10%,transparent)] border border-[color-mix(in_srgb,var(--warn)_25%,transparent)]">
+                    <span className="font-black text-neo-warn text-[10px] uppercase tracking-wider flex items-center gap-1">
+                      <IconWarningSign className="w-3 h-3 text-neo-warn" />
+                      Recommended Public Directives:
+                    </span>
+                    <p className="text-neo-text font-medium text-xs leading-relaxed mt-1">{currentHazard.guidance.action}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Official Agency Bulletin */}
+              <div className="neo-in p-4 rounded-2xl space-y-3 border border-[var(--line)]">
+                <div className="flex items-center justify-between gap-2 border-b border-[var(--line)] pb-2">
+                  <div className="flex items-center gap-2">
+                    <IconFileBulletin className="w-4 h-4 text-neo-text shrink-0" />
+                    <h3 className="text-xs font-black uppercase tracking-wider text-neo-text">
+                      Official Authority Bulletin
+                    </h3>
+                  </div>
+                  <span className="text-[9px] font-mono text-neo-muted uppercase font-bold">
+                    Source: {cleanSourceName(activeAlert.source)}
+                  </span>
+                </div>
+
+                {bulletin.isStructuredJson ? (
+                  <div className="space-y-2.5 text-xs">
+                    {bulletin.headline && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-neo-muted block">Headline / Event</span>
+                        <p className="font-bold text-neo-text text-sm mt-0.5">{bulletin.headline}</p>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-neo-muted block">Meteorological Summary</span>
+                      <p className="text-neo-text leading-relaxed mt-0.5 whitespace-pre-wrap">{bulletin.description}</p>
+                    </div>
+                    {bulletin.instructions && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-neo-warn block">Action & Directives</span>
+                        <p className="text-neo-text leading-relaxed mt-0.5">{bulletin.instructions}</p>
+                      </div>
+                    )}
+                    {bulletin.areaDesc && (
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-neo-muted block">Geographical Coverage</span>
+                        <p className="text-neo-muted font-mono text-[11px] mt-0.5">{bulletin.areaDesc}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-[color-mix(in_srgb,var(--bg)_60%,transparent)] border border-[var(--line)]">
+                    <p className="text-xs leading-relaxed text-neo-text whitespace-pre-wrap font-sans">
+                      {bulletin.description}
+                    </p>
+                  </div>
+                )}
+
+                {activeAlert.url && (
+                  <div className="pt-1">
+                    <a
+                      href={activeAlert.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-black text-neo-accent hover:underline"
+                    >
+                      <span>Open Official Portal Bulletin</span>
+                      <IconExternal className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Technical Telemetry & Metadata Parameters */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div className="neo-in p-2.5 rounded-xl text-center border border-[var(--line)]">
+              <span className="text-[9px] font-bold text-neo-muted uppercase block">Severity</span>
+              <span className="font-mono text-xs font-bold text-neo-accent capitalize mt-0.5 block">{cluster.highestSeverity}</span>
+            </div>
+            <div className="neo-in p-2.5 rounded-xl text-center border border-[var(--line)]">
+              <span className="text-[9px] font-bold text-neo-muted uppercase block">Coordinates</span>
+              <span className="font-mono text-xs font-bold text-neo-text mt-0.5 block truncate">
+                {cluster.lat != null && cluster.lon != null ? `${cluster.lat.toFixed(2)}°, ${cluster.lon.toFixed(2)}°` : "Regional"}
+              </span>
+            </div>
+            <div className="neo-in p-2.5 rounded-xl text-center border border-[var(--line)]">
+              <span className="text-[9px] font-bold text-neo-muted uppercase block">Active Hazards</span>
+              <span className="font-mono text-xs font-bold text-neo-text capitalize mt-0.5 block">{cluster.alerts.length} Warnings</span>
+            </div>
+            <div className="neo-in p-2.5 rounded-xl text-center border border-[var(--line)]">
+              <span className="text-[9px] font-bold text-neo-muted uppercase block">Live Distance</span>
+              <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 block">
+                {cluster.isCurrentLoc ? "Active Pin" : cluster.distKm != null ? `${cluster.distKm} km` : "Statewide"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Fixed Bottom Action Bar */}
+        <div className="flex items-center justify-between gap-2 p-4 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--card)_95%,transparent)] shrink-0 flex-wrap">
+          <div className="flex items-center gap-2">
+            {cluster.lat != null && cluster.lon != null && (
+              <button
+                type="button"
+                onClick={() => onOpenMap([cluster.lat!, cluster.lon!])}
+                className="px-3.5 py-2 text-xs font-bold rounded-xl border border-[var(--line)] bg-[var(--card)] hover:bg-[var(--line)] transition-all flex items-center gap-1.5 shadow-sm"
+              >
+                <IconMapNavigator className="w-3.5 h-3.5 text-neo-accent" />
+                <span>View on Map</span>
+              </button>
             )}
             <button
               type="button"
-              onClick={() => onNavigateData?.("risks")}
-              className="w-full text-center text-[10px] font-bold text-neo-accent hover:underline py-1"
+              onClick={() =>
+                onAskAssistant(
+                  `Explain the emergency hazard protocol and localized weather conditions for the alert at ${cluster.placeFormatted}`
+                )
+              }
+              className="px-3.5 py-2 text-xs font-bold rounded-xl border border-[var(--line)] bg-[var(--card)] hover:bg-[var(--line)] transition-all flex items-center gap-1.5 shadow-sm text-neo-text"
             >
-              View Full Risk Matrix & Insights →
+              <IconSparkle className="w-3.5 h-3.5 text-neo-accent" />
+              <span>Ask PRITHVI-AI</span>
             </button>
           </div>
-        )}
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-5 py-2 text-xs font-bold rounded-xl bg-[color-mix(in_srgb,var(--line)_80%,transparent)] hover:bg-[var(--line)] transition-all"
+          >
+            Close
+          </button>
+        </div>
       </div>
-    </aside>
+    </div>
   );
 }
 
@@ -519,7 +1943,7 @@ function AirCard({
                 tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
               }`}
             >
-              {id === "live" ? "Live" : id === "gases" ? "Gases" : id === "pollen" ? "Pollen" : "24h"}
+              {id === "live" ? "AQI" : id === "gases" ? "Gases" : id === "pollen" ? "Pollen" : "24h"}
             </button>
           ))}
         </div>
@@ -1125,7 +2549,9 @@ function TropicalCycloneCard({
     <section className="neo p-4 flex flex-col justify-between select-none min-h-[240px]">
       <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
         <div className="flex items-center gap-1.5">
-          <span className="text-base">🌀</span>
+          <div className="flex h-5 w-5 items-center justify-center rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400">
+            <IconCyclone className="w-3.5 h-3.5" />
+          </div>
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
             {t.tropicalCyclones || "TROPICAL CYCLONES"}
           </p>
@@ -1330,7 +2756,9 @@ function EarthquakeTsunamiCard({
     <section className="neo p-4 flex flex-col justify-between select-none min-h-[240px]">
       <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
         <div className="flex items-center gap-1.5">
-          <span className="text-base">⚡</span>
+          <div className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <IconSeismic className="w-3.5 h-3.5" />
+          </div>
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
             {t.earthquakeAndTsunami || "EARTHQUAKE & TSUNAMI"}
           </p>
@@ -1433,7 +2861,9 @@ function EarthquakeTsunamiCard({
                     INCOIS ITEWS DSS past-90-days catalog and real-time RSS feeds report normal baseline with zero coastal threat.
                   </p>
                 </div>
-                <span className="text-2xl ml-2">🌊</span>
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 ml-2">
+                  <IconTsunamiWave className="w-5 h-5" />
+                </div>
               </div>
             )}
             <div className="grid grid-cols-3 gap-1 text-center pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
