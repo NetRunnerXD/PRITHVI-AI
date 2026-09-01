@@ -162,11 +162,20 @@ export function EarlyWarnings({
                       <p className={`text-[10px] uppercase tracking-widest ${tone[w.severity] || ""}`}>{w.severity}</p>
                       <span className="chip">{w.scope === "india" ? "India" : hazardLabel(w.hazard, t)}</span>
                     </div>
-                    <p className="mt-2 text-sm font-semibold leading-snug">{w.title}</p>
+                    <p className="mt-2 text-sm font-semibold leading-snug">
+                      {w.url ? (
+                        <a href={w.url} target="_blank" rel="noopener noreferrer" className="underline decoration-neo-muted/40 underline-offset-2 hover:text-neo-accent">
+                          {w.title}
+                        </a>
+                      ) : (
+                        w.title
+                      )}
+                    </p>
                     {line ? <p className="mt-1 text-xs leading-snug text-neo-muted">{line}</p> : null}
                     <p className="mt-2 text-[10px] uppercase tracking-wide text-neo-muted">
                       {w.source}
                       {when ? ` · ${when}` : ""}
+                      {w.kind ? ` · ${w.kind}` : ""}
                     </p>
                   </article>
                 );

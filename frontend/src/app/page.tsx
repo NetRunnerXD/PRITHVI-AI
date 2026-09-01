@@ -110,7 +110,7 @@ export default function Page() {
 
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col gap-3 p-2 sm:p-3 lg:flex-row lg:p-4">
+    <div className="mx-auto flex min-h-screen max-w-[1600px] flex-col gap-3 p-2 pb-20 sm:p-3 sm:pb-20 lg:flex-row lg:p-4 lg:pb-4">
       <ThemeBoot />
       <Sidebar />
       <div className="min-w-0 flex-1 space-y-3">
@@ -177,7 +177,7 @@ export default function Page() {
                     onClick={() => setAnalyticsSubTab("metrics")}
                   >
                     <span className="text-sm">📊</span>
-                    <span>{locale === "hi" ? "लाइव मेट्रिक्स" : locale === "bn" ? "লাইভ মেট্রিক্স" : "Live Metrics"}</span>
+                    <span className="hidden sm:inline">{locale === "hi" ? "लाइव मेट्रिक्स" : locale === "bn" ? "লাইভ মেট্রিক্স" : "Live Metrics"}</span>
                   </button>
                   <button
                     type="button"
@@ -187,7 +187,7 @@ export default function Page() {
                     onClick={() => setAnalyticsSubTab("nowcast")}
                   >
                     <span className="text-sm">⚡</span>
-                    <span>{locale === "hi" ? "नाउकास्टिंग (Kalman)" : locale === "bn" ? "নাওকাস্টিং (Kalman)" : "Nowcasting & Kalman"}</span>
+                    <span className="hidden sm:inline">{locale === "hi" ? "नाउकास्टिंग (Kalman)" : locale === "bn" ? "নাওকাস্টিং (Kalman)" : "Nowcasting & Kalman"}</span>
                   </button>
                   <button
                     type="button"
@@ -197,7 +197,7 @@ export default function Page() {
                     onClick={() => setAnalyticsSubTab("forecast")}
                   >
                     <span className="text-sm">📈</span>
-                    <span>{locale === "hi" ? "पूर्वानुमान एवं ग्राफ़" : locale === "bn" ? "পূর্বাভাস ও গ্রাফ" : "Forecast & Graphs"}</span>
+                    <span className="hidden sm:inline">{locale === "hi" ? "पूर्वानुमान एवं ग्राफ़" : locale === "bn" ? "পূর্বাভাস ও গ্রাফ" : "Forecast & Graphs"}</span>
                   </button>
                 </div>
 
@@ -276,7 +276,7 @@ export default function Page() {
             {tab === "data" && dashboard ? (
               <div className="space-y-4">
                 {/* Data Subtabs */}
-                <div className="flex flex-wrap gap-1.5 p-1.5 rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-sm">
+                <div className="flex gap-1.5 p-1.5 rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-sm overflow-x-auto sm:flex-wrap">
                   {[
                     { id: "meteorology", label: "Meteorology" },
                     { id: "environment", label: "Air" },

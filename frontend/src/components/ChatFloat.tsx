@@ -18,7 +18,7 @@ export function ChatFloat() {
   }, []);
 
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[1200] flex flex-col items-end gap-2">
+    <div className="pointer-events-none fixed bottom-20 right-4 z-[1200] flex flex-col items-end gap-2 lg:bottom-4">
       {open ? (
         <div className="pointer-events-auto w-[min(100vw-1.5rem,24rem)] overflow-hidden rounded-organ shadow-neo">
           <ChatDock compact />
