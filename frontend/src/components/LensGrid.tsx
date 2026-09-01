@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import type { DashboardSnapshot } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
+import { useApp } from "@/lib/store";
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -93,6 +94,10 @@ export function LensGrid({
 }
 
 function Stat({ k, v }: { k: string; v: string }) {
+  const displayNull = useApp((s) => s.settings.displayNullValues);
+  if (!displayNull && (v == null || v === "—" || v === "" || v === "undefined" || v === "null")) {
+    return null;
+  }
   return (
     <div>
       <p className="text-[10px] uppercase tracking-widest text-neo-muted">{k}</p>

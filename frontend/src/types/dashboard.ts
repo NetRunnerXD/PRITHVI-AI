@@ -46,6 +46,13 @@ export type EarlyWarning = {
   distance_km?: number | null;
   linked_risk_id?: string | null;
   scope?: string | null;
+  url?: string | null;
+  href_kind?: string | null;
+  expires_at?: string | null;
+  states?: string[];
+  kind?: string | null;
+  lat?: number | null;
+  lon?: number | null;
 };
 
 export type WindHour = {

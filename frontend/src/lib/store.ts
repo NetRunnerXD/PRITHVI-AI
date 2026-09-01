@@ -23,6 +23,7 @@ export type AppSettings = {
   locale?: Locale;
   llmProvider?: string;
   showEvidence?: boolean;
+  displayNullValues?: boolean;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -37,6 +38,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   locale: "en",
   llmProvider: "ollama",
   showEvidence: false,
+  displayNullValues: false,
 };
 
 export function readSettings(): AppSettings {

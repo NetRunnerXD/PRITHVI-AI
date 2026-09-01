@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { DashboardSnapshot } from "@/types/dashboard";
+import { useApp } from "@/lib/store";
 
 function fmt(v: unknown): string {
   if (v == null || v === "") return "—";
@@ -29,6 +30,10 @@ function dur(sec: unknown): string {
 }
 
 function Stat({ k, v, scrollable }: { k: string; v: string; scrollable?: boolean }) {
+  const displayNull = useApp((s) => s.settings.displayNullValues);
+  if (!displayNull && (v == null || v === "—" || v === "" || v === "undefined" || v === "null" || v === "NaN" || v === "No reading" || v === "No nearby event")) {
+    return null;
+  }
   return (
     <div className="flex flex-col justify-center rounded-xl px-3 py-2.5 bg-[color-mix(in_srgb,var(--accent)_3%,transparent)] border border-[color-mix(in_srgb,var(--accent)_10%,transparent)] transition-all hover:bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] hover:border-[color-mix(in_srgb,var(--accent)_20%,transparent)] group">
       <p className="text-[9px] font-bold uppercase tracking-widest text-neo-muted transition-colors group-hover:text-neo-accent">{k}</p>

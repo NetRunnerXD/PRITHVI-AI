@@ -158,6 +158,15 @@ export function SettingsPanel() {
           <input type="checkbox" checked={settings.showHints} onChange={(e) => setSettings({ showHints: e.target.checked })} />
           {t.showHints}
         </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={Boolean(settings.displayNullValues)}
+            onChange={(e) => setSettings({ displayNullValues: e.target.checked })}
+          />
+          {t.displayNullValues || "Display Null Values"}
+        </label>
+        <p className="text-xs text-neo-muted">{t.displayNullValuesHint || "Show weather and sensor metrics with empty or null readings."}</p>
       </section>
 
       <section className="neo space-y-3 p-4">
