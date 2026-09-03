@@ -10,59 +10,47 @@ export type Preset = {
 export const PRESETS: Preset[] = [
   {
     id: "flood-wb",
-    label: { en: "WB flood ranking", hi: "बंगाल बाढ़ रैंक", bn: "বন্যা র‌্যাঙ্ক" },
+    label: { en: "Flood risk ranking", hi: "बाढ़ जोखिम रैंक", bn: "বন্যা ঝুঁকি র‌্যাঙ্ক" },
     text: {
-      en: "Which districts in West Bengal are more likely to get flooded? List them.",
-      hi: "पश्चिम बंगाल के कौन से जिले बाढ़ की दृष्टि से अधिक जोखिम में हैं? सूची दें।",
-      bn: "পশ্চিমবঙ্গের কোন কোন জেলায় বন্যার সম্ভাবনা বেশি? তালিকা দিন।",
+      en: "Which areas in this state are currently at high risk of waterlogging or flooding?",
+      hi: "इस राज्य के कौन से क्षेत्र वर्तमान में जलभराव या बाढ़ के उच्च जोखिम में हैं?",
+      bn: "এই রাজ্যের কোন কোন অঞ্চল বর্তমানে জলাবদ্ধতা বা বন্যার উচ্চ ঝুঁকিতে রয়েছে?",
     },
   },
   {
     id: "nowcast",
     label: { en: "Next 2 hours?", hi: "अगले 2 घंटे?", bn: "আগামী ২ ঘণ্টা?" },
     text: {
-      en: "Will it rain in the next 2 hours? Should I start the pump set now?",
-      hi: "अगले 2 घंटे बारिश होगी? क्या अभी पंप सेट चलाऊँ?",
-      bn: "আগামী ২ ঘণ্টায় বৃষ্টি হবে? এখন পাম্প সেট চালাব কি?",
+      en: "Will it rain in the next 2 hours and what is the cloud movement direction?",
+      hi: "क्या अगले 2 घंटे में बारिश होगी और बादलों की दिशा क्या है?",
+      bn: "আগামী ২ ঘণ্টায় কি বৃষ্টি হবে এবং মেঘের গতিপ্রকৃতি কেমন?",
     },
   },
-
   {
-    id: "irrigate",
-    label: { en: "Should I irrigate?", hi: "सिंचाई?", bn: "সেচ দেব?" },
+    id: "wind-air",
+    label: { en: "Wind & Air", hi: "पवन व वायु", bn: "বাতাস ও বায়ু" },
     text: {
-      en: "Rain in the next 3 days? Should I irrigate now?",
-      hi: "अगले तीन दिन बारिश कैसी रहेगी? क्या अभी सिंचाई करूँ?",
-      bn: "আগামী তিন দিনে বৃষ্টির সম্ভাবনা কেমন? এখন সেচ দেওয়া উচিত কি?",
-    },
-  },
-
-  {
-    id: "mandi",
-    label: { en: "State mandi prices", hi: "मंडी भाव", bn: "মান্ডি দাম" },
-    text: {
-      en: "Mandi prices across West Bengal today.",
-      hi: "आज पश्चिम बंगाल की मंडी कीमतें बताएँ।",
-      bn: "আজ পশ্চিমবঙ্গের মান্ডি দাম কেমন?",
+      en: "What are the current wind speeds, gusts, and air quality index (AQI) levels?",
+      hi: "वर्तमान हवा की गति, तेज झोंके और वायु गुणवत्ता (AQI) का स्तर क्या है?",
+      bn: "বর্তমান বাতাসের গতিবেগ, দমকা হাওয়া এবং বায়ুর মান (AQI) কেমন?",
     },
   },
   {
     id: "outlook",
     label: { en: "7-day outlook", hi: "7-दिन पूर्वानुमान", bn: "৭ দিনের পূর্বাভাস" },
     text: {
-      en: "Give the 7 day outlook and water balance.",
-      hi: "7 दिन का आउटलुक और जल संतुलन दें।",
-      bn: "৭ দিনের আউটলুক ও জল ভারসাম্য দিন।",
+      en: "Give the comprehensive 7-day weather outlook and temperature range.",
+      hi: "विस्तृत 7-दिवसीय मौसम पूर्वानुमान और तापमान सीमा बताएं।",
+      bn: "বিস্তারিত ৭ দিনের আবহাওয়া পূর্বাভাস এবং তাপমাত্রার বিস্তার জানান।",
     },
   },
-
   {
     id: "aqi",
     label: { en: "Air quality", hi: "वायु गुणवत्ता", bn: "বায়ুর মান" },
     text: {
-      en: "What is the air quality here and what should I do?",
-      hi: "यहाँ वायु गुणवत्ता कैसी है और क्या करना चाहिए?",
-      bn: "এখানে বায়ুর মান কেমন এবং কী করা উচিত?",
+      en: "What is the air quality here and are there any health advisories?",
+      hi: "यहाँ वायु गुणवत्ता कैसी है और क्या कोई स्वास्थ्य सलाह लागू है?",
+      bn: "এখানে বায়ুর মান কেমন এবং কোনো স্বাস্থ্য সংক্রান্ত সতর্কতা আছে কি?",
     },
   },
   {
@@ -78,14 +66,14 @@ export const PRESETS: Preset[] = [
     id: "quake",
     label: { en: "Quake / tsunami", hi: "भूकंप", bn: "ভূমিকম্প" },
     text: {
-      en: "Any nearby earthquake or tsunami watch?",
-      hi: "आसपास कोई भूकंप या सुनामी चेतावनी है क्या?",
-      bn: "কাছাকাছি কোনো ভূমিকম্প বা সুনামি সতর্কতা আছে কি?",
+      en: "Are there any nearby earthquake tremors or tsunami advisories?",
+      hi: "क्या आसपास कोई भूकंपीय गतिविधि या सुनामी चेतावनी दर्ज है?",
+      bn: "কাছাকাছি কোনো ভূকম্পন বা সুনামি সতর্কবার্তা রেকর্ড করা হয়েছে কি?",
     },
   },
 ];
 
-const ASK_IDS = ["nowcast", "outlook", "irrigate", "aqi", "sky", "quake", "flood-wb"] as const;
+const ASK_IDS = ["nowcast", "outlook", "wind-air", "aqi", "sky", "quake", "flood-wb"] as const;
 
 export function presetsFor(locale: Locale): { id: string; label: string; text: string }[] {
   return PRESETS.map((p) => ({ id: p.id, label: p.label[locale], text: p.text[locale] }));

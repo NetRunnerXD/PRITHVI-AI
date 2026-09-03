@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { COPY } from "@/i18n/copy";
-import { presetsFor } from "@/i18n/presets";
 import { streamChat } from "@/lib/api";
 import {
   SCHEDULED_LANGS,
   defaultSpeechLang,
+  loadSpeechStatus,
   speakText,
   speechSupported,
   startDictation,
@@ -55,7 +55,6 @@ export function ChatDock({
   } = useApp();
   const t = COPY[locale];
   const [text, setText] = useState("");
-  const [preset, setPreset] = useState("");
   const [showEn, setShowEn] = useState(false);
   const [answerFor, setAnswerFor] = useState("");
   const [speechLang, setSpeechLang] = useState(() => defaultSpeechLang(locale));
@@ -63,13 +62,12 @@ export function ChatDock({
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [speechErr, setSpeechErr] = useState("");
   const stopListen = useRef<(() => void) | null>(null);
-  const presets = presetsFor(locale);
   const scroller = useRef<HTMLDivElement>(null);
-  const support = useMemo(() => speechSupported(), []);
+  const [support, setSupport] = useState(() => speechSupported());
 
   useEffect(() => {
-    setPreset("");
-  }, [locale]);
+    void loadSpeechStatus().then(() => setSupport(speechSupported()));
+  }, []);
 
   useEffect(() => {
     setSpeechLang(defaultSpeechLang(locale));
@@ -92,8 +90,6 @@ export function ChatDock({
       stopSpeaking();
     };
   }, []);
-
-  const lastUser = useMemo(() => [...chat].reverse().find((m) => m.role === "user"), [chat]);
 
   async function run(message: string, opts?: { regenerate?: boolean }) {
     if (!message || streaming || !location) return;
@@ -164,7 +160,19 @@ export function ChatDock({
       (err) => {
         setListening(false);
         stopListen.current = null;
-        if (err && err !== "aborted" && err !== "no-speech") setSpeechErr(err);
+        if (err && err !== "aborted" && err !== "no-speech") {
+          if (err === "not-allowed") {
+            setSpeechErr("Microphone permission denied. Please allow microphone access in your browser settings.");
+          } else if (err === "audio-capture") {
+            setSpeechErr("No microphone detected or audio capture failed.");
+          } else if (err === "network") {
+            setSpeechErr("Speech recognition service network error.");
+          } else if (err === "unsupported") {
+            setSpeechErr("Speech recognition is not supported in this browser (Chrome / Edge / Safari recommended).");
+          } else {
+            setSpeechErr(`Speech recognition error: ${err}`);
+          }
+        }
       }
     );
   }
@@ -185,9 +193,26 @@ export function ChatDock({
   }
 
   const quickStarters = [
-    { label: "🌦️ Rain Forecast", query: "When will rainfall occur today in my area?" },
-    { label: "⚡ Active Hazards", query: "Are there any extreme thunderstorm or flood warnings?" },
-    { label: "🌾 Farming Advisory", query: "What are the recommended crop and irrigation actions for today?" },
+    {
+      label: t.chatStarterRainLabel || "Rain Forecast",
+      query: t.chatStarterRainQuery || "When will rainfall occur today in my area?",
+    },
+    {
+      label: t.chatStarterHazardsLabel || "Severe Hazards",
+      query: t.chatStarterHazardsQuery || "Are there any active thunderstorm, extreme heat, or severe weather alerts?",
+    },
+    {
+      label: t.chatStarterGeneralLabel || "Day Outlook & Outdoor",
+      query: t.chatStarterGeneralQuery || "What is today's weather outlook and conditions for travel and outdoor activities?",
+    },
+    {
+      label: locale === "hi" ? "पवन एवं वायु गुणवत्ता" : locale === "bn" ? "বাতাস ও বায়ুর মান" : "Wind & Air Quality",
+      query: locale === "hi"
+        ? "वर्तमान वायु गुणवत्ता (AQI) और हवा की गति क्या है?"
+        : locale === "bn"
+        ? "বর্তমান বায়ুর মান (AQI) এবং বাতাসের গতি কেমন?"
+        : "What are the current air quality (AQI) index and wind conditions?",
+    },
   ];
 
   return (
@@ -201,8 +226,8 @@ export function ChatDock({
       {/* Header with Copilot identity, language switcher, and controls */}
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--card)_95%,var(--line))] px-3.5 py-2.5">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-sm">
-            <IconSparkle className="h-4 w-4" />
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl overflow-hidden bg-gradient-to-tr from-blue-600/20 to-indigo-600/20 border border-white/20 shadow-sm">
+            <img src="/logo.png" alt="PRITHVI-AI" width={28} height={28} className="h-full w-full object-cover" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
@@ -275,9 +300,9 @@ export function ChatDock({
               <IconAdvisor className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs font-bold text-neo-text">How can I assist you with the weather?</p>
+              <p className="text-xs font-bold text-neo-text">{t.chatAssistTitle || "How can I assist you with the weather?"}</p>
               <p className="text-[10px] text-neo-muted mt-0.5">
-                Ask about hyper-local rainfall, IMD warnings, mandi logistics, or crop advice.
+                {t.chatAssistSub || "Ask about hyper-local rainfall, IMD alerts, air quality, wind trends, or 7-day outlooks."}
               </p>
             </div>
             {/* Quick Starters */}
@@ -349,12 +374,12 @@ export function ChatDock({
                   {speakingId === m.id ? (
                     <>
                       <IconVolumeOff className="h-3 w-3 text-rose-500 animate-pulse" />
-                      <span className="text-rose-500 font-bold">Stop Audio</span>
+                      <span className="text-rose-500 font-bold">{t.stopAudio || "Stop Audio"}</span>
                     </>
                   ) : (
                     <>
                       <IconVolume className="h-3 w-3" />
-                      <span>Listen</span>
+                      <span>{t.listenAudio || "Listen"}</span>
                     </>
                   )}
                 </button>
@@ -380,14 +405,14 @@ export function ChatDock({
           <div className="mb-2 flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-semibold animate-pulse">
             <div className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
-              <span>Listening in {SCHEDULED_LANGS.find((l) => l.id === speechLang)?.name || "Auto"}... Speak clearly</span>
+              <span>{t.listeningIn || "Listening in"} {SCHEDULED_LANGS.find((l) => l.id === speechLang)?.name || "Auto"}... {t.speakClearly || "Speak clearly"}</span>
             </div>
             <button
               type="button"
               onClick={toggleListen}
               className="text-[10px] font-black uppercase underline hover:opacity-80"
             >
-              Done
+              {t.done || "Done"}
             </button>
           </div>
         )}
