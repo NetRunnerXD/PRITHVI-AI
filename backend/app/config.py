@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     sms_dry_run: bool = True
     sms_alert_interval_s: float = 900.0
 
+    # Optional VEXYL Indic STT/TTS sidecars (empty = off; chat falls back to Web Speech).
+    vexyl_stt_url: str = ""
+    vexyl_tts_url: str = ""
+    vexyl_api_key: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

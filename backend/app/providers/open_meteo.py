@@ -107,17 +107,9 @@ async def forecast(lat: float, lon: float) -> dict[str, Any]:
             "latitude": lat,
             "longitude": lon,
             "current": _FC_CURRENT,
-            "hourly": _FC_HOURLY,
+            "hourly": f"{_FC_HOURLY},{_FC_HOURLY_EXTRA}",
             "past_days": 1,
             "daily": _FC_DAILY,
-            "forecast_days": 7,
-            "timezone": "Asia/Kolkata",
-        }
-        extra_params = {
-            "latitude": lat,
-            "longitude": lon,
-            "hourly": _FC_HOURLY_EXTRA,
-            "past_days": 1,
             "forecast_days": 7,
             "timezone": "Asia/Kolkata",
         }
@@ -133,14 +125,6 @@ async def forecast(lat: float, lon: float) -> dict[str, Any]:
             r.raise_for_status()
             data = r.json()
             if isinstance(data, dict) and not data.get("error"):
-                try:
-                    r2 = await client().get(FORECAST, params=extra_params)
-                    if r2.status_code < 400:
-                        extra = r2.json()
-                        if isinstance(extra, dict) and not extra.get("error"):
-                            data = _merge_om(data, extra)
-                except Exception:
-                    pass
                 _save_good("fc", lat, lon, data)
                 return data
             good = _load_good("fc", lat, lon)
@@ -164,51 +148,95 @@ async def forecast(lat: float, lon: float) -> dict[str, Any]:
 
 
 async def forecast_models(lat: float, lon: float) -> dict[str, Any]:
-    """Fetch daily fields for each blend member. Failures are skipped (429-safe)."""
-
-    async def one(sid: str, models: str) -> tuple[str, dict[str, Any] | None]:
+    """Fetch daily and hourly fields for all blend members in a single batched HTTP call."""
+    cached: dict[str, Any] = {}
+    missing = False
+    for sid, _ in BLEND_MODELS:
         key = f"om:blend:{sid}:{round(lat, 3)}:{round(lon, 3)}"
         hit = cache.get(key)
         if isinstance(hit, dict) and (hit.get("daily") or hit.get("hourly")):
-            return sid, hit
-        params = {
-            "latitude": lat,
-            "longitude": lon,
-            "hourly": (
-                "precipitation,temperature_2m,wind_speed_10m,wind_gusts_10m,"
-                "shortwave_radiation,visibility,relative_humidity_2m"
-            ),
-            "daily": (
-                "precipitation_sum,precipitation_probability_max,"
-                "temperature_2m_max,temperature_2m_min,wind_speed_10m_max,"
-                "wind_gusts_10m_max,shortwave_radiation_sum"
-            ),
-            "forecast_days": 7,
-            "timezone": "Asia/Kolkata",
-            "models": models,
-        }
-        try:
-            r = await client().get(FORECAST, params=params)
-            if r.status_code == 429:
-                await asyncio.sleep(0.4)
-                r = await client().get(FORECAST, params=params)
-            if r.status_code >= 400:
-                return sid, None
-            data = r.json()
-            if isinstance(data, dict) and not data.get("error") and data.get("daily"):
-                cache.set(key, data, 900)
-                return sid, data
-            return sid, None
-        except Exception:
-            return sid, None
+            cached[sid] = hit
+        else:
+            missing = True
 
-    rows = await asyncio.gather(*[one(sid, m) for sid, m in BLEND_MODELS])
-    res = {sid: payload for sid, payload in rows if payload}
-    if not res:
+    if not missing and cached:
+        return cached
+
+    unique_models = sorted(set(m for _, m in BLEND_MODELS))
+    daily_vars = (
+        "precipitation_sum",
+        "precipitation_probability_max",
+        "temperature_2m_max",
+        "temperature_2m_min",
+        "wind_speed_10m_max",
+        "wind_gusts_10m_max",
+        "shortwave_radiation_sum",
+    )
+    hourly_vars = (
+        "precipitation",
+        "temperature_2m",
+        "wind_speed_10m",
+        "wind_gusts_10m",
+        "shortwave_radiation",
+        "visibility",
+        "relative_humidity_2m",
+    )
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "daily": ",".join(daily_vars),
+        "hourly": ",".join(hourly_vars),
+        "forecast_days": 7,
+        "timezone": "Asia/Kolkata",
+        "models": ",".join(unique_models),
+    }
+
+    try:
+        r = await client().get(FORECAST, params=params)
+        if r.status_code == 429:
+            await asyncio.sleep(0.4)
+            r = await client().get(FORECAST, params=params)
+        if r.status_code < 400:
+            data = r.json()
+            if isinstance(data, dict) and not data.get("error"):
+                d_block = data.get("daily") or {}
+                h_block = data.get("hourly") or {}
+                time_d = d_block.get("time") or []
+                time_h = h_block.get("time") or []
+
+                for sid, m in BLEND_MODELS:
+                    sub_daily = {"time": time_d}
+                    has_data = False
+                    for v in daily_vars:
+                        k = f"{v}_{m}"
+                        if k in d_block:
+                            sub_daily[v] = d_block[k]
+                            has_data = True
+                    sub_hourly = {"time": time_h}
+                    for v in hourly_vars:
+                        k = f"{v}_{m}"
+                        if k in h_block:
+                            sub_hourly[v] = h_block[k]
+                    if has_data:
+                        member_pack = {
+                            "latitude": lat,
+                            "longitude": lon,
+                            "daily": sub_daily,
+                            "hourly": sub_hourly,
+                        }
+                        key = f"om:blend:{sid}:{round(lat, 3)}:{round(lon, 3)}"
+                        cache.set(key, member_pack, 900)
+                        cached[sid] = member_pack
+                if cached:
+                    return cached
+    except Exception:
+        pass
+
+    if not cached:
         base_fc = await forecast(lat, lon)
         if base_fc and isinstance(base_fc, dict) and base_fc.get("daily"):
-            res = {"best_match": base_fc}
-    return res
+            cached = {"best_match": base_fc}
+    return cached
 
 
 def _climatological_fallback(lat: float, lon: float) -> dict[str, Any]:

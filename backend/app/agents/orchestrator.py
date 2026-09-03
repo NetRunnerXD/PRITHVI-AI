@@ -25,7 +25,7 @@ from app.agents.data_tool import (
     suggestions_for,
 )
 from app.agents.dates import parse_window
-from app.agents.dimensions import extract_compare_other, mentioned_place
+from app.agents.dimensions import detect_domain, extract_compare_other, mentioned_place
 from app.data.india_districts import match_states
 from app.agents.facts import (
     drop_false_shrug,
@@ -230,6 +230,19 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     )
 
     prior = mem_load(payload.conversation_id)
+    history_en = await _english_history(payload.history)
+
+    # Layer 1: Semantic Context & Entity Extraction (Hybrid 2-Layer Pipeline)
+    from app.agents.layer1_parser import parse_semantic_context
+    layer1_ctx = await parse_semantic_context(
+        message_en,
+        history_en=history_en,
+        default_loc=loc,
+        prior_window=prior.window if prior else None,
+    )
+    domain = layer1_ctx.domain
+    activity = layer1_ctx.activity
+
     plan = interpret(message_en)
     tri = triage_classify(message_en, plan)
     if tri.kind == "emergency":
@@ -268,7 +281,22 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             },
         }
         return
+
     place = mt_place or plan.asked or mentioned_place(message_en) or mentioned_place(original)
+    if layer1_ctx.place_resolved and not is_blocked_name(layer1_ctx.place_raw or ""):
+        resolved = layer1_ctx.place_resolved
+        place = layer1_ctx.place_raw or resolved.place_name
+        plan.asked = place
+        plan.unknown_place = False
+        plan.needs_geocode = False
+        if plan.mode == "refuse":
+            plan.mode = "data"
+            plan.refuse = None
+        if not plan.needs and layer1_ctx.intent in ("forecast", "activity_feasibility"):
+            plan.needs = ["forecast", "rain_window"]
+    else:
+        resolved = None
+
     if place and script_of(original) and not mentioned_place(original) and not _place_matches_locus(place, pin_now, None):
         place = None
         plan.asked = None
@@ -278,7 +306,8 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         plan.asked = None
         plan.needs_geocode = False
         plan.follow = True
-    resolved = resolve_named_place(place) if place else None
+    if not resolved:
+        resolved = resolve_named_place(place) if place else None
     prior_pin = None
     if prior and prior.pin:
         try:
@@ -632,16 +661,27 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     if ollama_ok:
         try:
             messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM}]
-            messages.extend(await _english_history(payload.history))
-            hint_bits = []
+            messages.extend(history_en)
+            hint_bits = [
+                f"STYLE: Keep your answer conversational, short (2 to 4 sentences), and focused on only 1–3 essential metrics. "
+                f"Always provide 1 practical, actionable suggestion tailored to the user's operational domain ({domain})."
+            ]
             if window_hint:
-                hint_bits.append(f"Named dates (use only if you call rain_window): {window_hint['start']} to {window_hint['end']}.")
+                w_start, w_end = window_hint.get("start"), window_hint.get("end")
+                w_label = f"{w_start} to {w_end}" if w_start != w_end else str(w_start)
+                clock_str = f" at {window_hint.get('hour')}:00" if window_hint.get("hour") else ""
+                hint_bits.append(f"Named dates (use only if you call rain_window): {w_label}{clock_str}.")
+                hint_bits.append(
+                    f"SPECIFIC TIME OVERVIEW: The user asked about {w_label}{clock_str}. "
+                    "Provide a brief card-overview-style snapshot of key metrics (temperature, rain probability/mm, wind/sky) "
+                    "followed immediately by 1 actionable advice."
+                )
             if "rank" in needed or "states_weather" in needed:
                 st = ", ".join(gate.states) if gate.states else "the named state"
                 hint_bits.append(
-                    f"This is a ranking for {st}. Write a short numbered list of districts. "
+                    f"This is a ranking for {st}. Write a short numbered list of top 3 to 5 districts with their score. "
                     "Do not mention the dashboard town. Do not list other Indian states. "
-                    "Do not mention mandi, crops, or markets. Do not paste the source block twice."
+                    "Do not mention mandi, crops, or markets. Conclude with 1 regional advisory line."
                 )
             elif needed or tri.kind == "data":
                 named = "named this town in the question" if place else "did not name a town — use only the dashboard/GPS focus"
@@ -654,11 +694,6 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                     "Do not invent dates or millimetres. Quote only the data() pack for this window. "
                     "Do not mention mandi or farm prices unless the user asked."
                 )
-            if window_hint:
-                hint_bits.append(
-                    f"Time window is {window_hint.get('start')} to {window_hint.get('end')}. "
-                    "Do not quote other days as if they were this window."
-                )
             elif not needed and tri.kind != "data":
                 hint_bits.append(
                     "This is chit-chat. Do not fetch weather. Do not mention a town unless the user named one. "
@@ -667,10 +702,12 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                 )
             if place:
                 hint_bits.append(f"The user named {place}.")
-            pre_quote = present_answer(collected, window=window_hint)
+            if layer1_ctx.tailored_user_hint:
+                hint_bits.append(layer1_ctx.tailored_user_hint)
+            pre_quote = present_answer(collected, window=window_hint, compact=True, domain=domain, query=message_en, activity=activity)
             if pre_quote:
                 hint_bits.append(
-                    "Already fetched (use these figures; do not repeat this block verbatim):\n" + pre_quote
+                    "Already fetched figures (use only what was asked):\n" + pre_quote
                 )
             messages.append(
                 {
@@ -788,7 +825,8 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                             "content": (
                                 f"Question: {message_en}\n"
                                 f"Data this turn:\n{json.dumps(strip_forbidden(collected), ensure_ascii=False)[:8000]}\n"
-                                "Answer in 2–4 English sentences. No digits unless they appear in the data."
+                                f"Answer in 2–4 English sentences with 1 practical, actionable suggestion for the user ({domain}). "
+                                "Quote only 1–3 figures from the data. No raw dumps."
                             ),
                         },
                     ],
@@ -825,7 +863,8 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                             "content": (
                                 f"Question: {message_en}\n"
                                 f"Data this turn:\n{json.dumps(strip_forbidden(collected), ensure_ascii=False)[:8000]}\n"
-                                "Answer the user in 2–4 sentences. No digits unless they appear above. No JSON."
+                                f"Answer the user in 2–4 sentences with 1 actionable recommendation ({domain}). "
+                                "No digits unless they appear above. No JSON."
                             ),
                         },
                     ],
@@ -903,14 +942,15 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     content_en = strip_foreign_places(content_en, allowed, forbidden)
     content_en = fill_slots(content_en, collected)
     content_en = drop_false_shrug(content_en, collected)
-    quoted = present_answer(collected, window=window_hint)
+    quoted = present_answer(collected, window=window_hint, compact=True, domain=domain, query=message_en, activity=activity)
+    raw_ev = quote_facts(collected, window=window_hint)
     show_ev = bool(payload.show_evidence)
     llm_ok = bool(content_en) and not is_dash_soup(content_en) and not rejected
     if quoted and needed:
         if not llm_ok or not prose_has_payload_number(content_en, collected):
             content_en = quoted
-        elif show_ev and quoted not in content_en:
-            content_en = f"{content_en}\n\n---\nEvidence\n{quoted}".strip()
+        elif show_ev and raw_ev and raw_ev not in content_en:
+            content_en = f"{content_en}\n\n---\nEvidence\n{raw_ev}".strip()
     elif quoted and (not llm_ok or not prose_has_payload_number(content_en, collected) or is_dash_soup(content_en)):
         content_en = quoted
     if not content_en:

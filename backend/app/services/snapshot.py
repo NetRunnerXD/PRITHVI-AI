@@ -175,13 +175,19 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         return nasa_power.precip_series(raw)
 
     async def marine_bundle():
-        raw = await open_meteo.marine(loc.lat, loc.lon)
         coast = nearest_coast(loc.lat, loc.lon)
+        if coast["km"] > 250:
+            return {
+                "inland": True,
+                "nearest_coast": coast["name"],
+                "coast_km": coast["km"],
+            }
+        raw = await open_meteo.marine(loc.lat, loc.lon)
         raw = dict(raw or {})
         raw["nearest_coast"] = coast["name"]
         raw["coast_km"] = coast["km"]
         need = raw.get("inland") or (raw.get("current") or {}).get("wave_height") is None
-        if need and coast["km"] <= 280:
+        if need and coast["km"] <= 150:
             near = await open_meteo.marine(coast["lat"], coast["lon"])
             if (near.get("current") or {}).get("wave_height") is not None:
                 near = dict(near)
@@ -193,22 +199,23 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         if (raw.get("current") or {}).get("wave_height") is not None:
             raw["inland"] = False
         cur = dict(raw.get("current") or {})
-        off_lat, off_lon = (20.5, 88.0) if loc.lon >= 80 else (18.9, 72.6)
-        off = await open_meteo.marine(off_lat, off_lon)
-        ocur = off.get("current") or {}
-        oh = ocur.get("wave_height")
-        lh = cur.get("wave_height")
-        use_off = oh is not None and (lh is None or float(oh) > float(lh or 0) * 1.15)
-        if use_off:
-            merged = dict(off)
-            merged["nearest_coast"] = raw.get("nearest_coast") or coast["name"]
-            merged["coast_km"] = raw.get("coast_km") if raw.get("coast_km") is not None else coast["km"]
-            merged["inland"] = False
-            merged["snapped"] = True
-            merged["offshore"] = True
-            merged["offshore_lat"] = off_lat
-            merged["offshore_lon"] = off_lon
-            return merged
+        if coast["km"] <= 80:
+            off_lat, off_lon = (20.5, 88.0) if loc.lon >= 80 else (18.9, 72.6)
+            off = await open_meteo.marine(off_lat, off_lon)
+            ocur = off.get("current") or {}
+            oh = ocur.get("wave_height")
+            lh = cur.get("wave_height")
+            use_off = oh is not None and (lh is None or float(oh) > float(lh or 0) * 1.15)
+            if use_off:
+                merged = dict(off)
+                merged["nearest_coast"] = raw.get("nearest_coast") or coast["name"]
+                merged["coast_km"] = raw.get("coast_km") if raw.get("coast_km") is not None else coast["km"]
+                merged["inland"] = False
+                merged["snapped"] = True
+                merged["offshore"] = True
+                merged["offshore_lat"] = off_lat
+                merged["offshore_lon"] = off_lon
+                return merged
         return raw
 
     (

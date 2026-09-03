@@ -422,8 +422,265 @@ def quote_facts(collected: dict[str, Any], window: dict[str, str] | None = None)
     return "\n".join(lines).strip()
 
 
-def present_answer(collected: dict[str, Any], window: dict[str, str] | None = None) -> str:
-    """One clean user-facing block (no duplicated rank dump, no extra India HQ unless fetched)."""
+def generate_actionable_advice(domain: str, metrics: dict[str, Any], condition: str = "", activity: str | None = None) -> str:
+    """Generate concise, practical, domain-specific actionable advice."""
+    rain_mm = float(metrics.get("precip_mm") or metrics.get("precip_1h_mm") or 0.0)
+    rain_prob = float(metrics.get("precip_prob_pct") or 0.0)
+    temp_max = float(metrics.get("temp_max_c") or metrics.get("temp_c") or 28.0)
+    temp = float(metrics.get("temp_c") or temp_max)
+    wind = float(metrics.get("wind_kmh") or metrics.get("wind_speed_max_kmh") or 12.0)
+    aqi = metrics.get("aqi")
+    p_interrupt = float(metrics.get("p_interrupt_90m") or 0.0)
+    flood = float(metrics.get("flood_score") or 0.0)
+    sky = str(metrics.get("sky_label") or condition or "").lower()
+    act = (activity or "").lower()
+
+    if act in ("skydiving", "skydive", "paragliding", "paraglide"):
+        if wind >= 25:
+            return f"Surface winds near {_fmt(wind)} km/h exceed safe canopy thresholds; delay jumps until wind settles."
+        if rain_mm > 0.5 or rain_prob >= 40 or "rain" in sky or "thunder" in sky:
+            return "Precipitation and low cloud ceiling restrict flight visibility; suspend dropzone jumps."
+        return "Surface winds and cloud clearances are within typical canopy limits; verify local dropzone NOTAMs and upper-level wind shear."
+
+    if act in ("swim", "swimming"):
+        if rain_mm >= 2.0 or rain_prob >= 50 or "thunder" in sky or "rain" in sky:
+            return "Showers and lightning hazards make outdoor swimming unsafe; avoid open water or outdoor pools."
+        if wind >= 24:
+            return f"Brisk winds near {_fmt(wind)} km/h cause choppy waves; avoid swimming in open sea or unpatrolled beaches."
+        if temp_max <= 20:
+            return f"Cool daytime temperature of {_fmt(temp_max)}°C; water may be chilly for extended swimming."
+        return "Calm weather and warm daytime temperatures are favorable for swimming and pool activities."
+
+    if act in ("fishing", "finishing", "angling"):
+        if wind >= 25 or rain_mm >= 10:
+            return "Gusty winds and heavy showers make water conditions rough; hold off on fishing trips until weather settles."
+        if rain_mm >= 2.0 or rain_prob >= 40:
+            return "Light precipitation expected; keep waterproof gear handy along riverbanks or piers."
+        return "Favorable atmospheric conditions with light winds; good for outdoor fishing and shoreline activities."
+
+    if domain == "aviation":
+        if wind >= 28:
+            return f"Brisk winds of {_fmt(wind)} km/h may cause turbulence or crosswind issues; evaluate drone and VFR operational limits."
+        if rain_mm > 1.5 or "rain" in sky or "thunder" in sky:
+            return "Precipitation and reduced visibility limit VFR conditions; delay flights until the shower band clears."
+        if rain_prob >= 50:
+            return "Incoming precipitation chances may lower cloud bases; maintain a short return-to-base buffer."
+        return "Wind and visibility conditions are steady and favorable for UAV or light aircraft operations."
+
+    if domain == "disaster":
+        if flood >= 60 or rain_mm >= 35 or "thunder" in sky:
+            return "Heightened inundation potential; verify municipal drainage gates and advise vulnerable low-lying settlements."
+        if rain_mm >= 12 or flood >= 40:
+            return "Moderate rain expected; maintain routine observation on drainage channels and canal embankments."
+        return "Disaster and hydrological threat indicators are low; normal baseline monitoring is advised."
+
+    if domain == "farming":
+        if rain_mm >= 3.0 or rain_prob >= 60 or p_interrupt >= 0.5:
+            return "Postpone irrigation and fertilizer application to prevent nutrient runoff; keep field runoff channels open."
+        if temp_max >= 36:
+            return "Elevated daytime temperatures will increase evaporation; consider early morning or dusk irrigation."
+        if wind >= 22:
+            return "Wind speeds could cause agrochemical spray drift; reschedule foliar treatments."
+        return "Favorable dry conditions for field weeding, pesticide application, scheduled watering, or harvesting."
+
+    if domain == "marine":
+        if wind >= 32 or rain_mm >= 15:
+            return "Rough coastal sea conditions and gusty squalls; small fishing craft should avoid venturing offshore."
+        if wind >= 20:
+            return "Moderate swell along coastal waters; exercise vigilance near harbor entrances and shallow channels."
+        return "Calm sea state and nominal tidal flow; favorable for harbor navigation and coastal fishing."
+
+    # urban / general resident
+    if rain_mm >= 2.0 or rain_prob >= 50 or p_interrupt >= 0.4:
+        return "Carry an umbrella and expect possible transit delays during active shower windows."
+    if temp_max >= 35 or temp >= 35:
+        return "High daytime heat; stay hydrated and minimize strenuous outdoor exposure during the peak afternoon."
+    if aqi is not None and isinstance(aqi, (int, float)) and aqi >= 180:
+        return "Air quality is degraded; sensitive individuals should wear masks outdoors."
+    if temp_max <= 14:
+        return "Cool temperatures; keep a warm layer handy for morning and evening commutes."
+    return "Stable and comfortable atmospheric conditions—great for travel, commuting, or outdoor recreation."
+
+
+def format_card_overview(
+    collected: dict[str, Any],
+    window: dict[str, str] | None = None,
+    domain: str = "urban",
+    query: str = "",
+    activity: str | None = None,
+) -> str:
+    """Card-overview style brief summary with 1–3 essential metrics and 1 actionable advice."""
+    wstart = str((window or {}).get("start") or "")[:10]
+    wend = str((window or {}).get("end") or "")[:10]
+    clock = (window or {}).get("hour")
+    single_day = bool(wstart and wend and wstart == wend)
+
+    lines: list[str] = []
+
+    # 1. Ranking query
+    rank_pack = next((v for k, v in collected.items() if (k == "rank" or str(k).startswith("rank:")) and isinstance(v, dict)), None)
+    if rank_pack and rank_pack.get("ranked"):
+        ranked = rank_pack.get("ranked") or []
+        st = str(rank_pack.get("state") or "")
+        metric = str(rank_pack.get("metric") or "flood")
+        top_items = []
+        for i, r in enumerate(ranked[:3], 1):
+            if isinstance(r, dict):
+                score = _fmt(r.get("flood_score") or r.get("score") or r.get("precip_3d_mm"))
+                top_items.append(f"{i}. {r.get('district')} ({score})")
+        lines.append(f"Top {metric} districts in {st}: " + ", ".join(top_items) + ".")
+        top_precip = float((ranked[0] if ranked and isinstance(ranked[0], dict) else {}).get("precip_3d_mm") or 0.0)
+        lines.append(generate_actionable_advice(domain, {"precip_mm": top_precip, "flood_score": 60 if top_precip > 50 else 30}, activity=activity))
+        return " ".join(lines).strip()
+
+    win = collected.get("rain_window")
+    fc = collected.get("forecast")
+    nc = collected.get("nowcast")
+    aqi_pack = collected.get("aqi")
+    warns = collected.get("warnings")
+    q_low = (query or "").lower()
+
+    # 2. AQI prioritized if asked specifically
+    if aqi_pack and any(w in q_low for w in ("aqi", "air", "pollution", "pm2", "smog")):
+        cpcb = aqi_pack.get("cpcb") or {}
+        val = cpcb.get("value") if isinstance(cpcb, dict) else aqi_pack.get("om_us_aqi")
+        place = str(aqi_pack.get("place") or "The area").split(",")[0].strip()
+        if val is not None:
+            cat = (cpcb.get("category") if isinstance(cpcb, dict) else "Moderate") or "Moderate"
+            lines.append(f"In {place}, the air quality index is {_fmt(val)} ({cat}).")
+            lines.append(generate_actionable_advice(domain, {"aqi": val}, activity=activity))
+            return " ".join(lines).strip()
+
+    # 3. Weather / forecast / single-day window
+    target_row: dict[str, Any] | None = None
+    place_name = ""
+    if isinstance(fc, dict) and fc:
+        place_name = str(fc.get("place") or fc.get("label") or "").split(",")[0].strip()
+        days = list(fc.get("outlook_days") or [])
+        if single_day and wstart:
+            target_row = next((r for r in days if isinstance(r, dict) and str(r.get("date") or "")[:10] == wstart), None)
+        if not target_row and days and isinstance(days[0], dict):
+            target_row = days[0]
+
+    if isinstance(win, dict) and win:
+        loc = win.get("location") or {}
+        if not place_name:
+            place_name = str(loc.get("place_name") or loc.get("district") or loc.get("label") or "").split(",")[0].strip()
+        wdays = list(win.get("days") or [])
+        if single_day and wstart:
+            target_row = next((r for r in wdays if isinstance(r, dict) and str(r.get("date") or "")[:10] == wstart), target_row)
+        if not target_row and wdays and isinstance(wdays[0], dict):
+            target_row = wdays[0]
+
+    if target_row or (isinstance(fc, dict) and fc):
+        place = place_name or "This area"
+        cur_temp = fc.get("temp_c") if isinstance(fc, dict) else None
+        max_temp = target_row.get("temp_max_c") if target_row else None
+        temp_val = cur_temp if cur_temp is not None else max_temp
+        rain_val = (target_row.get("precip_mm") if target_row else None) or (fc.get("precip_1h_mm") if isinstance(fc, dict) else 0.0)
+        rain_prob = target_row.get("precip_prob_pct") if target_row else None
+        sky = (target_row.get("sky_label") if target_row else None) or (fc.get("sky_label") if isinstance(fc, dict) else None) or "fair"
+        wind_val = (target_row.get("wind_speed_max_kmh") if target_row else None)
+        p3d = fc.get("precip_next_3d_mm") if isinstance(fc, dict) else None
+
+        time_tag = ""
+        if single_day and wstart:
+            time_tag = f"on {wstart}"
+            if clock is not None and clock != "":
+                time_tag += f" around {clock}:00 IST"
+        else:
+            time_tag = "today"
+
+        overview_parts = [f"{place} {time_tag} will see {sky.lower()} skies"]
+        if cur_temp is not None and max_temp is not None and abs(float(cur_temp) - float(max_temp)) > 1:
+            overview_parts.append(f"temperatures around {_fmt(cur_temp)}°C to {_fmt(max_temp)}°C")
+        elif temp_val is not None:
+            overview_parts.append(f"temperatures near {_fmt(temp_val)}°C")
+        if rain_val is not None:
+            prob_str = f" ({rain_prob}%)" if rain_prob is not None else ""
+            overview_parts.append(f"rain {_fmt(rain_val)} mm{prob_str}")
+        if p3d is not None and float(p3d) > 0:
+            overview_parts.append(f"{_fmt(p3d)} mm in 3 days")
+        if wind_val is not None and float(wind_val) > 15:
+            overview_parts.append(f"winds up to {_fmt(wind_val)} km/h")
+
+        sentence1 = overview_parts[0] + " with " + ", ".join(overview_parts[1:]) + "."
+        lines.append(sentence1)
+
+        metrics_for_advice = {
+            "precip_mm": rain_val,
+            "precip_prob_pct": rain_prob,
+            "temp_max_c": max_temp or temp_val,
+            "temp_c": cur_temp or temp_val,
+            "wind_kmh": wind_val,
+            "sky_label": sky,
+        }
+        lines.append(generate_actionable_advice(domain, metrics_for_advice, condition=sky, activity=activity))
+        return " ".join(lines).strip()
+
+    # 3. Nowcast overview
+    if isinstance(nc, dict) and nc:
+        place = str(nc.get("place") or "The area").split(",")[0].strip()
+        locked = (nc.get("nowcast") if isinstance(nc, dict) else None) or {}
+        pump = (nc.get("pump") if isinstance(nc, dict) else None) or {}
+        p_int = locked.get("p_interrupt_90m")
+        if p_int is None:
+            p_int = pump.get("p_interrupt_90m")
+        onset = locked.get("onset")
+        enter = locked.get("enterable_2h")
+
+        nc_parts = [f"In {place}, the next 0–6 hours are active"]
+        if p_int is not None:
+            nc_parts.append(f"90-min rain interruption chance is {_fmt(p_int)}")
+        if onset:
+            nc_parts.append(f"rain onset around {onset.split('T')[-1][:5] if 'T' in str(onset) else onset}")
+        if enter is not None:
+            nc_parts.append("field access is open" if enter else "field access is restricted")
+
+        lines.append("; ".join(nc_parts) + ".")
+        lines.append(generate_actionable_advice(domain, {"p_interrupt_90m": p_int, "precip_mm": 2.0 if (p_int and float(p_int) > 0.4) else 0.0}, activity=activity))
+        return " ".join(lines).strip()
+
+    # 4. AQI overview
+    if isinstance(aqi_pack, dict) and aqi_pack:
+        cpcb = aqi_pack.get("cpcb") or {}
+        val = cpcb.get("value") if isinstance(cpcb, dict) else aqi_pack.get("om_us_aqi")
+        place = str(aqi_pack.get("place") or "The area").split(",")[0].strip()
+        if val is not None:
+            cat = (cpcb.get("category") if isinstance(cpcb, dict) else "Moderate") or "Moderate"
+            lines.append(f"In {place}, the air quality index is {_fmt(val)} ({cat}).")
+            lines.append(generate_actionable_advice(domain, {"aqi": val}, activity=activity))
+            return " ".join(lines).strip()
+
+    # 5. Warnings overview
+    if isinstance(warns, dict) and warns.get("warnings"):
+        wlist = warns.get("warnings") or []
+        lines.append(f"Active alerts: {len(wlist)} weather warning(s) currently issued for this sector.")
+        lines.append(generate_actionable_advice(domain, {"precip_mm": 20.0}, condition="thunderstorm", activity=activity))
+        return " ".join(lines).strip()
+
+    return ""
+
+
+def present_answer(
+    collected: dict[str, Any],
+    window: dict[str, str] | None = None,
+    compact: bool = True,
+    domain: str | None = None,
+    query: str | None = None,
+    activity: str | None = None,
+) -> str:
+    """If compact is True, formats as a concise conversational card-overview. Otherwise returns full quote_facts."""
+    if compact and collected:
+        overview = format_card_overview(
+            collected,
+            window=window,
+            domain=domain or "urban",
+            query=query or "",
+            activity=activity,
+        )
+        if overview:
+            return overview
     return quote_facts(collected, window=window)
 
 

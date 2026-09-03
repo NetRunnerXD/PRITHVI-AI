@@ -30,10 +30,16 @@ async def connect() -> None:
         return
     from motor.motor_asyncio import AsyncIOMotorClient
 
-    _motor_client = AsyncIOMotorClient(uri)
+    _motor_client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=4000)
     _motor_db = _motor_client[get_settings().mongodb_db or "rituchakra"]
-    await _motor_db.users.create_index("phone", unique=True)
-    await _motor_db.forecast_issues.create_index([("pin", 1), ("valid_at", 1), ("lead_h", 1)], unique=True)
+    try:
+        await _motor_db.users.create_index("phone", unique=True)
+        await _motor_db.forecast_issues.create_index([("pin", 1), ("valid_at", 1), ("lead_h", 1)], unique=True)
+    except Exception:
+        if _motor_client is not None:
+            _motor_client.close()
+        _motor_client = None
+        _motor_db = None
 
 
 async def close() -> None:

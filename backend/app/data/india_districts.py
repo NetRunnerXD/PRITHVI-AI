@@ -433,3 +433,36 @@ def nearest(lat: float, lon: float) -> dict:
             best_d = dd
             best = d
     return best or default_district()
+
+
+def state_representative_district(state: str) -> dict | None:
+    """Return the primary meteorological hub / capital district for an Indian state."""
+    dists = districts_in_state(state)
+    if not dists:
+        return None
+    hubs = {
+        "Assam": "Kamrup Metropolitan",
+        "West Bengal": "Kolkata",
+        "Odisha": "Khordha",
+        "Bihar": "Patna",
+        "Jharkhand": "Ranchi",
+        "Maharashtra": "Mumbai City",
+        "Karnataka": "Bengaluru Urban",
+        "Tamil Nadu": "Chennai",
+        "Delhi": "Central Delhi",
+        "Rajasthan": "Jaipur",
+        "Telangana": "Hyderabad",
+        "Gujarat": "Ahmedabad",
+        "Punjab": "Ludhiana",
+        "Haryana": "Gurugram",
+        "Kerala": "Thiruvananthapuram",
+        "Madhya Pradesh": "Bhopal",
+        "Uttar Pradesh": "Lucknow",
+        "Chhattisgarh": "Raipur",
+    }
+    target = hubs.get(state)
+    if target:
+        for d in dists:
+            if d["district"].lower() == target.lower() or target.lower() in d["label"].lower():
+                return d
+    return dists[0]

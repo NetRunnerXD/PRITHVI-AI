@@ -78,8 +78,12 @@ _STOP_HEAD = {
     "hours", "hour", "days", "day", "week", "mm",
     "today", "tomorrow", "tonight", "yesterday", "weekend",
     "now", "morning", "evening", "night", "forecast", "outlook",
-    "sky", "diving", "skydive", "hike", "hiking", "picnic", "cricket",
-    "swim", "swimming", "cycle", "cycling", "outdoor", "go", "going",
+    "sky", "diving", "skydive", "skydiving", "paragliding", "paraglide",
+    "drone", "uav", "flight", "flying", "aviation", "hike", "hiking",
+    "trek", "trekking", "picnic", "cricket", "swim", "swimming",
+    "cycle", "cycling", "outdoor", "go", "going", "boating", "boat",
+    "fishing", "fish", "farming", "farm", "irrigation", "irrigate",
+    "spray", "spraying", "sowing", "harvest", "harvesting",
 }
 
 # Place-level packs Rituchakra can actually compute. Used for "all metrics".
@@ -174,7 +178,17 @@ def looks_like_bare_place(text: str) -> bool:
 
 
 def unknown_refuse(name: str) -> str:
+    from app.data.india_districts import match_state, state_representative_district
+
     shown = (name or "that name").strip()
+    st = match_state(shown)
+    if st:
+        hub = state_representative_district(st)
+        hub_name = hub.get("district") if hub else "a major hub"
+        return (
+            f"“{shown}” is an Indian state rather than a single district. "
+            f"Name an Indian town or district in {st} — for example {hub_name} — to view weather, AQI, or flood figures."
+        )
     return (
         f"“{shown}” is not a place in the Rituchakra Indian gazetteer "
         "(and I will not invent weather, AQI, or flood figures for a made-up or foreign name). "
@@ -206,6 +220,8 @@ def _looks_like_name(span: str | None) -> bool:
         return False
     if any(w.lower() in {"much", "many", "about", "it", "them", "there"} for w in words):
         return False
+    if len(words) == 1 and words[0].lower().endswith("ing") and words[0].lower() not in {"darjeeling", "pelling"}:
+        return False
     return True
 
 
@@ -227,10 +243,24 @@ def extract_asked_span(text: str) -> str | None:
     if looks_like_bare_place(raw):
         return raw
     from app.agents.dimensions import mentioned_place
+    from app.agents.layer1_parser import fast_parse_entities
 
     known = mentioned_place(raw)
     if known:
         return known
+
+    # Try fast entity disentanglement (separates activity from place)
+    _, _, fast_place = fast_parse_entities(raw)
+    if fast_place:
+        from app.data.india_districts import match_state
+        st = match_state(fast_place)
+        if st and any(w in raw.lower() for w in ("which", "districts", "district", "driest", "worst", "top", "rank", "ranking", "compare")):
+            pass
+        else:
+            span = _usable_span(fast_place)
+            if span and _looks_like_name(span):
+                return span
+
     about = _ABOUT_PLACE.match(raw)
     if about:
         span = _usable_span(about.group(1))
@@ -238,6 +268,10 @@ def extract_asked_span(text: str) -> str | None:
             return span
     hits = list(_PREP.finditer(raw))
     for m in reversed(hits):
+        start_idx = m.start()
+        prefix = raw[:start_idx].rstrip().lower()
+        if re.search(r"\b(?:go|going|head|headed|plan|planning|ready)\s*$", prefix):
+            continue
         span = _usable_span(m.group(1))
         if span and _looks_like_name(span):
             return span

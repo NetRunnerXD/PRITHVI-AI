@@ -5,6 +5,7 @@ backend/.pytest_cache/
 backend/__pycache__/
 backend/**/__pycache__/
 backend/.venv/
+voice/
 frontend/node_modules/
 frontend/.next/
 frontend/out/

@@ -145,3 +145,7 @@ class DashboardSnapshot(BaseModel):
     live: LiveWatch = Field(default_factory=LiveWatch)
     science: dict = {}
     quality: dict = {}
+
+    @property
+    def warnings(self) -> list[EarlyWarning]:
+        return self.prescriptive.warnings if getattr(self, "prescriptive", None) else []

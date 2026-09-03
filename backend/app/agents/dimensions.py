@@ -46,6 +46,51 @@ _INTENT_WORDS = {
     "crop": ["crop", "ফসল", "फसल", "rice", "ধান", "wheat", "vegetab"],
 }
 
+_DOMAIN_WORDS: dict[str, tuple[str, ...]] = {
+    "aviation": (
+        "aviation", "flight", "fly", "flying", "plane", "airplane", "aircraft",
+        "drone", "uav", "uas", "pilot", "runway", "crosswind", "tailwind",
+        "headwind", "visibility", "ceiling", "cloud base", "airspace", "takeoff",
+        "landing", "vfr", "ifr", "aerodrome", "skydiving", "glider",
+    ),
+    "disaster": (
+        "disaster", "flood", "flooding", "inundation", "waterlog", "waterlogging",
+        "dam", "embankment", "breach", "overflow", "cyclone", "storm surge",
+        "landslide", "mudslide", "earthquake", "tsunami", "evacuation", "evacuate",
+        "shelter", "rescue", "relief", "ndrf", "sdrf", "hazard", "alert", "danger",
+        "warning", "emergency", "crisis",
+    ),
+    "farming": (
+        "farm", "farmer", "farming", "crop", "crops", "paddy", "wheat", "rice",
+        "sowing", "seed", "seedling", "harvest", "harvesting", "irrigation", "irrigate",
+        "water the field", "pump", "pumping", "soil", "topsoil", "moisture", "dry spell",
+        "fertilizer", "spray", "spraying", "pesticide", "fungicide", "weeding",
+        "agri", "agriculture", "mandi", "yield",
+    ),
+    "marine": (
+        "marine", "sea", "ocean", "boat", "ship", "vessel", "coastal", "coast",
+        "shore", "beach", "fisherman", "fishermen", "fishing", "wave", "waves",
+        "wave height", "swell", "tide", "tides", "high tide", "low tide",
+        "harbor", "port", "rough sea",
+    ),
+    "urban": (
+        "commute", "commuter", "office", "work", "school", "college", "travel",
+        "traffic", "drive", "driving", "walk", "walking", "run", "running",
+        "jog", "jogging", "outdoor", "outdoors", "picnic", "cricket", "match",
+        "football", "bicycle", "cycling", "clothes", "laundry", "umbrella",
+        "resident", "city", "heat", "ac", "air conditioner",
+    ),
+}
+
+
+def detect_domain(text: str, history: list[str] | None = None) -> str:
+    """Detect the user's operational domain to tailor actionable recommendations."""
+    combined = " ".join([text or ""] + (history or [])).lower()
+    for domain, terms in _DOMAIN_WORDS.items():
+        if any(re.search(rf"\b{re.escape(t)}\b", combined) for t in terms):
+            return domain
+    return "urban"
+
 _NOWCAST_WORDS = (
     "hour", "hours", "tonight", "nowcast", "onset", "next 2", "next two",
     "0-6", "pump", "field", "should i start", "enter the field",

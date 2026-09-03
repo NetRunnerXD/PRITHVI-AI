@@ -13,6 +13,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 - Service card: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
 - Health: [http://127.0.0.1:8000/api/health](http://127.0.0.1:8000/api/health)
+- Speech status: [http://127.0.0.1:8000/api/speech/status](http://127.0.0.1:8000/api/speech/status) (Indic STT/TTS sidecars; see `../deploy/voice.md`)
 - Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - OpenAPI: [http://127.0.0.1:8000/openapi.json](http://127.0.0.1:8000/openapi.json)
 - Route catalog: [http://127.0.0.1:8000/api](http://127.0.0.1:8000/api)

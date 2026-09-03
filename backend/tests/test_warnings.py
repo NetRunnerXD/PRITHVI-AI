@@ -27,13 +27,15 @@ def test_warnings_multi_hazard_sources():
         "wave_height_m": 3.2,
         "weather_code": 95,
     }
+    from datetime import datetime, timezone, timedelta
+
     quakes = [
         {
             "id": "us7000",
             "mag": 5.1,
             "distance_km": 120,
             "place": "12 km W of Barddhaman",
-            "time_iso": "2026-08-31T01:00:00+00:00",
+            "time_iso": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
         }
     ]
     tsunami = [{"title": "INCOIS: No tsunami threat for Indian coast", "body": "All clear."}]

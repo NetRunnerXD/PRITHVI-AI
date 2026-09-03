@@ -365,17 +365,28 @@ def suggestions_for(collected: dict[str, Any], loc: Location) -> list[dict[str, 
 
 def attachments_for(collected: dict[str, Any]) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = []
+
+    # 1. Rain window (table format as expected by tests and UI)
     win = collected.get("rain_window") or {}
     if isinstance(win, dict) and win.get("days"):
         rows = [
             {k: r.get(k) for k in ("date", "precip_mm", "precip_prob_pct", "temp_max_c") if k in r}
-            for r in win["days"]
+            for r in (win.get("days") or [])
             if isinstance(r, dict)
         ]
-        blocks.append({"type": "table", "from": "rain_window.days", "columns": list(rows[0].keys()) if rows else [], "rows": rows})
+        if rows:
+            blocks.append({
+                "type": "table",
+                "from": "rain_window.days",
+                "columns": list(rows[0].keys()),
+                "rows": rows,
+            })
+
+    # 2. Nowcast metrics
     nc = collected.get("nowcast") or {}
-    locked = nc.get("nowcast") if isinstance(nc, dict) else {}
-    if isinstance(locked, dict) and locked:
+    locked = (nc.get("nowcast") if isinstance(nc, dict) else None) or {}
+    pump = (nc.get("pump") if isinstance(nc, dict) else None) or {}
+    if locked or pump:
         items = []
         for label, key in (
             ("90 min interrupt", "p_interrupt_90m"),
@@ -384,9 +395,25 @@ def attachments_for(collected: dict[str, Any]) -> list[dict[str, Any]]:
         ):
             if locked.get(key) is not None:
                 items.append({"label": label, "value": locked.get(key), "cite": f"nowcast.{key}"})
-        pump = nc.get("pump") or {}
-        if pump.get("p_interrupt_90m") is not None and not any(i["cite"] == "nowcast.p_interrupt_90m" for i in items):
-            items.append({"label": "90 min interrupt", "value": pump.get("p_interrupt_90m"), "cite": "nowcast.p_interrupt_90m"})
+        p = pump.get("p_interrupt_90m")
+        if p is not None and not any(i.get("cite") == "nowcast.p_interrupt_90m" for i in items):
+            items.append({"label": "90 min interrupt", "value": p, "cite": "nowcast.p_interrupt_90m"})
         if items:
             blocks.append({"type": "metrics", "items": items})
+
+    # 3. Forecast snapshot if no rain_window block was added
+    fc = collected.get("forecast")
+    if isinstance(fc, dict) and fc and not any(b["type"] == "table" for b in blocks):
+        f_items = []
+        if fc.get("temp_c") is not None:
+            f_items.append({"label": "Temperature", "value": fc.get("temp_c"), "unit": "°C"})
+        if fc.get("precip_1h_mm") is not None:
+            f_items.append({"label": "Current Rain", "value": fc.get("precip_1h_mm"), "unit": "mm/h"})
+        if fc.get("sky_label"):
+            f_items.append({"label": "Condition", "value": fc.get("sky_label")})
+        if fc.get("precip_next_3d_mm") is not None:
+            f_items.append({"label": "3-Day Rain", "value": fc.get("precip_next_3d_mm"), "unit": "mm"})
+        if f_items:
+            blocks.append({"type": "metrics", "items": f_items})
+
     return blocks

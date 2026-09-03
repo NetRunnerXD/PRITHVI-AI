@@ -45,6 +45,30 @@ def _wx_scale(f: dict[str, Any] | None) -> float:
     return max(0.25, min(1.6, s))
 
 
+def pollen_remark(kind: str, count: float) -> str:
+    """Clinical aerobiological categorization (grains/m³)."""
+    if kind == "grass":
+        if count < 10:
+            return "Good"
+        if count < 30:
+            return "Satisfactory"
+        if count < 60:
+            return "Moderate"
+        if count < 120:
+            return "Poor"
+        return "Severe"
+    else:  # ragweed / parthenium
+        if count < 10:
+            return "Good"
+        if count < 25:
+            return "Satisfactory"
+        if count < 50:
+            return "Moderate"
+        if count < 90:
+            return "Poor"
+        return "Severe"
+
+
 def estimate(lat: float, lon: float, features: dict[str, Any] | None = None) -> dict[str, Any]:
     m = _month() - 1
     scale = _wx_scale(features)
@@ -69,12 +93,14 @@ def estimate(lat: float, lon: float, features: dict[str, Any] | None = None) -> 
     if olive < 0.5:
         olive = 0.5
     return {
+        "grass": grass,
+        "grass_remark": pollen_remark("grass", grass),
+        "ragweed": ragweed,
+        "ragweed_remark": pollen_remark("ragweed", ragweed),
         "alder": alder,
         "birch": birch,
-        "grass": grass,
         "mugwort": mugwort,
         "olive": olive,
-        "ragweed": ragweed,
         "source": "India aerobiology climatology (Kolkata/WB Burkard seasons); not CAMS Europe",
         "unit": "grains/m³",
     }

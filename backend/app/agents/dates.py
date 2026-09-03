@@ -170,9 +170,26 @@ def parse_window(text: str, today: date | None = None) -> dict[str, Any] | None:
             sun = sat + timedelta(days=1)
         return _stamp({"start": sat, "end": sun, "kind": "weekend"})
 
+    if re.search(r"\bday after tomorrow\b", raw):
+        d = today + timedelta(days=2)
+        return _stamp({"start": d, "end": d, "kind": "day"})
+
     if re.search(r"\btomorrow\b", raw):
         d = today + timedelta(days=1)
         return _stamp({"start": d, "end": d, "kind": "day"})
+
+    if re.search(r"\bday before yesterday\b", raw):
+        d = today - timedelta(days=2)
+        return _stamp({"start": d, "end": d, "kind": "past_day"})
+
+    if re.search(r"\byesterday\b", raw):
+        d = today - timedelta(days=1)
+        return _stamp({"start": d, "end": d, "kind": "past_day"})
+
+    m_past = re.search(r"\b(?:past|last)\s+(\d{1,2})\s+days?\b", raw)
+    if m_past:
+        n = max(1, min(30, int(m_past.group(1))))
+        return {"start": today - timedelta(days=n), "end": today, "kind": "past_n"}
 
     if re.search(r"\b(today|tonight)\b", raw):
         return _stamp({"start": today, "end": today, "kind": "day"})

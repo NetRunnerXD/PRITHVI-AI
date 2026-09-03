@@ -143,8 +143,47 @@ async def capital_warning_hits() -> list[dict[str, Any]]:
     hit = cache.get("alert-scan:capitals-v2")
     if hit is not None:
         return hit if isinstance(hit, list) else []
-    rows = await asyncio.gather(*[_one(c) for c in all_capitals()])
-    ok = [r for r in rows if r]
-    out = _hits(ok)
+
+    from app.providers.http import client
+    from app.providers.open_meteo import FORECAST
+
+    caps = all_capitals()
+    lats = ",".join(str(round(c["lat"], 4)) for c in caps)
+    lons = ",".join(str(round(c["lon"], 4)) for c in caps)
+    params = {
+        "latitude": lats,
+        "longitude": lons,
+        "daily": "precipitation_sum,temperature_2m_max",
+        "hourly": "soil_moisture_0_to_7cm",
+        "forecast_days": 3,
+        "timezone": "Asia/Kolkata",
+    }
+    rows: list[dict[str, Any]] = []
+    try:
+        r = await client().get(FORECAST, params=params)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, list):
+                for i, om in enumerate(data):
+                    if i >= len(caps):
+                        break
+                    c = caps[i]
+                    p3 = round(_daily_sum(om, 3), 1)
+                    soil = round(_soil(om), 3)
+                    tmax = round(_tmax(om), 1)
+                    flood = _flood_score(p3, soil, float(c["lat"]), float(c["lon"]))
+                    drought = _drought_score(p3, soil)
+                    rows.append({
+                        **c,
+                        "precip_3d_mm": p3,
+                        "soil_m3m3": soil,
+                        "temp_max_c": tmax,
+                        "flood_score": flood,
+                        "drought_score": drought,
+                    })
+    except Exception:
+        rows = []
+
+    out = _hits(rows)
     cache.set("alert-scan:capitals-v2", out, 15 * 60)
     return out

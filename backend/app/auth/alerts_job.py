@@ -46,7 +46,11 @@ async def scan_once() -> int:
             log.exception("sms snapshot failed for %s", user.get("_id"))
             continue
         place = loc.place_name or loc.district
-        for w in snap.warnings or []:
+        warnings = (
+            getattr(snap, "warnings", None)
+            or (snap.prescriptive.warnings if getattr(snap, "prescriptive", None) else [])
+        )
+        for w in warnings or []:
             if (w.severity or "").lower() not in SEVERE:
                 continue
             fp = _fp(user["_id"], w.title, w.kind or w.hazard or "")

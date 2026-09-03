@@ -154,3 +154,24 @@ def test_source_gate_matches_interpret():
         p = interpret(q)
         assert g.mode == p.mode
         assert g.needs == p.needs
+
+
+def test_activity_and_state_disentanglement():
+    from app.agents.layer1_parser import fast_parse_entities
+    from app.agents.utterance import extract_asked_span, interpret, resolve_named_place
+
+    act, dom, place = fast_parse_entities("can I go for skydiving in assam tomorrow?")
+    assert act == "skydiving"
+    assert dom == "aviation"
+    assert place and place.lower() == "assam"
+
+    asked = extract_asked_span("can I go for skydiving in assam tomorrow?")
+    assert asked and asked.lower() == "assam"
+
+    p = interpret("can I go for skydiving in assam tomorrow?")
+    assert p.mode == "data"
+    assert p.refuse is None
+
+    resolved = resolve_named_place("assam")
+    assert resolved is not None
+    assert "Assam" in resolved.label or "Guwahati" in resolved.label

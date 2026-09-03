@@ -12,6 +12,7 @@ docker compose up --build
 - API: http://localhost:8000/docs  health: `/api/health`  ready: `/api/ready`
 - Web: http://localhost:3000
 - Ollama: pulls `qwen2.5` once (`ollama-pull` service)
+- Optional Indic STT/TTS: [`deploy/voice.md`](voice.md) (`docker compose --profile voice`)
 
 Use **one uvicorn worker**. The SWR cache is in-process.
 

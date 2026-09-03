@@ -20,6 +20,9 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5}
       CACHE_DIR: /app/.cache
+      VEXYL_STT_URL: ${VEXYL_STT_URL:-}
+      VEXYL_TTS_URL: ${VEXYL_TTS_URL:-}
+      VEXYL_API_KEY: ${VEXYL_API_KEY:-}
     volumes:
       - api-cache:/app/.cache
     ports:
@@ -59,6 +62,38 @@ services:
     entrypoint: ["/bin/ollama"]
     command: ["pull", "qwen2.5"]
     restart: "no"
+
+  # Indic STT/TTS — not started by default. GPU recommended for TTS.
+  # Request HF access for IndicConformer, then:
+  #   $env:HF_TOKEN="hf_..."; $env:VEXYL_STT_URL="http://vexyl-stt:8080"; $env:VEXYL_TTS_URL="http://vexyl-tts:8080"
+  #   docker compose --profile voice up --build
+  vexyl-stt:
+    profiles: ["voice"]
+    build:
+      context: https://github.com/vexyl-ai/vexyl-stt.git
+      args:
+        HF_TOKEN: ${HF_TOKEN:-}
+    environment:
+      VEXYL_STT_HOST: "0.0.0.0"
+      VEXYL_STT_PORT: "8080"
+      VEXYL_STT_DEVICE: ${VEXYL_STT_DEVICE:-cpu}
+      VEXYL_STT_API_KEY: ${VEXYL_API_KEY:-}
+    ports:
+      - "8091:8080"
+    restart: unless-stopped
+
+  vexyl-tts:
+    profiles: ["voice"]
+    build:
+      context: https://github.com/vexyl-ai/vexyl-tts.git
+    environment:
+      VEXYL_TTS_HOST: "0.0.0.0"
+      VEXYL_TTS_PORT: "8080"
+      VEXYL_TTS_DEVICE: ${VEXYL_TTS_DEVICE:-auto}
+      VEXYL_TTS_API_KEY: ${VEXYL_API_KEY:-}
+    ports:
+      - "8092:8080"
+    restart: unless-stopped
 
 volumes:
   api-cache:
