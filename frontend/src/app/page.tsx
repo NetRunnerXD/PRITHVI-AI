@@ -46,6 +46,8 @@ export default function Page() {
     highlight,
     mapFocus,
     windowPack,
+    viewMode,
+    setViewMode,
   } = useApp();
   const t = COPY[locale];
   const [cmpQ, setCmpQ] = useState("Pune");
@@ -119,6 +121,15 @@ export default function Page() {
       <AuthModal />
       <div className="min-w-0 flex-1 space-y-3">
         <header className="neo relative z-50 flex flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
+          <div className="flex items-center gap-2 lg:hidden shrink-0">
+            <img
+              src="/logo.png"
+              alt="PRITHVI-AI"
+              width={28}
+              height={28}
+              className="h-7 w-7 rounded-lg object-cover shadow-sm border border-white/20"
+            />
+          </div>
           <DistrictSearch locale={locale} onPick={(l) => setLocation(l)} />
           {dashboard ? (
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -137,6 +148,36 @@ export default function Page() {
               ) : null}
             </div>
           ) : null}
+
+          {/* Compact View Mode toggle for Mobile screens (<lg) where Desktop Sidebar is hidden */}
+          <div className="ml-auto flex items-center lg:hidden">
+            <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+              <button
+                type="button"
+                onClick={() => setViewMode("detail")}
+                title="Detailed Technical Data & Charts"
+                className={`rounded-lg px-2 py-0.5 text-[10px] font-bold transition-all ${
+                  viewMode === "detail"
+                    ? "bg-neo-accent text-white shadow-sm"
+                    : "text-neo-muted hover:text-neo-text"
+                }`}
+              >
+                Detail
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("overview")}
+                title="Layman Summaries & Overview"
+                className={`rounded-lg px-2 py-0.5 text-[10px] font-bold transition-all ${
+                  viewMode === "overview"
+                    ? "bg-amber-500 text-white shadow-sm"
+                    : "text-neo-muted hover:text-neo-text"
+                }`}
+              >
+                Overview
+              </button>
+            </div>
+          </div>
         </header>
 
         {status === "error" ? <p className="neo px-3 py-2 text-sm text-neo-danger">{error}</p> : null}

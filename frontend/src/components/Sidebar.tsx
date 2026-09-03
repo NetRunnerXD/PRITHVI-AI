@@ -46,6 +46,8 @@ export function Sidebar() {
     account,
     setAuthModal,
     signOut,
+    viewMode,
+    setViewMode,
   } = useApp();
   const t = COPY[locale];
   const tabLabel: Record<TabId, string> = {
@@ -96,15 +98,51 @@ export function Sidebar() {
         }`}
       >
         {/* Header / Brand */}
-        <div className={`flex items-center transition-all duration-300 ${sidebarOpen ? "justify-between" : "flex-col gap-2"}`}>
+        <div className={`flex items-center transition-all duration-300 ${sidebarOpen ? "justify-between gap-2" : "flex-col gap-2"}`}>
           {sidebarOpen ? (
-            <div className="min-w-0 transition-all duration-300">
-              <p className="text-base font-black tracking-tight text-neo-accent">{t.brand}</p>
-              <p className="mt-0.5 text-[10px] leading-snug text-neo-muted truncate">{t.tag}</p>
+            <div className="flex items-center gap-2.5 min-w-0 transition-all duration-300">
+              {/* Brand Logo Emblem */}
+              <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl overflow-hidden bg-gradient-to-tr from-blue-600/20 via-sky-500/20 to-indigo-600/20 shadow-md shadow-blue-500/10 border border-white/20">
+                <img
+                  src="/logo.png"
+                  alt="PRITHVI-AI Logo"
+                  width={32}
+                  height={32}
+                  className="h-full w-full object-cover"
+                />
+                <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-300 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400 border border-[var(--card)]" />
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[14px] font-black tracking-[0.08em] bg-gradient-to-r from-blue-600 via-sky-600 to-indigo-600 dark:from-sky-400 dark:via-cyan-300 dark:to-indigo-400 bg-clip-text text-transparent">
+                    PRITHVI-AI
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[10px] font-medium leading-tight text-white dark:text-white truncate tracking-tight" title={t.tag}>
+                  {t.tag}
+                </p>
+              </div>
             </div>
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] text-neo-accent font-black text-sm shadow-sm transition-transform duration-200 hover:scale-105">
-              P
+            <div
+              className="relative flex h-8 w-8 items-center justify-center rounded-xl overflow-hidden bg-gradient-to-tr from-blue-600/20 via-sky-500/20 to-indigo-600/20 shadow-md shadow-blue-500/10 border border-white/20 transition-transform duration-200 hover:scale-105 cursor-pointer"
+              onClick={() => setSidebarOpen(true)}
+              title="PRITHVI-AI — WeatherGPT for India"
+            >
+              <img
+                src="/logo.png"
+                alt="PRITHVI-AI Logo"
+                width={32}
+                height={32}
+                className="h-full w-full object-cover"
+              />
+              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-300 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400 border border-[var(--card)]" />
+              </span>
             </div>
           )}
           <button
@@ -218,8 +256,59 @@ export function Sidebar() {
           </div>
         ) : null}
 
+        {/* View Switch: Detail \ Overview */}
+        <div className="mt-auto flex flex-col gap-1.5 pt-2 border-t border-[color-mix(in_srgb,var(--line)_60%,transparent)]">
+          <div className={`flex items-center gap-1 ${sidebarOpen ? "justify-between" : "flex-col"}`}>
+            {sidebarOpen ? (
+              <div className="flex items-center gap-1.5 text-neo-muted">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-neo-muted">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <span className="text-[10px] font-bold uppercase tracking-wider">
+                  {locale === "hi" ? "दृश्य (View)" : locale === "bn" ? "ভিউ (View)" : "View Mode"}
+                </span>
+              </div>
+            ) : null}
+            <div
+              className={`inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner ${
+                sidebarOpen ? "gap-0.5" : "flex-col gap-0.5 w-full"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setViewMode("detail")}
+                title="Detailed Technical Data & Charts"
+                className={`rounded-lg py-1 text-[10px] font-bold transition-all ${
+                  sidebarOpen ? "px-2" : "w-full"
+                } ${
+                  viewMode === "detail"
+                    ? "bg-neo-accent text-white shadow-sm"
+                    : "text-neo-muted hover:text-neo-text hover:bg-[color-mix(in_srgb,var(--card)_60%,transparent)]"
+                }`}
+              >
+                {sidebarOpen ? (locale === "hi" ? "डिटेल" : locale === "bn" ? "ডিটেইল" : "Detail") : "DTL"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("overview")}
+                title="Layman Summaries & Overview"
+                className={`rounded-lg py-1 text-[10px] font-bold transition-all ${
+                  sidebarOpen ? "px-2" : "w-full"
+                } ${
+                  viewMode === "overview"
+                    ? "bg-amber-500 text-white shadow-sm"
+                    : "text-neo-muted hover:text-neo-text hover:bg-[color-mix(in_srgb,var(--card)_60%,transparent)]"
+                }`}
+              >
+                {sidebarOpen ? (locale === "hi" ? "सार" : locale === "bn" ? "সারসংক্ষেপ" : "Overview") : "OVR"}
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Language Switcher & Refresh */}
-        <div className="mt-auto flex flex-col gap-2 pt-2 border-t border-[color-mix(in_srgb,var(--line)_60%,transparent)]">
+        <div className="flex flex-col gap-2 pt-2 border-t border-[color-mix(in_srgb,var(--line)_60%,transparent)]">
           <div className={`flex items-center gap-1 ${sidebarOpen ? "justify-between" : "flex-col"}`}>
             {sidebarOpen ? (
               <div className="flex items-center gap-1 text-neo-muted">

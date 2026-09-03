@@ -2,14 +2,17 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PRITHVI-AI — Earth intelligence for India",
+  title: "PRITHVI-AI — WeatherGPT for India",
   description: "Live rain, flood, air, hazards and farm advice — in English, Hindi and Bengali.",
   manifest: "/manifest.webmanifest",
   applicationName: "PRITHVI-AI",
   appleWebApp: { capable: true, title: "PRITHVI-AI", statusBarStyle: "black-translucent" },
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-    apple: [{ url: "/apple-touch-icon.svg" }],
+    icon: [
+      { url: "/logo.png", type: "image/png" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png" }],
   },
 };
 
