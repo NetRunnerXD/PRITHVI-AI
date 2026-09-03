@@ -129,6 +129,8 @@ type State = {
   favorites: Location[];
   recent: Location[];
   settings: AppSettings;
+  viewMode: "detail" | "overview";
+  setViewMode: (v: "detail" | "overview") => void;
   account: AuthUser | null;
   authModal: boolean;
   setAccount: (u: AuthUser | null) => void;
@@ -203,6 +205,8 @@ export const useApp = create<State>((set, get) => ({
   floatChatOpen: false,
   favorites: [],
   recent: [],
+  viewMode: "detail",
+  setViewMode: (viewMode) => set({ viewMode }),
   setSettings: (p) => {
     const settings = { ...get().settings, ...p };
     if (typeof window !== "undefined") window.localStorage.setItem(SET_KEY, JSON.stringify(settings));

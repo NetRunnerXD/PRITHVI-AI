@@ -67,6 +67,23 @@ export async function searchPlaces(q: string): Promise<Location[]> {
   return data.results || [];
 }
 
+export type SpeechStatus = {
+  stt: boolean;
+  tts: boolean;
+  stt_langs: string[];
+  tts_langs: string[];
+};
+
+export async function fetchSpeechStatus(): Promise<SpeechStatus | null> {
+  try {
+    const r = await fetch(apiUrl("/speech/status"));
+    if (!r.ok) return null;
+    return (await r.json()) as SpeechStatus;
+  } catch {
+    return null;
+  }
+}
+
 export async function reverseGeocode(lat: number, lon: number): Promise<Location> {
   const r = await fetch(`${apiUrl("/geo/reverse")}?lat=${lat}&lon=${lon}`);
   if (!r.ok) throw new Error(`reverse ${r.status}`);
