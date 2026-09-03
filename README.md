@@ -1,4 +1,4 @@
-# PRITHVI-AI (Rituchakra)
+# PRITHVI-AI
 
 **PRITHVI-AI: An Open-LLM Powered Multilingual Environmental Intelligence & Climate Resilience Platform for India**
 
