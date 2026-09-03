@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -21,6 +21,16 @@ import { useApp } from "@/lib/store";
 import { dist, rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
 import { Forecast7DayDeck } from "./Forecast7DayDeck";
 import { SkyRainHero } from "./SkyRainHero";
+import { LaymanSummaryBody } from "./LaymanSummaryView";
+import {
+  getRainLaymanSummary,
+  getWindLaymanSummary,
+  getAlertsLaymanSummary,
+  getAirLaymanSummary,
+  getSoilLaymanSummary,
+  getMarineLaymanSummary,
+  getNowcastLaymanSummary,
+} from "@/lib/laymanSummaries";
 
 function hhmm(t: string) {
   const i = t.indexOf("T");
@@ -710,21 +720,25 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
     return out.slice(0, 24);
   })();
 
+  const viewMode = useApp((s) => s.viewMode);
+  const allSummary = viewMode === "overview";
+
   return (
     <div className="space-y-3">
       {/* ── Top Unified Grid: Left (Sky on top + Rain & Wind side-by-side) & Right (Extended Alert & Risk Panel) ── */}
-      <div className="grid gap-3 grid-cols-1 lg:grid-cols-12 items-stretch">
+      <div className="grid gap-3 grid-cols-1 lg:grid-cols-12 items-start">
         {/* Left Column: Sky on top, followed by Rain & Wind side-by-side */}
         <div className="w-full lg:col-span-7 xl:col-span-8 flex flex-col gap-3">
-          <SkyRainHero dash={dash} locale={locale} onNavigateData={onNavigateData} />
+          <SkyRainHero dash={dash} locale={locale} onNavigateData={onNavigateData} forceSummary={allSummary} />
 
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 items-start">
             <RainfallSection
               dash={dash}
               locale={locale}
               units={units}
               onNavigateData={onNavigateData}
-              className="w-full flex flex-col justify-between select-none min-h-[240px]"
+              forceSummary={allSummary}
+              className="w-full flex flex-col justify-start select-none"
             />
 
             <WindSection
@@ -732,28 +746,29 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
               locale={locale}
               units={units}
               onNavigateData={onNavigateData}
-              className="w-full flex flex-col justify-between select-none min-h-[240px]"
+              forceSummary={allSummary}
+              className="w-full flex flex-col justify-start select-none"
             />
           </div>
         </div>
 
-        {/* Right Column: Alert & Risk Panel (Responsive height & smooth scrolling) */}
+        {/* Right Column: Alert & Risk Panel (Auto adjustable height with max-height scroll) */}
         <div className="w-full lg:col-span-5 xl:col-span-4 flex flex-col justify-start">
           <RiskAlertPanel
             dash={dash}
             locale={locale}
             onNavigateData={onNavigateData}
             allAlerts={allAlerts}
-            className="w-full h-[360px] sm:h-[400px] lg:h-[460px] max-h-[460px]"
+            className="w-full"
           />
         </div>
       </div>
 
       {/* ── Row 2: Environmental & Geo-Hazard Cards (Air, Land, Marine | Cyclone, Earthquake/Tsunami, Nowcasting) ── */}
-      <HomeHazardStrip dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} />
+      <HomeHazardStrip dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} forceSummary={allSummary} />
 
       {/* ── Row 3: 7-Day Interactive Forecast & Chrono-Deck (At Bottom) ── */}
-      <Forecast7DayDeck dash={dash} locale={locale} />
+      <Forecast7DayDeck dash={dash} locale={locale} forceSummary={allSummary} />
     </div>
   );
 }
@@ -1008,9 +1023,9 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(R * c);
 }
@@ -1159,12 +1174,14 @@ function RiskAlertPanel({
 
   return (
     <>
-      <aside className={`neo flex flex-col overflow-hidden select-none ${className || "h-[460px] max-h-[460px]"}`}>
+      <aside
+        className={`neo neo-section-alerts flex flex-col overflow-hidden select-none ${className || "w-full"}`}
+      >
         {/* Header with Segmented Navigation */}
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--line)] px-3 py-2">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[color-mix(in_srgb,var(--line)_60%,#f59e0b_40%)] px-3 py-2 bg-[color-mix(in_srgb,var(--card)_80%,#f59e0b_8%)]">
           <div className="flex items-center gap-1.5">
-            <span className="live-dot" aria-hidden />
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+            <span className="live-dot bg-amber-500 shadow-[0_0_8px_#f59e0b]" aria-hidden />
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400">
               {panelTab === "alerts" ? t.alertsPanel || "Alerts" : "Risk Index"}
             </p>
           </div>
@@ -1172,14 +1189,16 @@ function RiskAlertPanel({
           <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
             <button
               type="button"
-              onClick={() => setPanelTab("alerts")}
-              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
-                panelTab === "alerts"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPanelTab("alerts");
+              }}
+              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${panelTab === "alerts"
                   ? "bg-neo-accent text-white shadow-sm"
                   : "text-neo-muted hover:text-neo-text"
-              }`}
+                }`}
             >
-              <span>Alerts</span>
+              <span>{t.alertsPanel || (locale === "hi" ? "अलर्ट" : locale === "bn" ? "সতর্কতা" : "Alerts")}</span>
               {allAlerts.length > 0 && (
                 <span className="rounded-full bg-gradient-to-r from-rose-500 to-red-600 text-white px-1.5 py-0.5 text-[8px] font-black leading-none shadow-sm animate-pulse">
                   {allAlerts.length}
@@ -1188,29 +1207,35 @@ function RiskAlertPanel({
             </button>
             <button
               type="button"
-              onClick={() => setPanelTab("risks")}
-              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-                panelTab === "risks"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPanelTab("risks");
+              }}
+              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${panelTab === "risks"
                   ? "bg-neo-accent text-white shadow-sm"
                   : "text-neo-muted hover:text-neo-text"
-              }`}
+                }`}
             >
-              Risks ({risks.length})
+              {(locale === "hi" ? "जोखिम" : locale === "bn" ? "ঝুঁকি" : "Risks")} ({risks.length})
             </button>
           </div>
         </div>
 
-        {/* Content Area with Custom Scrollbar */}
-        <div className="modal-scrollbar min-h-0 flex-1 overflow-y-auto p-2.5 space-y-2.5">
+        {/* Content Area with Custom Scrollbar (Auto-adjusting up to max-h-[380px]) */}
+        <div className="modal-scrollbar min-h-0 max-h-[450px] overflow-y-auto p-2.5 space-y-2.5">
           {panelTab === "alerts" ? (
             clusters.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full min-h-[140px] text-center p-4">
                 <div className="h-8 w-8 rounded-full bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] flex items-center justify-center text-neo-accent mb-2">
                   <IconShieldAlert className="w-4 h-4" />
                 </div>
-                <p className="text-xs font-bold text-neo-text">{t.allClear || "No urgent bulletin"}</p>
+                <p className="text-xs font-bold text-neo-text">{t.allClear || (locale === "hi" ? "कोई आपातकालीन बुलेटिन नहीं" : locale === "bn" ? "কোনো জরুরি সতর্কতা নেই" : "No urgent bulletin")}</p>
                 <p className="text-[10px] text-neo-muted mt-0.5 max-w-[220px] leading-relaxed">
-                  Prithvi-Netra scans for flood, air, marine, seismic & tsunami quiet watches remain active.
+                  {locale === "hi"
+                    ? "पृथ्वी-नेत्र द्वारा बाढ़, वायु, समुद्री व भूकंपीय सुरक्षा स्कैन निरंतर सक्रिय हैं।"
+                    : locale === "bn"
+                    ? "পৃথিবী-নেত্র দ্বারা বন্যা, বায়ু, সামুদ্রিক ও ভূমিকম্প নজরদারি অবিরাম সক্রিয় রয়েছে।"
+                    : "Prithvi-Netra scans for flood, air, marine, seismic & tsunami quiet watches remain active."}
                 </p>
               </div>
             ) : (
@@ -1255,13 +1280,12 @@ function RiskAlertPanel({
                           </span>
                         )}
                         <span
-                          className={`chip text-[8px] font-black uppercase px-2 py-0.5 rounded-md shadow-sm ${
-                            cluster.isExtreme
+                          className={`chip text-[8px] font-black uppercase px-2 py-0.5 rounded-md shadow-sm ${cluster.isExtreme
                               ? "bg-gradient-to-r from-red-600 to-rose-600 text-white font-extrabold"
                               : cluster.isWarning
-                              ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold"
-                              : "bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-extrabold"
-                          }`}
+                                ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold"
+                                : "bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-extrabold"
+                            }`}
                         >
                           {cluster.highestSeverity}
                         </span>
@@ -1377,20 +1401,20 @@ function RiskAlertPanel({
                   const toneColor = isSevere
                     ? "text-rose-600 dark:text-rose-400"
                     : isElevated
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-slate-600 dark:text-slate-400";
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-slate-600 dark:text-slate-400";
 
                   const barBg = isSevere
                     ? "bg-rose-600 dark:bg-rose-500"
                     : isElevated
-                    ? "bg-amber-500 dark:bg-amber-500"
-                    : "bg-slate-400/80 dark:bg-slate-500/80";
+                      ? "bg-amber-500 dark:bg-amber-500"
+                      : "bg-slate-400/80 dark:bg-slate-500/80";
 
                   const badgeStyle = isSevere
                     ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20"
                     : isElevated
-                    ? "bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/20"
-                    : "bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/20";
+                      ? "bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/20"
+                      : "bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/20";
 
                   const topFactor = [...(r.factors || [])].sort(
                     (a, b) => (b.contribution_pct ?? 0) - (a.contribution_pct ?? 0)
@@ -1492,6 +1516,7 @@ function AlertDetailModal({
   onAskAssistant: (prompt: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<number>(-1); // -1 = Composite Synthesis Overview, 0..N = Individual Bulletin
+  const locale = useApp((s) => s.locale);
 
   const isMulti = cluster.alerts.length > 1;
   const currentHazard = activeTab >= 0 ? cluster.hazardItems[activeTab] : cluster.hazardItems[0];
@@ -1543,13 +1568,12 @@ function AlertDetailModal({
           </div>
           <div className="flex items-center gap-2">
             <span
-              className={`chip text-[9px] font-black uppercase px-2.5 py-1 ${
-                cluster.isExtreme
+              className={`chip text-[9px] font-black uppercase px-2.5 py-1 ${cluster.isExtreme
                   ? "bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 font-extrabold"
                   : cluster.isWarning
-                  ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-extrabold"
-                  : "bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 font-extrabold"
-              }`}
+                    ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-extrabold"
+                    : "bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 font-extrabold"
+                }`}
             >
               {activeTab === -1 ? cluster.highestSeverity : (activeAlert.severity || cluster.highestSeverity)}
             </span>
@@ -1569,24 +1593,22 @@ function AlertDetailModal({
             <button
               type="button"
               onClick={() => setActiveTab(-1)}
-              className={`px-3 py-1 rounded-xl text-xs font-black transition-all shrink-0 ${
-                activeTab === -1
+              className={`px-3 py-1 rounded-xl text-xs font-black transition-all shrink-0 ${activeTab === -1
                   ? "bg-neo-accent text-white shadow-sm"
                   : "bg-[var(--card)] border border-[var(--line)] text-neo-muted hover:text-neo-text"
-              }`}
+                }`}
             >
-              Overview Synthesis ({cluster.alerts.length})
+              {locale === "hi" ? "समग्र सारांश" : locale === "bn" ? "সার্বিক সারসংক্ষেপ" : "Overview Synthesis"} ({cluster.alerts.length})
             </button>
             {cluster.hazardItems.map((hi, idx) => (
               <button
                 key={idx}
                 type="button"
                 onClick={() => setActiveTab(idx)}
-                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 border flex items-center gap-1.5 ${
-                  activeTab === idx
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 border flex items-center gap-1.5 ${activeTab === idx
                     ? "text-white shadow-sm font-black"
                     : "bg-[var(--card)] text-neo-muted hover:text-neo-text"
-                }`}
+                  }`}
                 style={{
                   borderColor: activeTab === idx ? hi.theme.color : "var(--line)",
                   backgroundColor: activeTab === idx ? hi.theme.color : undefined,
@@ -1605,16 +1627,26 @@ function AlertDetailModal({
             <div className="text-xs min-w-0">
               <p className="font-black text-neo-text flex items-center gap-1.5">
                 <IconMapNavigator className="w-3.5 h-3.5 text-neo-accent shrink-0" />
-                <span>Target Sector:</span>
+                <span>{locale === "hi" ? "लक्षित क्षेत्र:" : locale === "bn" ? "টার্গেট অঞ্চল:" : "Target Sector:"}</span>
                 <span className="text-neo-accent font-black break-words">{cluster.placeFormatted}</span>
                 {cluster.distKm != null && !cluster.isCurrentLoc && (
-                  <span className="text-[10px] font-mono text-neo-muted font-normal">({cluster.distKm} km away)</span>
+                  <span className="text-[10px] font-mono text-neo-muted font-normal">
+                    ({cluster.distKm} {locale === "hi" ? "किमी दूर" : locale === "bn" ? "কিমি দূরে" : "km away"})
+                  </span>
                 )}
               </p>
               <p className="text-[10px] text-neo-muted mt-0.5 leading-relaxed">
                 {cluster.isCurrentLoc
-                  ? "Active location currently loaded in the dashboard."
-                  : "Switch active dashboard pin to load localized radar, hyetograph, and 7-day forecast."}
+                  ? (locale === "hi"
+                      ? "यह सक्रिय स्थान वर्तमान में डैशबोर्ड में लोड है।"
+                      : locale === "bn"
+                      ? "এই সক্রিয় স্থানটি বর্তমানে ড্যাশবোর্ডে লোড করা আছে।"
+                      : "Active location currently loaded in the dashboard.")
+                  : (locale === "hi"
+                      ? "स्थानीय रडार, हाइटोमीटर और 7-दिवसीय पूर्वानुमान देखने के लिए पिन बदलें।"
+                      : locale === "bn"
+                      ? "স্থানীয় রাডার, হাইটোগ্রাফ এবং ৭ দিনের পূর্বাভাসের জন্য পিন পরিবর্তন করুন।"
+                      : "Switch active dashboard pin to load localized radar, hyetograph, and 7-day forecast.")}
               </p>
             </div>
             {!cluster.isCurrentLoc && (
@@ -1626,7 +1658,7 @@ function AlertDetailModal({
                 }}
                 className="px-3.5 py-1.5 text-xs font-black rounded-xl bg-neo-accent text-white hover:brightness-110 shadow-sm transition-all shrink-0 flex items-center gap-1"
               >
-                <span>Switch Pin</span>
+                <span>{locale === "hi" ? "स्थान बदलें" : locale === "bn" ? "পিন পরিবর্তন" : "Switch Pin"}</span>
                 <IconExternal className="w-3 h-3" />
               </button>
             )}
@@ -1640,7 +1672,7 @@ function AlertDetailModal({
                 <div className="flex items-center gap-2">
                   <IconShieldAlert className="w-4 h-4 text-neo-accent shrink-0" />
                   <h3 className="text-xs font-black uppercase tracking-wider text-neo-accent">
-                    Compound Threat Assessment
+                    {locale === "hi" ? "समग्र आपदा जोखिम आकलन" : locale === "bn" ? "যৌথ দুর্যোগ ঝুঁকি পর্যালোচনা" : "Compound Threat Assessment"}
                   </h3>
                 </div>
                 <div className="space-y-2.5 text-xs">
@@ -1670,7 +1702,7 @@ function AlertDetailModal({
               <div className="p-3.5 rounded-2xl bg-[color-mix(in_srgb,var(--warn)_10%,transparent)] border border-[color-mix(in_srgb,var(--warn)_25%,transparent)] space-y-2">
                 <span className="font-black text-neo-warn text-[11px] uppercase tracking-wider flex items-center gap-1.5">
                   <IconWarningSign className="w-3.5 h-3.5 text-neo-warn shrink-0" />
-                  Consolidated Emergency Action Directives:
+                  {locale === "hi" ? "एकीकृत आपातकालीन सुरक्षा निर्देश:" : locale === "bn" ? "সম্মিলিত জরুরি পদক্ষেপ নির্দেশিকা:" : "Consolidated Emergency Action Directives:"}
                 </span>
                 <ul className="space-y-1.5 text-xs text-neo-text font-medium pl-1">
                   {Array.from(new Set(cluster.hazardItems.map((h) => h.guidance.action))).map((action, i) => (
@@ -1696,20 +1728,20 @@ function AlertDetailModal({
                 <div className="space-y-2 text-xs">
                   <div>
                     <span className="font-bold text-neo-muted text-[10px] uppercase tracking-wider block">
-                      Threat Assessment:
+                      {locale === "hi" ? "जोखिम आकलन:" : locale === "bn" ? "ঝুঁকি পর্যালোচনা:" : "Threat Assessment:"}
                     </span>
                     <p className="text-neo-text leading-relaxed font-semibold mt-0.5">{currentHazard.guidance.threat}</p>
                   </div>
                   <div>
                     <span className="font-bold text-neo-muted text-[10px] uppercase tracking-wider block">
-                      Environmental Impact:
+                      {locale === "hi" ? "पर्यावरणीय प्रभाव:" : locale === "bn" ? "পরিবেশগত প্রভাব:" : "Environmental Impact:"}
                     </span>
                     <p className="text-neo-text leading-relaxed mt-0.5">{currentHazard.guidance.guidance}</p>
                   </div>
                   <div className="p-2.5 rounded-xl bg-[color-mix(in_srgb,var(--warn)_10%,transparent)] border border-[color-mix(in_srgb,var(--warn)_25%,transparent)]">
                     <span className="font-black text-neo-warn text-[10px] uppercase tracking-wider flex items-center gap-1">
                       <IconWarningSign className="w-3 h-3 text-neo-warn" />
-                      Recommended Public Directives:
+                      {locale === "hi" ? "अनुशंसित नागरिक सुरक्षा निर्देश:" : locale === "bn" ? "সুপারিশকৃত নাগরিক সুরক্ষা নির্দেশিকা:" : "Recommended Public Directives:"}
                     </span>
                     <p className="text-neo-text font-medium text-xs leading-relaxed mt-1">{currentHazard.guidance.action}</p>
                   </div>
@@ -1722,11 +1754,11 @@ function AlertDetailModal({
                   <div className="flex items-center gap-2">
                     <IconFileBulletin className="w-4 h-4 text-neo-text shrink-0" />
                     <h3 className="text-xs font-black uppercase tracking-wider text-neo-text">
-                      Official Authority Bulletin
+                      {locale === "hi" ? "आधिकारिक मौसम बुलेटिन" : locale === "bn" ? "সরকারি আবহাওয়া বুলেটিন" : "Official Authority Bulletin"}
                     </h3>
                   </div>
                   <span className="text-[9px] font-mono text-neo-muted uppercase font-bold">
-                    Source: {cleanSourceName(activeAlert.source)}
+                    {locale === "hi" ? "स्रोत:" : locale === "bn" ? "উৎস:" : "Source:"} {cleanSourceName(activeAlert.source)}
                   </span>
                 </div>
 
@@ -1771,7 +1803,7 @@ function AlertDetailModal({
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 text-xs font-black text-neo-accent hover:underline"
                     >
-                      <span>Open Official Portal Bulletin</span>
+                      <span>{locale === "hi" ? "आधिकारिक पोर्टल बुलेटिन खोलें" : locale === "bn" ? "অফিসিয়াল পোর্টাল বুলেটিন খুলুন" : "Open Official Portal Bulletin"}</span>
                       <IconExternal className="w-3.5 h-3.5" />
                     </a>
                   </div>
@@ -1783,23 +1815,37 @@ function AlertDetailModal({
           {/* Technical Telemetry & Metadata Parameters */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div className="neo-in p-2.5 rounded-xl text-center border border-[var(--line)]">
-              <span className="text-[9px] font-bold text-neo-muted uppercase block">Severity</span>
+              <span className="text-[9px] font-bold text-neo-muted uppercase block">
+                {locale === "hi" ? "गंभीरता" : locale === "bn" ? "তীব্রতা" : "Severity"}
+              </span>
               <span className="font-mono text-xs font-bold text-neo-accent capitalize mt-0.5 block">{cluster.highestSeverity}</span>
             </div>
             <div className="neo-in p-2.5 rounded-xl text-center border border-[var(--line)]">
-              <span className="text-[9px] font-bold text-neo-muted uppercase block">Coordinates</span>
+              <span className="text-[9px] font-bold text-neo-muted uppercase block">
+                {locale === "hi" ? "निर्देशांक" : locale === "bn" ? "স্থানাঙ্ক" : "Coordinates"}
+              </span>
               <span className="font-mono text-xs font-bold text-neo-text mt-0.5 block truncate">
-                {cluster.lat != null && cluster.lon != null ? `${cluster.lat.toFixed(2)}°, ${cluster.lon.toFixed(2)}°` : "Regional"}
+                {cluster.lat != null && cluster.lon != null ? `${cluster.lat.toFixed(2)}°, ${cluster.lon.toFixed(2)}°` : (locale === "hi" ? "क्षेत्रीय" : locale === "bn" ? "আঞ্চলিক" : "Regional")}
               </span>
             </div>
             <div className="neo-in p-2.5 rounded-xl text-center border border-[var(--line)]">
-              <span className="text-[9px] font-bold text-neo-muted uppercase block">Active Hazards</span>
-              <span className="font-mono text-xs font-bold text-neo-text capitalize mt-0.5 block">{cluster.alerts.length} Warnings</span>
+              <span className="text-[9px] font-bold text-neo-muted uppercase block">
+                {locale === "hi" ? "सक्रिय आपदाएं" : locale === "bn" ? "সক্রিয় দুর্যোগ" : "Active Hazards"}
+              </span>
+              <span className="font-mono text-xs font-bold text-neo-text capitalize mt-0.5 block">
+                {cluster.alerts.length} {locale === "hi" ? "चेतावनियां" : locale === "bn" ? "সতর্কতা" : "Warnings"}
+              </span>
             </div>
             <div className="neo-in p-2.5 rounded-xl text-center border border-[var(--line)]">
-              <span className="text-[9px] font-bold text-neo-muted uppercase block">Live Distance</span>
+              <span className="text-[9px] font-bold text-neo-muted uppercase block">
+                {locale === "hi" ? "दूरी" : locale === "bn" ? "দূরত্ব" : "Live Distance"}
+              </span>
               <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 block">
-                {cluster.isCurrentLoc ? "Active Pin" : cluster.distKm != null ? `${cluster.distKm} km` : "Statewide"}
+                {cluster.isCurrentLoc
+                  ? (locale === "hi" ? "सक्रिय पिन" : locale === "bn" ? "সক্রিয় পিন" : "Active Pin")
+                  : cluster.distKm != null
+                  ? `${cluster.distKm} ${locale === "hi" ? "किमी" : locale === "bn" ? "কিমি" : "km"}`
+                  : (locale === "hi" ? "राज्यव्यापी" : locale === "bn" ? "রাজ্যব্যাপী" : "Statewide")}
               </span>
             </div>
           </div>
@@ -1815,7 +1861,7 @@ function AlertDetailModal({
                 className="px-3.5 py-2 text-xs font-bold rounded-xl border border-[var(--line)] bg-[var(--card)] hover:bg-[var(--line)] transition-all flex items-center gap-1.5 shadow-sm"
               >
                 <IconMapNavigator className="w-3.5 h-3.5 text-neo-accent" />
-                <span>View on Map</span>
+                <span>{locale === "hi" ? "मानचित्र पर देखें" : locale === "bn" ? "মানচিত্রে দেখুন" : "View on Map"}</span>
               </button>
             )}
             <button
@@ -1828,7 +1874,7 @@ function AlertDetailModal({
               className="px-3.5 py-2 text-xs font-bold rounded-xl border border-[var(--line)] bg-[var(--card)] hover:bg-[var(--line)] transition-all flex items-center gap-1.5 shadow-sm text-neo-text"
             >
               <IconSparkle className="w-3.5 h-3.5 text-neo-accent" />
-              <span>Ask PRITHVI-AI</span>
+              <span>{locale === "hi" ? "PRITHVI-AI से पूछें" : locale === "bn" ? "PRITHVI-AI কে জিজ্ঞাসা" : "Ask PRITHVI-AI"}</span>
             </button>
           </div>
 
@@ -1837,7 +1883,7 @@ function AlertDetailModal({
             onClick={onClose}
             className="px-5 py-2 text-xs font-bold rounded-xl bg-[color-mix(in_srgb,var(--line)_80%,transparent)] hover:bg-[var(--line)] transition-all"
           >
-            Close
+            {locale === "hi" ? "बंद करें" : locale === "bn" ? "বন্ধ করুন" : "Close"}
           </button>
         </div>
       </div>
@@ -1879,17 +1925,52 @@ function seaState(waveHeightM?: unknown) {
   return { label: "High / Storm", color: "#dc2626" };
 }
 
+function getPollenAssessment(type: "grass" | "ragweed", value?: unknown): {
+  label: string;
+  color: string;
+  bg: string;
+} {
+  if (value == null || value === "—" || isNaN(Number(value))) {
+    return { label: "Good", color: "#10b981", bg: "rgba(16, 185, 129, 0.12)" };
+  }
+  const n = Number(value);
+  if (type === "grass") {
+    if (n < 10) return { label: "Good", color: "#10b981", bg: "rgba(16, 185, 129, 0.12)" };
+    if (n < 30) return { label: "Satisfactory", color: "#06b6d4", bg: "rgba(6, 182, 212, 0.12)" };
+    if (n < 60) return { label: "Moderate", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.12)" };
+    if (n < 120) return { label: "Poor", color: "#f97316", bg: "rgba(249, 115, 22, 0.12)" };
+    return { label: "Severe", color: "#ef4444", bg: "rgba(239, 68, 68, 0.12)" };
+  } else {
+    if (n < 10) return { label: "Good", color: "#10b981", bg: "rgba(16, 185, 129, 0.12)" };
+    if (n < 25) return { label: "Satisfactory", color: "#06b6d4", bg: "rgba(6, 182, 212, 0.12)" };
+    if (n < 50) return { label: "Moderate", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.12)" };
+    if (n < 90) return { label: "Poor", color: "#f97316", bg: "rgba(249, 115, 22, 0.12)" };
+    return { label: "Severe", color: "#ef4444", bg: "rgba(239, 68, 68, 0.12)" };
+  }
+}
+
 function AirCard({
   dash,
   locale,
   onNavigateData,
+  forceSummary,
+  className,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   onNavigateData?: (subTab: string) => void;
+  forceSummary?: boolean;
+  className?: string;
 }) {
   const displayNull = useApp((s) => s.settings.displayNullValues);
   const [tab, setTab] = useState<"live" | "gases" | "pollen" | "trend">("live");
+
+  const [localSummary, setLocalSummary] = useState<boolean | null>(null);
+  useEffect(() => {
+    setLocalSummary(null);
+  }, [forceSummary]);
+  const isSummary = localSummary !== null ? localSummary : Boolean(forceSummary);
+
   const q = dash.quality || {};
   const air = (q.air || {}) as Record<string, unknown>;
   const cpcb = (air.cpcb || {}) as Record<string, unknown>;
@@ -1922,147 +2003,187 @@ function AirCard({
   const gases = displayNull ? rawGases : rawGases.filter((g) => g.v != null && !isNaN(Number(g.v)));
 
   const rawPollen = [
-    { k: "Grass Pollen", v: pollen.grass, icon: "🌾" },
-    { k: "Ragweed", v: pollen.ragweed, icon: "🌿" },
-    { k: "Birch", v: pollen.birch, icon: "🌳" },
-    { k: "Olive / Alder", v: pollen.olive ?? pollen.alder, icon: "🍃" },
+    {
+      k: "Grass Pollen",
+      species: "Poaceae / Gramineae",
+      v: pollen.grass,
+      type: "grass" as const,
+      remark: getPollenAssessment("grass", pollen.grass),
+    },
+    {
+      k: "Ragweed",
+      species: "Parthenium / Asteraceae",
+      v: pollen.ragweed,
+      type: "ragweed" as const,
+      remark: getPollenAssessment("ragweed", pollen.ragweed),
+    },
   ];
   const pollenList = displayNull ? rawPollen : rawPollen.filter((p) => p.v != null && String(p.v).trim() !== "" && String(p.v) !== "—");
 
   return (
-    <section className="neo p-4 flex flex-col justify-between select-none min-h-[220px]">
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">AIR QUALITY</p>
-        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-          {(["live", "gases", "pollen", "trend"] as const).map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-                tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
-              }`}
-            >
-              {id === "live" ? "AQI" : id === "gases" ? "Gases" : id === "pollen" ? "Pollen" : "24h"}
-            </button>
-          ))}
+    <section
+      onClick={() => setLocalSummary(!isSummary)}
+      className={`neo neo-section-air p-4 flex flex-col justify-start select-none cursor-pointer transition min-h-[220px] hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--line))] ${className || ""}`}
+      title="Click card to switch between detailed data and overview"
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 flex-wrap mb-2">
+        <div className="flex items-center gap-1.5">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">AIR QUALITY &amp; POLLEN</p>
         </div>
+        {!isSummary && (
+          <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+            {(["live", "gases", "pollen", "trend"] as const).map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTab(id);
+                }}
+                className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
+                  }`}
+              >
+                {id === "live" ? "AQI" : id === "gases" ? "Gases" : id === "pollen" ? "Pollen" : "24h"}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="min-h-[160px] flex flex-col justify-between">
-        {tab === "live" && (
-          <div key="air-live" className="fade-in-scale space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">AQI Index</p>
-                <div className="flex items-baseline gap-2 mt-0.5">
-                  <span className="font-mono text-2xl font-black text-neo-accent leading-none">
-                    {aqiVal != null ? String(aqiVal) : "—"}
-                  </span>
-                  <span
-                    className="chip text-[9px] font-bold uppercase px-2 py-0.5"
-                    style={{ color: aqiInfo.color, backgroundColor: aqiInfo.bg }}
-                  >
-                    {String(cpcb.category ?? aqiInfo.label)}
-                  </span>
+      <div className="w-full">
+        {isSummary ? (
+          <LaymanSummaryBody summary={getAirLaymanSummary(dash, locale)} />
+        ) : (
+          <>
+            {tab === "live" && (
+              <div key="air-live" className="fade-in-scale space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">AQI Index</p>
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className="font-mono text-2xl font-black text-neo-accent leading-none">
+                        {aqiVal != null ? String(aqiVal) : "—"}
+                      </span>
+                      <span
+                        className="chip text-[9px] font-bold uppercase px-2 py-0.5"
+                        style={{ color: aqiInfo.color, backgroundColor: aqiInfo.bg }}
+                      >
+                        {String(cpcb.category ?? aqiInfo.label)}
+                      </span>
+                    </div>
+                  </div>
+                  {(displayNull || air.uv_index != null) && (
+                    <div className="text-right">
+                      <span className="text-[9px] uppercase tracking-wider text-neo-muted font-bold block">UV Index</span>
+                      <span className="font-mono text-sm font-extrabold text-amber-500">
+                        {air.uv_index != null ? `${air.uv_index}` : "—"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1.5 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+                  {particulates.map((p) => {
+                    const val = Number(p.v ?? 0);
+                    const pct = Math.min(100, Math.round((val / p.max) * 100));
+                    return (
+                      <div key={p.k} className="flex items-center justify-between gap-2 text-[10px]">
+                        <span className="font-bold text-neo-muted w-10 shrink-0">{p.k}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-[var(--line)] overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: p.color }} />
+                        </div>
+                        <span className="font-mono font-bold text-neo-text min-w-[3rem] text-right">
+                          {p.v != null ? `${p.v}` : "—"}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-              {(displayNull || air.uv_index != null) && (
-                <div className="text-right">
-                  <span className="text-[9px] uppercase tracking-wider text-neo-muted font-bold block">UV Index</span>
-                  <span className="font-mono text-sm font-extrabold text-amber-500">
-                    {air.uv_index != null ? `${air.uv_index}` : "—"}
-                  </span>
-                </div>
-              )}
-            </div>
+            )}
 
-            <div className="space-y-1.5 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
-              {particulates.map((p) => {
-                const val = Number(p.v ?? 0);
-                const pct = Math.min(100, Math.round((val / p.max) * 100));
-                return (
-                  <div key={p.k} className="flex items-center justify-between gap-2 text-[10px]">
-                    <span className="font-bold text-neo-muted w-10 shrink-0">{p.k}</span>
-                    <div className="flex-1 h-1.5 rounded-full bg-[var(--line)] overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: p.color }} />
+            {tab === "gases" && (
+              <div key="air-gases" className="fade-in-scale grid grid-cols-3 gap-1.5">
+                {gases.length > 0 ? (
+                  gases.map((g) => (
+                    <div key={g.k} className="neo-in p-1.5 rounded-xl text-center">
+                      <span className="text-[9px] uppercase tracking-wider text-neo-muted font-bold block">{g.k}</span>
+                      <span className="font-mono text-xs font-black text-neo-accent mt-0.5 block truncate">
+                        {g.v != null ? `${g.v}` : "—"}
+                      </span>
+                      <span className="text-[8px] text-neo-muted block">{g.unit}</span>
                     </div>
-                    <span className="font-mono font-bold text-neo-text min-w-[3rem] text-right">
-                      {p.v != null ? `${p.v}` : "—"}
-                    </span>
+                  ))
+                ) : (
+                  <p className="col-span-3 text-center text-xs text-neo-muted py-6">No gas sensor data available.</p>
+                )}
+              </div>
+            )}
+
+            {tab === "pollen" && (
+              <div key="air-pollen" className="fade-in-scale space-y-2">
+                <div className="flex items-center justify-between text-[10px] text-neo-muted font-semibold pb-1 border-b border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+                  <span>Allergen Target</span>
+                  <div className="flex items-center gap-4">
+                    <span>Concentration</span>
+                    <span>Remark</span>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {tab === "gases" && (
-          <div key="air-gases" className="fade-in-scale grid grid-cols-3 gap-1.5">
-            {gases.length > 0 ? (
-              gases.map((g) => (
-                <div key={g.k} className="neo-in p-1.5 rounded-xl text-center">
-                  <span className="text-[9px] uppercase tracking-wider text-neo-muted font-bold block">{g.k}</span>
-                  <span className="font-mono text-xs font-black text-neo-accent mt-0.5 block truncate">
-                    {g.v != null ? `${g.v}` : "—"}
-                  </span>
-                  <span className="text-[8px] text-neo-muted block">{g.unit}</span>
                 </div>
-              ))
-            ) : (
-              <p className="col-span-3 text-center text-xs text-neo-muted py-6">No gas sensor data available.</p>
+                {pollenList.length > 0 ? (
+                  pollenList.map((p) => (
+                    <div key={p.k} className="neo-in px-2.5 py-1.5 rounded-xl flex items-center justify-between gap-2 text-xs">
+                      <div className="min-w-0">
+                        <p className="font-bold text-neo-text leading-tight">{p.k}</p>
+                        <p className="text-[9px] text-neo-muted truncate">{p.species}</p>
+                      </div>
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <span className="font-mono text-xs font-bold text-neo-accent">
+                          {p.v != null ? `${p.v} gr/m³` : "Nominal"}
+                        </span>
+                        <span
+                          className="chip text-[9px] font-black uppercase px-2 py-0.5 rounded-md"
+                          style={{ color: p.remark.color, backgroundColor: p.remark.bg }}
+                        >
+                          {p.remark.label}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center text-xs text-neo-muted py-6">No pollen counts available.</p>
+                )}
+                <p className="text-[8px] text-neo-muted italic pt-0.5">
+                  Source: India Aerobiology Climatological Model (Bose Institute / Gangetic surveys scaled with weather washout).
+                </p>
+              </div>
             )}
-          </div>
-        )}
 
-        {tab === "pollen" && (
-          <div key="air-pollen" className="fade-in-scale space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] text-neo-muted font-semibold pb-1 border-b border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
-              <span>Allergen Species</span>
-              <span>Count (grains/m³)</span>
-            </div>
-            {pollenList.length > 0 ? (
-              pollenList.map((p) => (
-                <div key={p.k} className="neo-in px-2 py-1 rounded-xl flex items-center justify-between text-[10px]">
-                  <span className="flex items-center gap-1.5 font-medium text-neo-text">
-                    <span>{p.icon}</span>
-                    <span>{p.k}</span>
-                  </span>
-                  <span className="font-mono font-bold text-neo-accent">
-                    {p.v != null ? `${p.v}` : "Low / Quiet"}
-                  </span>
+            {tab === "trend" && (
+              <div key="air-trend" className="fade-in-scale space-y-1">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-neo-muted font-semibold">24-Hour AQI Trend</span>
+                  <span className="font-mono font-bold text-neo-accent">{aqiVal != null ? `Now: ${aqiVal}` : ""}</span>
                 </div>
-              ))
-            ) : (
-              <p className="text-center text-xs text-neo-muted py-6">No pollen counts available.</p>
+                <div className="h-28">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={aqi24h}>
+                      <defs>
+                        <linearGradient id="aqiGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--accent2)" stopOpacity={0.4} />
+                          <stop offset="95%" stopColor="var(--accent2)" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="3 3" />
+                      <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} interval={4} />
+                      <YAxis stroke="var(--muted)" fontSize={8} width={24} />
+                      <Tooltip contentStyle={tip} />
+                      <Area type="monotone" dataKey="v" stroke="var(--accent2)" strokeWidth={2} fill="url(#aqiGrad)" name="AQI" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             )}
-          </div>
-        )}
-
-        {tab === "trend" && (
-          <div key="air-trend" className="fade-in-scale space-y-1">
-            <div className="flex items-center justify-between text-[10px]">
-              <span className="text-neo-muted font-semibold">24-Hour AQI Trend</span>
-              <span className="font-mono font-bold text-neo-accent">{aqiVal != null ? `Now: ${aqiVal}` : ""}</span>
-            </div>
-            <div className="h-28">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={aqi24h}>
-                  <defs>
-                    <linearGradient id="aqiGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--accent2)" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="var(--accent2)" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} interval={4} />
-                  <YAxis stroke="var(--muted)" fontSize={8} width={24} />
-                  <Tooltip contentStyle={tip} />
-                  <Area type="monotone" dataKey="v" stroke="var(--accent2)" strokeWidth={2} fill="url(#aqiGrad)" name="AQI" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          </>
         )}
       </div>
     </section>
@@ -2074,15 +2195,26 @@ function LandWeatherCard({
   locale,
   units,
   onNavigateData,
+  forceSummary,
+  className,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   units: "metric" | "imperial";
   onNavigateData?: (subTab: string) => void;
+  forceSummary?: boolean;
+  className?: string;
 }) {
   const displayNull = useApp((s) => s.settings.displayNullValues);
   const t = COPY[locale];
   const [tab, setTab] = useState<"soil" | "thermal" | "trend">("soil");
+
+  const [localSummary, setLocalSummary] = useState<boolean | null>(null);
+  useEffect(() => {
+    setLocalSummary(null);
+  }, [forceSummary]);
+  const isSummary = localSummary !== null ? localSummary : Boolean(forceSummary);
+
   const q = dash.quality || {};
   const climate = (q.climate || {}) as Record<string, unknown>;
   const series = dash.descriptive.series;
@@ -2110,127 +2242,143 @@ function LandWeatherCard({
   }));
 
   return (
-    <section className="neo p-4 flex flex-col justify-between select-none min-h-[220px]">
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.landWeather}</p>
-        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-          {(["soil", "thermal", "trend"] as const).map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-                tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
-              }`}
-            >
-              {id === "soil" ? "Soil Moisture" : id === "thermal" ? "Thermal & ET" : "24h"}
-            </button>
-          ))}
+    <section
+      onClick={() => setLocalSummary(!isSummary)}
+      className={`neo neo-section-land p-4 flex flex-col justify-start select-none cursor-pointer transition min-h-[220px] hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--line))] ${className || ""}`}
+      title="Click card to switch between detailed data and overview"
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 flex-wrap mb-2">
+        <div className="flex items-center gap-1.5">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-400">{t.landWeather}</p>
         </div>
+        {!isSummary && (
+          <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+            {(["soil", "thermal", "trend"] as const).map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTab(id);
+                }}
+                className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
+                  }`}
+              >
+                {id === "soil" ? "Soil Moisture" : id === "thermal" ? "Thermal & ET" : "24h"}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="min-h-[160px] flex flex-col justify-between">
-        {tab === "soil" && (
-          <div key="land-soil" className="fade-in-scale space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] text-neo-muted font-semibold pb-1 border-b border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
-              <span>Depth Stratum</span>
-              <span>Moisture (m³/m³)</span>
-            </div>
-            <div className="space-y-1">
-              {soilMoistureDepths.map((s) => {
-                const pct = Math.min(100, Math.round((s.val / 0.5) * 100));
-                return (
-                  <div key={s.depth} className="neo-in px-2 py-1 rounded-xl flex items-center justify-between gap-2 text-[10px]">
-                    <div className="min-w-0 flex items-center gap-1.5">
-                      <span className="chip px-1.5 py-0 text-[8px] font-bold uppercase shrink-0" style={{ color: s.color }}>
-                        {s.depth}
-                      </span>
-                      <span className="text-[10px] font-medium text-neo-muted truncate hidden sm:inline">{s.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <div className="w-12 sm:w-16 h-1.5 rounded-full bg-[var(--line)] overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: s.color }} />
+      <div className="w-full">
+        {isSummary ? (
+          <LaymanSummaryBody summary={getSoilLaymanSummary(dash, locale)} />
+        ) : (
+          <>
+            {tab === "soil" && (
+              <div key="land-soil" className="fade-in-scale space-y-1.5">
+                <div className="flex items-center justify-between text-[10px] text-neo-muted font-semibold pb-1 border-b border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+                  <span>Depth Stratum</span>
+                  <span>Moisture (m³/m³)</span>
+                </div>
+                <div className="space-y-1 max-h-[148px] overflow-y-auto modal-scrollbar pr-0.5">
+                  {soilMoistureDepths.map((s) => {
+                    const pct = Math.min(100, Math.round((s.val / 0.5) * 100));
+                    return (
+                      <div key={s.depth} className="neo-in px-2 py-1 rounded-xl flex items-center justify-between gap-2 text-[10px]">
+                        <div className="min-w-0 flex items-center gap-1.5">
+                          <span className="chip px-1.5 py-0 text-[8px] font-bold uppercase shrink-0" style={{ color: s.color }}>
+                            {s.depth}
+                          </span>
+                          <span className="text-[10px] font-medium text-neo-muted truncate hidden sm:inline">{s.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="w-12 sm:w-16 h-1.5 rounded-full bg-[var(--line)] overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: s.color }} />
+                          </div>
+                          <span className="font-mono text-xs font-bold text-neo-text min-w-[3rem] text-right">
+                            {s.raw != null && !isNaN(Number(s.raw)) ? `${Number(s.raw).toFixed(3)}` : "—"}
+                          </span>
+                        </div>
                       </div>
-                      <span className="font-mono text-xs font-bold text-neo-text min-w-[3rem] text-right">
-                        {s.raw != null && !isNaN(Number(s.raw)) ? `${Number(s.raw).toFixed(3)}` : "—"}
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {tab === "thermal" && (
+              <div key="land-thermal" className="fade-in-scale space-y-2">
+                <div className="grid grid-cols-4 gap-1">
+                  {soilTempDepths.map((st) => (
+                    <div key={st.depth} className="neo-in p-1.5 rounded-xl text-center">
+                      <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">{st.depth}</span>
+                      <span className="font-mono text-xs font-black text-neo-accent mt-0.5 block">
+                        {st.val != null ? temp(Number(st.val), units) : "—"}
+                      </span>
+                      <span className="text-[8px] text-neo-muted block">Soil Temp</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+                  {(displayNull || climate.et0_today != null) && (
+                    <div className="neo-in p-1.5 rounded-xl text-center">
+                      <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Ref ET₀</span>
+                      <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                        {climate.et0_today != null ? `${climate.et0_today} mm` : "—"}
                       </span>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                  )}
+                  {(displayNull || climate.vpd_now != null) && (
+                    <div className="neo-in p-1.5 rounded-xl text-center">
+                      <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">VPD Deficit</span>
+                      <span className="font-mono text-xs font-bold text-neo-text">
+                        {climate.vpd_now != null ? `${climate.vpd_now} kPa` : "—"}
+                      </span>
+                    </div>
+                  )}
+                  {(displayNull || climate.dew_point_c != null) && (
+                    <div className="neo-in p-1.5 rounded-xl text-center">
+                      <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Dew Point</span>
+                      <span className="font-mono text-xs font-bold text-neo-accent">
+                        {climate.dew_point_c != null ? temp(Number(climate.dew_point_c), units) : "—"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
-        {tab === "thermal" && (
-          <div key="land-thermal" className="fade-in-scale space-y-2">
-            <div className="grid grid-cols-4 gap-1">
-              {soilTempDepths.map((st) => (
-                <div key={st.depth} className="neo-in p-1.5 rounded-xl text-center">
-                  <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">{st.depth}</span>
-                  <span className="font-mono text-xs font-black text-neo-accent mt-0.5 block">
-                    {st.val != null ? temp(Number(st.val), units) : "—"}
-                  </span>
-                  <span className="text-[8px] text-neo-muted block">Soil Temp</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
-              {(displayNull || climate.et0_today != null) && (
-                <div className="neo-in p-1.5 rounded-xl text-center">
-                  <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Ref ET₀</span>
-                  <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                    {climate.et0_today != null ? `${climate.et0_today} mm` : "—"}
+            {tab === "trend" && (
+              <div key="land-trend" className="fade-in-scale space-y-1">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-neo-muted font-semibold">24-Hour Soil Moisture Profile</span>
+                  <span className="font-mono font-bold text-neo-accent">
+                    {climate.soil_m_0_1 != null ? `${climate.soil_m_0_1} m³/m³` : ""}
                   </span>
                 </div>
-              )}
-              {(displayNull || climate.vpd_now != null) && (
-                <div className="neo-in p-1.5 rounded-xl text-center">
-                  <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">VPD Deficit</span>
-                  <span className="font-mono text-xs font-bold text-neo-text">
-                    {climate.vpd_now != null ? `${climate.vpd_now} kPa` : "—"}
-                  </span>
+                <div className="h-28">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={soil24h}>
+                      <defs>
+                        <linearGradient id="soilGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#8d6e63" stopOpacity={0.4} />
+                          <stop offset="95%" stopColor="#8d6e63" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="3 3" />
+                      <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} interval={4} />
+                      <YAxis stroke="var(--muted)" fontSize={8} width={28} />
+                      <Tooltip contentStyle={tip} />
+                      <Area type="monotone" dataKey="v" stroke="#8d6e63" strokeWidth={2} fill="url(#soilGrad)" name="Soil Moisture" />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
-              )}
-              {(displayNull || climate.dew_point_c != null) && (
-                <div className="neo-in p-1.5 rounded-xl text-center">
-                  <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Dew Point</span>
-                  <span className="font-mono text-xs font-bold text-neo-accent">
-                    {climate.dew_point_c != null ? temp(Number(climate.dew_point_c), units) : "—"}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {tab === "trend" && (
-          <div key="land-trend" className="fade-in-scale space-y-1">
-            <div className="flex items-center justify-between text-[10px]">
-              <span className="text-neo-muted font-semibold">24-Hour Soil Moisture Profile</span>
-              <span className="font-mono font-bold text-neo-accent">
-                {climate.soil_m_0_1 != null ? `${climate.soil_m_0_1} m³/m³` : ""}
-              </span>
-            </div>
-            <div className="h-28">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={soil24h}>
-                  <defs>
-                    <linearGradient id="soilGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8d6e63" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#8d6e63" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} interval={4} />
-                  <YAxis stroke="var(--muted)" fontSize={8} width={28} />
-                  <Tooltip contentStyle={tip} />
-                  <Area type="monotone" dataKey="v" stroke="#8d6e63" strokeWidth={2} fill="url(#soilGrad)" name="Soil Moisture" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </section>
@@ -2242,15 +2390,26 @@ function MarineWeatherCard({
   locale,
   units,
   onNavigateData,
+  forceSummary,
+  className,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   units: "metric" | "imperial";
   onNavigateData?: (subTab: string) => void;
+  forceSummary?: boolean;
+  className?: string;
 }) {
   const displayNull = useApp((s) => s.settings.displayNullValues);
   const t = COPY[locale];
   const [tab, setTab] = useState<"waves" | "ocean" | "hydro">("waves");
+
+  const [localSummary, setLocalSummary] = useState<boolean | null>(null);
+  useEffect(() => {
+    setLocalSummary(null);
+  }, [forceSummary]);
+  const isSummary = localSummary !== null ? localSummary : Boolean(forceSummary);
+
   const q = dash.quality || {};
   const marine = (q.marine || {}) as Record<string, unknown>;
   const flood = (q.flood || {}) as Record<string, unknown>;
@@ -2266,132 +2425,148 @@ function MarineWeatherCard({
   }));
 
   return (
-    <section className="neo p-4 flex flex-col justify-between select-none min-h-[220px]">
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.marineWeather}</p>
-        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-          {(["waves", "ocean", "hydro"] as const).map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-                tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
-              }`}
-            >
-              {id === "waves" ? "Waves & Swell" : id === "ocean" ? "Ocean & SST" : "Hydrology"}
-            </button>
-          ))}
+    <section
+      onClick={() => setLocalSummary(!isSummary)}
+      className={`neo neo-section-marine p-4 flex flex-col justify-start select-none cursor-pointer transition min-h-[220px] hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--line))] ${className || ""}`}
+      title="Click card to switch between detailed data and overview"
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 flex-wrap mb-2">
+        <div className="flex items-center gap-1.5">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-400">{t.marineWeather}</p>
         </div>
+        {!isSummary && (
+          <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+            {(["waves", "ocean", "hydro"] as const).map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTab(id);
+                }}
+                className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
+                  }`}
+              >
+                {id === "waves" ? "Waves & Swell" : id === "ocean" ? "Ocean & SST" : "Hydrology"}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="min-h-[160px] flex flex-col justify-between">
-        {tab === "waves" && (
-          <div key="marine-waves" className="fade-in-scale space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">Sig. Wave Height</p>
-                <div className="flex items-baseline gap-2 mt-0.5">
-                  <span className="font-mono text-2xl font-black text-neo-rain leading-none">
-                    {waveM != null ? `${waveM.toFixed(2)} m` : "—"}
-                  </span>
-                  <span
-                    className="chip text-[9px] font-bold uppercase px-2 py-0.5"
-                    style={{ color: state.color }}
-                  >
-                    {state.label}
-                  </span>
+      <div className="w-full">
+        {isSummary ? (
+          <LaymanSummaryBody summary={getMarineLaymanSummary(dash, locale)} />
+        ) : (
+          <>
+            {tab === "waves" && (
+              <div key="marine-waves" className="fade-in-scale space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">Sig. Wave Height</p>
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className="font-mono text-2xl font-black text-neo-rain leading-none">
+                        {waveM != null ? `${waveM.toFixed(2)} m` : "—"}
+                      </span>
+                      <span
+                        className="chip text-[9px] font-bold uppercase px-2 py-0.5"
+                        style={{ color: state.color }}
+                      >
+                        {state.label}
+                      </span>
+                    </div>
+                  </div>
+                  {(displayNull || marine.wave_period_s != null) && (
+                    <div className="text-right">
+                      <span className="text-[9px] uppercase tracking-wider text-neo-muted font-bold block">Wave Period</span>
+                      <span className="font-mono text-sm font-extrabold text-neo-text">
+                        {marine.wave_period_s != null ? `${marine.wave_period_s} s` : "—"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)] text-[10px]">
+                  {(displayNull || marine.swell_height_m != null) && (
+                    <div className="neo-in p-1.5 rounded-xl">
+                      <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Primary Swell</span>
+                      <span className="font-mono font-extrabold text-sky-600 dark:text-sky-400 block mt-0.5">
+                        {marine.swell_height_m != null ? `${marine.swell_height_m} m` : "—"}
+                        {marine.swell_dir_deg != null && <span className="ml-1 text-[9px] text-neo-muted">({String(marine.swell_dir_deg)}°)</span>}
+                      </span>
+                    </div>
+                  )}
+                  {(displayNull || marine.wind_wave_height_m != null) && (
+                    <div className="neo-in p-1.5 rounded-xl">
+                      <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Wind Wave</span>
+                      <span className="font-mono font-extrabold text-neo-text block mt-0.5">
+                        {marine.wind_wave_height_m != null ? `${marine.wind_wave_height_m} m` : "—"}
+                        {marine.wind_wave_dir_deg != null && <span className="ml-1 text-[9px] text-neo-muted">({String(marine.wind_wave_dir_deg)}°)</span>}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
-              {(displayNull || marine.wave_period_s != null) && (
-                <div className="text-right">
-                  <span className="text-[9px] uppercase tracking-wider text-neo-muted font-bold block">Wave Period</span>
-                  <span className="font-mono text-sm font-extrabold text-neo-text">
-                    {marine.wave_period_s != null ? `${marine.wave_period_s} s` : "—"}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)] text-[10px]">
-              {(displayNull || marine.swell_height_m != null) && (
-                <div className="neo-in p-1.5 rounded-xl">
-                  <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Primary Swell</span>
-                  <span className="font-mono font-extrabold text-sky-600 dark:text-sky-400 block mt-0.5">
-                    {marine.swell_height_m != null ? `${marine.swell_height_m} m` : "—"}
-                    {marine.swell_dir_deg != null && <span className="ml-1 text-[9px] text-neo-muted">({String(marine.swell_dir_deg)}°)</span>}
-                  </span>
-                </div>
-              )}
-              {(displayNull || marine.wind_wave_height_m != null) && (
-                <div className="neo-in p-1.5 rounded-xl">
-                  <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Wind Wave</span>
-                  <span className="font-mono font-extrabold text-neo-text block mt-0.5">
-                    {marine.wind_wave_height_m != null ? `${marine.wind_wave_height_m} m` : "—"}
-                    {marine.wind_wave_dir_deg != null && <span className="ml-1 text-[9px] text-neo-muted">({String(marine.wind_wave_dir_deg)}°)</span>}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {tab === "ocean" && (
-          <div key="marine-ocean" className="fade-in-scale space-y-2">
-            <div className="grid grid-cols-3 gap-1.5">
-              {(displayNull || marine.sst_c != null) && (
-                <div className="neo-in p-2 rounded-xl text-center">
-                  <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Sea Temp (SST)</span>
-                  <span className="font-mono text-base font-black text-cyan-600 dark:text-cyan-400 mt-0.5 block">
-                    {marine.sst_c != null ? temp(Number(marine.sst_c), units) : "—"}
-                  </span>
-                </div>
-              )}
-              {(displayNull || marine.ocean_current_ms != null) && (
-                <div className="neo-in p-2 rounded-xl text-center">
-                  <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Ocean Current</span>
-                  <span className="font-mono text-base font-black text-neo-accent mt-0.5 block">
-                    {marine.ocean_current_ms != null ? `${marine.ocean_current_ms} m/s` : "—"}
-                  </span>
-                </div>
-              )}
-              {(displayNull || marine.sea_level_m != null) && (
-                <div className="neo-in p-2 rounded-xl text-center">
-                  <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Sea Level</span>
-                  <span className="font-mono text-base font-black text-neo-text mt-0.5 block">
-                    {marine.sea_level_m != null ? `${marine.sea_level_m} m` : "—"}
-                  </span>
-                </div>
-              )}
-            </div>
-            {marine.ocean_current_dir != null && (
-              <p className="text-[9px] text-neo-muted text-center pt-1">
-                Current Heading: {String(marine.ocean_current_dir)}° · Open-Meteo Marine
-              </p>
             )}
-          </div>
-        )}
 
-        {tab === "hydro" && (
-          <div key="marine-hydro" className="fade-in-scale space-y-1">
-            <div className="flex items-center justify-between text-[10px]">
-              <span className="text-neo-muted font-semibold">River Discharge Trend (GloFAS)</span>
-              <span className="chip px-1.5 py-0 text-[8px] font-bold uppercase text-neo-rain">
-                {String(flood.trend ?? dash.predictive.flood_discharge_trend ?? "Normal")}
-              </span>
-            </div>
-            <div className="h-28">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={discharge7d}>
-                  <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} />
-                  <YAxis stroke="var(--muted)" fontSize={8} width={24} />
-                  <Tooltip contentStyle={tip} />
-                  <Bar dataKey="v" fill="var(--flood)" radius={[3, 3, 0, 0]} name="Discharge (m³/s)" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+            {tab === "ocean" && (
+              <div key="marine-ocean" className="fade-in-scale space-y-2">
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(displayNull || marine.sst_c != null) && (
+                    <div className="neo-in p-2 rounded-xl text-center">
+                      <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Sea Temp (SST)</span>
+                      <span className="font-mono text-base font-black text-cyan-600 dark:text-cyan-400 mt-0.5 block">
+                        {marine.sst_c != null ? temp(Number(marine.sst_c), units) : "—"}
+                      </span>
+                    </div>
+                  )}
+                  {(displayNull || marine.ocean_current_ms != null) && (
+                    <div className="neo-in p-2 rounded-xl text-center">
+                      <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Ocean Current</span>
+                      <span className="font-mono text-base font-black text-neo-accent mt-0.5 block">
+                        {marine.ocean_current_ms != null ? `${marine.ocean_current_ms} m/s` : "—"}
+                      </span>
+                    </div>
+                  )}
+                  {(displayNull || marine.sea_level_m != null) && (
+                    <div className="neo-in p-2 rounded-xl text-center">
+                      <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Sea Level</span>
+                      <span className="font-mono text-base font-black text-neo-text mt-0.5 block">
+                        {marine.sea_level_m != null ? `${marine.sea_level_m} m` : "—"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                {marine.ocean_current_dir != null && (
+                  <p className="text-[9px] text-neo-muted text-center pt-1">
+                    Current Heading: {String(marine.ocean_current_dir)}° · Open-Meteo Marine
+                  </p>
+                )}
+              </div>
+            )}
+
+            {tab === "hydro" && (
+              <div key="marine-hydro" className="fade-in-scale space-y-1">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-neo-muted font-semibold">River Discharge Trend (GloFAS)</span>
+                  <span className="chip px-1.5 py-0 text-[8px] font-bold uppercase text-neo-rain">
+                    {String(flood.trend ?? dash.predictive.flood_discharge_trend ?? "Normal")}
+                  </span>
+                </div>
+                <div className="h-28">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={discharge7d}>
+                      <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="3 3" />
+                      <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} />
+                      <YAxis stroke="var(--muted)" fontSize={8} width={24} />
+                      <Tooltip contentStyle={tip} />
+                      <Bar dataKey="v" fill="var(--flood)" radius={[3, 3, 0, 0]} name="Discharge (m³/s)" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </section>
@@ -2482,14 +2657,17 @@ function TropicalCycloneCard({
   locale,
   units,
   onNavigateData,
+  forceSummary,
+  className,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   units: "metric" | "imperial";
   onNavigateData?: (subTab: string) => void;
+  forceSummary?: boolean;
+  className?: string;
 }) {
   const t = COPY[locale];
-  const [tab, setTab] = useState<"overview" | "dynamics" | "advisory">("overview");
 
   // Cyclone alerts detection
   const cycloneWarnings = (dash.prescriptive.warnings || []).filter(
@@ -2518,21 +2696,33 @@ function TropicalCycloneCard({
         cycloneRisk.severity === "warning" ||
         cycloneRisk.score_pct >= 45));
 
+  const [dataTab, setDataTab] = useState<"overview" | "dynamics">("overview");
+  const [showAdvisory, setShowAdvisory] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (hasCycloneAlert && forceSummary != null) {
+      setShowAdvisory(Boolean(forceSummary));
+    }
+  }, [forceSummary, hasCycloneAlert]);
+
+  const isAdvisoryActive = hasCycloneAlert && showAdvisory;
+  const currentTab = isAdvisoryActive ? "advisory" : dataTab;
+
   const stormName = activeAlert?.title || (hasCycloneAlert ? "Active Cyclone Alert" : "—");
   const intensityCategory = hasCycloneAlert
     ? (activeAlert?.title && /super/i.test(activeAlert.title)
       ? "Super Cyclonic Storm"
       : activeAlert?.title && /extremely severe/i.test(activeAlert.title)
-      ? "Extremely Severe CS"
-      : activeAlert?.title && /very severe/i.test(activeAlert.title)
-      ? "Very Severe CS"
-      : activeAlert?.title && /severe/i.test(activeAlert.title)
-      ? "Severe Cyclonic Storm"
-      : activeAlert?.title && /deep depression/i.test(activeAlert.title)
-      ? "Deep Depression"
-      : activeAlert?.title && /depression/i.test(activeAlert.title)
-      ? "Depression"
-      : "Cyclonic Storm / Alert")
+        ? "Extremely Severe CS"
+        : activeAlert?.title && /very severe/i.test(activeAlert.title)
+          ? "Very Severe CS"
+          : activeAlert?.title && /severe/i.test(activeAlert.title)
+            ? "Severe Cyclonic Storm"
+            : activeAlert?.title && /deep depression/i.test(activeAlert.title)
+              ? "Deep Depression"
+              : activeAlert?.title && /depression/i.test(activeAlert.title)
+                ? "Depression"
+                : "Cyclonic Storm / Alert")
     : "—";
 
   const maxWind = hasCycloneAlert
@@ -2545,26 +2735,53 @@ function TropicalCycloneCard({
     ? `${Math.round(activeAlert.distance_km)} km`
     : "—";
 
+  // When no activity is detected: keep data section only (Overview & Dynamics)
+  const availableTabs = hasCycloneAlert
+    ? (["overview", "dynamics", "advisory"] as const)
+    : (["overview", "dynamics"] as const);
+
   return (
-    <section className="neo p-4 flex flex-col justify-between select-none min-h-[240px]">
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+    <section
+      onClick={() => {
+        if (hasCycloneAlert) {
+          setShowAdvisory(!isAdvisoryActive);
+        }
+      }}
+      className={`neo neo-section-cyclone p-4 flex flex-col justify-start select-none transition min-h-[220px] ${hasCycloneAlert
+          ? "cursor-pointer hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--line))]"
+          : "cursor-default"
+        } ${className || ""}`}
+      title={hasCycloneAlert ? "Click card to switch between data and emergency advisory" : undefined}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 flex-wrap mb-2">
         <div className="flex items-center gap-1.5">
-          <div className="flex h-5 w-5 items-center justify-center rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400">
+          <div className="flex h-5 w-5 items-center justify-center rounded-md bg-rose-500/15 text-rose-600 dark:text-rose-400">
             <IconCyclone className="w-3.5 h-3.5" />
           </div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-rose-700 dark:text-rose-400">
             {t.tropicalCyclones || "TROPICAL CYCLONES"}
           </p>
         </div>
         <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-          {(["overview", "dynamics", "advisory"] as const).map((id) => (
+          {availableTabs.map((id) => (
             <button
               key={id}
               type="button"
-              onClick={() => setTab(id)}
-              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-                tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
-              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (id === "advisory") {
+                  setShowAdvisory(true);
+                } else {
+                  setShowAdvisory(false);
+                  setDataTab(id);
+                }
+              }}
+              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${currentTab === id
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : id === "advisory"
+                    ? "text-rose-600 dark:text-rose-400 font-extrabold animate-pulse"
+                    : "text-neo-muted hover:text-neo-text"
+                }`}
             >
               {id === "overview" ? "Overview" : id === "dynamics" ? "Dynamics" : "Advisory"}
             </button>
@@ -2572,19 +2789,18 @@ function TropicalCycloneCard({
         </div>
       </div>
 
-      <div className="min-h-[165px] flex flex-col justify-between">
-        {tab === "overview" && (
+      <div className="w-full min-h-[160px] flex flex-col justify-between">
+        {currentTab === "overview" && (
           <div key="cyclone-overview" className="fade-in-scale space-y-2.5">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">Basin Alert Status</p>
                   <span
-                    className={`chip text-[8px] font-extrabold uppercase px-2 py-0.5 ${
-                      hasCycloneAlert
+                    className={`chip text-[8px] font-extrabold uppercase px-2 py-0.5 ${hasCycloneAlert
                         ? "bg-[color-mix(in_srgb,var(--danger)_15%,transparent)] text-neo-danger border-neo-danger animate-pulse"
                         : "bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-neo-accent"
-                    }`}
+                      }`}
                   >
                     {hasCycloneAlert ? "Active Cyclone Watch" : "Quiet / Normal"}
                   </span>
@@ -2625,13 +2841,13 @@ function TropicalCycloneCard({
           </div>
         )}
 
-        {tab === "dynamics" && (
+        {currentTab === "dynamics" && (
           <div key="cyclone-dynamics" className="fade-in-scale space-y-2">
             <div className="flex items-center justify-between text-[10px] text-neo-muted font-semibold pb-1 border-b border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
               <span>IMD Intensity Classification</span>
               <span>Sustained Winds</span>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 max-h-[148px] overflow-y-auto modal-scrollbar pr-0.5">
               {[
                 { name: "Super Cyclonic Storm (SuCS)", speed: "≥ 222 km/h", color: "#7f1d1d", active: hasCycloneAlert && /super/i.test(stormName) },
                 { name: "Extremely Severe CS (ESCS)", speed: "167–221 km/h", color: "#dc2626", active: hasCycloneAlert && /extremely/i.test(stormName) },
@@ -2642,9 +2858,8 @@ function TropicalCycloneCard({
               ].map((tier) => (
                 <div
                   key={tier.name}
-                  className={`neo-in px-2 py-1 rounded-xl flex items-center justify-between gap-2 text-[10px] ${
-                    tier.active ? "ring-1 ring-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)]" : ""
-                  }`}
+                  className={`neo-in px-2 py-1 rounded-xl flex items-center justify-between gap-2 text-[10px] ${tier.active ? "ring-1 ring-[var(--danger)] bg-[color-mix(in_srgb,var(--danger)_8%,transparent)]" : ""
+                    }`}
                 >
                   <span className="font-medium text-neo-text truncate">{tier.name}</span>
                   <span className="font-mono font-bold text-neo-muted shrink-0" style={{ color: tier.active ? tier.color : undefined }}>
@@ -2656,8 +2871,8 @@ function TropicalCycloneCard({
           </div>
         )}
 
-        {tab === "advisory" && (
-          <div key="cyclone-advisory" className="fade-in-scale space-y-2">
+        {currentTab === "advisory" && (
+          <div key="cyclone-advisory" className="fade-in-scale h-full flex flex-col justify-between space-y-2">
             <div className="flex items-center justify-between text-[10px]">
               <span className="text-neo-muted font-bold uppercase tracking-wider">IMD RSMC & Disaster Management Protocol</span>
               <span className="chip text-[9px] font-bold uppercase text-neo-accent">
@@ -2698,14 +2913,17 @@ function EarthquakeTsunamiCard({
   locale,
   units,
   onNavigateData,
+  forceSummary,
+  className,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   units: "metric" | "imperial";
   onNavigateData?: (subTab: string) => void;
+  forceSummary?: boolean;
+  className?: string;
 }) {
   const t = COPY[locale];
-  const [tab, setTab] = useState<"seismic" | "tsunami" | "safety">("seismic");
 
   // Seismic & Tsunami alerts detection
   const seismicWarnings = (dash.prescriptive.warnings || []).filter(
@@ -2737,6 +2955,18 @@ function EarthquakeTsunamiCard({
 
   const hasEarthquakeTsunamiAlert = seismicWarnings.length > 0 || tsuThreat || hasQuakeAlert;
 
+  const [dataTab, setDataTab] = useState<"seismic" | "tsunami">("seismic");
+  const [showAdvisory, setShowAdvisory] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (hasEarthquakeTsunamiAlert && forceSummary != null) {
+      setShowAdvisory(Boolean(forceSummary));
+    }
+  }, [forceSummary, hasEarthquakeTsunamiAlert]);
+
+  const isAdvisoryActive = hasEarthquakeTsunamiAlert && showAdvisory;
+  const currentTab = isAdvisoryActive ? "safety" : dataTab;
+
   const magVal = hasEarthquakeTsunamiAlert && nearestQuake?.mag != null
     ? `M ${Number(nearestQuake.mag).toFixed(1)}`
     : "—";
@@ -2749,49 +2979,75 @@ function EarthquakeTsunamiCard({
   const tsunamiWatchStatus = tsuThreat
     ? "ITEWS Watch / Threat Issued"
     : hasEarthquakeTsunamiAlert && nearestQuake?.tsunami_flag
-    ? "USGS Tsunami Flagged"
-    : "—";
+      ? "USGS Tsunami Flagged"
+      : "—";
+
+  // When no activity is detected: keep data section only (Seismic & Tsunami)
+  const availableTabs = hasEarthquakeTsunamiAlert
+    ? (["seismic", "tsunami", "safety"] as const)
+    : (["seismic", "tsunami"] as const);
 
   return (
-    <section className="neo p-4 flex flex-col justify-between select-none min-h-[240px]">
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+    <section
+      onClick={() => {
+        if (hasEarthquakeTsunamiAlert) {
+          setShowAdvisory(!isAdvisoryActive);
+        }
+      }}
+      className={`neo neo-section-seismic p-4 flex flex-col justify-start select-none transition min-h-[220px] ${hasEarthquakeTsunamiAlert
+          ? "cursor-pointer hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--line))]"
+          : "cursor-default"
+        } ${className || ""}`}
+      title={hasEarthquakeTsunamiAlert ? "Click card to switch between data and emergency advisory" : undefined}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 flex-wrap mb-2">
         <div className="flex items-center gap-1.5">
-          <div className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+          <div className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400">
             <IconSeismic className="w-3.5 h-3.5" />
           </div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400">
             {t.earthquakeAndTsunami || "EARTHQUAKE & TSUNAMI"}
           </p>
         </div>
         <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-          {(["seismic", "tsunami", "safety"] as const).map((id) => (
+          {availableTabs.map((id) => (
             <button
               key={id}
               type="button"
-              onClick={() => setTab(id)}
-              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-                tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
-              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (id === "safety") {
+                  setShowAdvisory(true);
+                } else {
+                  setShowAdvisory(false);
+                  setDataTab(id);
+                }
+              }}
+              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${currentTab === id
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : id === "safety"
+                    ? "text-amber-600 dark:text-amber-400 font-extrabold animate-pulse"
+                    : "text-neo-muted hover:text-neo-text"
+                }`}
             >
-              {id === "seismic" ? "Seismic" : id === "tsunami" ? "Tsunami" : "Safety"}
+              {id === "seismic" ? "Seismic" : id === "tsunami" ? "Tsunami" : "Advisory"}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="min-h-[165px] flex flex-col justify-between">
-        {tab === "seismic" && (
+      <div className="w-full min-h-[160px] flex flex-col justify-between">
+        {currentTab === "seismic" && (
           <div key="quake-seismic" className="fade-in-scale space-y-2.5">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">Seismic Monitor</p>
                   <span
-                    className={`chip text-[8px] font-extrabold uppercase px-2 py-0.5 ${
-                      hasEarthquakeTsunamiAlert
+                    className={`chip text-[8px] font-extrabold uppercase px-2 py-0.5 ${hasEarthquakeTsunamiAlert
                         ? "bg-[color-mix(in_srgb,var(--danger)_15%,transparent)] text-neo-danger border-neo-danger animate-pulse"
                         : "bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-neo-accent"
-                    }`}
+                      }`}
                   >
                     {hasEarthquakeTsunamiAlert ? "Seismic Alert Active" : "Stable / Nominal"}
                   </span>
@@ -2834,14 +3090,13 @@ function EarthquakeTsunamiCard({
           </div>
         )}
 
-        {tab === "tsunami" && (
+        {currentTab === "tsunami" && (
           <div key="quake-tsunami" className="fade-in-scale space-y-2">
             <div className="flex items-center justify-between text-[10px]">
               <span className="text-neo-muted font-bold uppercase tracking-wider">INCOIS ITEWS Tsunami Watch</span>
               <span
-                className={`chip text-[9px] font-bold uppercase ${
-                  tsuThreat ? "text-neo-danger bg-[color-mix(in_srgb,var(--danger)_15%,transparent)]" : "text-neo-accent"
-                }`}
+                className={`chip text-[9px] font-bold uppercase ${tsuThreat ? "text-neo-danger bg-[color-mix(in_srgb,var(--danger)_15%,transparent)]" : "text-neo-accent"
+                  }`}
               >
                 {tsuThreat ? "Threat Active" : "No Threat to Coast"}
               </span>
@@ -2885,12 +3140,20 @@ function EarthquakeTsunamiCard({
           </div>
         )}
 
-        {tab === "safety" && (
-          <div key="quake-safety" className="fade-in-scale space-y-2">
+        {currentTab === "safety" && (
+          <div key="quake-safety" className="fade-in-scale h-full flex flex-col justify-between space-y-2">
             <div className="flex items-center justify-between text-[10px]">
               <span className="text-neo-muted font-bold uppercase tracking-wider">NDMA Earthquake & Tsunami Guidelines</span>
-              <span className="chip text-[9px] font-bold uppercase text-neo-accent">Emergency Ready</span>
+              <span className="chip text-[9px] font-bold uppercase text-neo-accent">
+                {hasEarthquakeTsunamiAlert ? "Emergency Active" : "Emergency Ready"}
+              </span>
             </div>
+            {nearestQuake && hasEarthquakeTsunamiAlert && (
+              <div className="neo-in p-2 rounded-xl text-xs space-y-0.5">
+                <p className="font-bold text-neo-danger">{nearestQuake.place || "Active Seismic Event"}</p>
+                <p className="text-[10px] text-neo-muted">Magnitude: {magVal} · Depth: {depthVal} · Distance: {distVal}</p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-1.5 text-[10px]">
               <div className="neo-in p-2 rounded-xl space-y-1">
                 <span className="font-bold text-neo-text block">1. Drop, Cover, Hold On</span>
@@ -2917,13 +3180,22 @@ function NowcastSection({
   locale,
   units,
   className,
+  forceSummary,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   units: "metric" | "imperial";
   className?: string;
+  forceSummary?: boolean;
 }) {
   const t = COPY[locale];
+
+  const [localSummary, setLocalSummary] = useState<boolean | null>(null);
+  useEffect(() => {
+    setLocalSummary(null);
+  }, [forceSummary]);
+  const isSummary = localSummary !== null ? localSummary : Boolean(forceSummary);
+
   const series = dash.descriptive.series;
   const hourly = (series.temp_hourly || []).slice(0, 18).map((p, i) => ({
     t: hhmm(p.t),
@@ -2981,146 +3253,159 @@ function NowcastSection({
   }, [dash.predictions?.vera?.hourly, six, units]);
 
   return (
-    <section className={`neo p-4 flex flex-col justify-between select-none min-h-[240px] ${className || ""}`}>
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+    <section
+      onClick={() => setLocalSummary(!isSummary)}
+      className={`neo neo-section-nowcast p-4 flex flex-col justify-start select-none cursor-pointer transition min-h-[220px] hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--line))] ${className || ""}`}
+      title="Click card to switch between detailed data and overview"
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 flex-wrap mb-2">
         <div className="flex items-center gap-1.5">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-neo-accent">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400">
             <circle cx="12" cy="12" r="10" />
             <polyline points="12 6 12 12 16 14" />
           </svg>
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700 dark:text-indigo-400">
             {t.next6h}
           </p>
         </div>
-        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-          <button
-            type="button"
-            onClick={() => setNext6Mode("numbers")}
-            className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-              next6Mode === "numbers"
-                ? "bg-neo-accent text-white shadow-sm"
-                : "text-neo-muted hover:text-neo-text"
-            }`}
-          >
-            Slots
-          </button>
-          <button
-            type="button"
-            onClick={() => setNext6Mode("plot")}
-            className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-              next6Mode === "plot"
-                ? "bg-neo-accent text-white shadow-sm"
-                : "text-neo-muted hover:text-neo-text"
-            }`}
-            title="Open-Meteo vs Blend (MoE) comparison"
-          >
-            Blend
-          </button>
-        </div>
+        {!isSummary && (
+          <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setNext6Mode("numbers");
+              }}
+              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${next6Mode === "numbers" ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
+                }`}
+            >
+              Slots
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setNext6Mode("plot");
+              }}
+              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${next6Mode === "plot"
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : "text-neo-muted hover:text-neo-text"
+                }`}
+              title="Open-Meteo vs Blend (MoE) comparison"
+            >
+              Blend
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="min-h-[160px] flex flex-col justify-between">
-        {next6Mode === "numbers" ? (
-          <div key="numbers-view" className="fade-in-scale space-y-2">
-            {six.length ? (
-              <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-3 xl:grid-cols-6 gap-1">
-                {six.map((h) => (
-                  <div
-                    key={h.t}
-                    className="neo-in flex flex-col items-center gap-0.5 rounded-xl py-1 px-1 text-center transition hover:bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] min-w-0"
-                  >
-                    <p className="text-[9px] font-semibold text-neo-muted truncate w-full">{h.t}</p>
-                    <p className="font-mono text-xs font-bold text-neo-accent truncate w-full">{temp(h.temp, units)}</p>
-                    <p className="text-[10px] font-mono text-neo-rain truncate w-full">{rain(h.rain, units)}</p>
-                    <p className="text-[8px] text-neo-muted truncate w-full">{speed(h.wind, units)}</p>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            <div className="h-14 sm:h-16 pt-1">
-              {six.length ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={six} margin={{ top: 2, right: 2, left: -20, bottom: 0 }}>
-                    <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="2 3" />
-                    <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} tickLine={false} />
-                    <YAxis stroke="var(--muted)" fontSize={8} width={20} />
-                    <Tooltip contentStyle={tip} />
-                    <Bar
-                      dataKey="rain"
-                      fill="var(--rain)"
-                      radius={[3, 3, 0, 0]}
-                      name={`Rain (${rainUnit(units)})`}
-                      isAnimationActive={true}
-                      animationDuration={300}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <p className="flex h-full items-center justify-center text-xs text-neo-muted">—</p>
-              )}
-            </div>
-          </div>
+      <div className="w-full min-h-[160px] flex flex-col justify-between">
+        {isSummary ? (
+          <LaymanSummaryBody summary={getNowcastLaymanSummary(dash, locale, units)} />
         ) : (
-          <div key="plot-view" className="fade-in-scale space-y-2">
-            <div className="flex items-center justify-between gap-1 flex-wrap">
-              <div className="inline-flex rounded-lg bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner text-[10px]">
-                {(["rain", "temp", "wind"] as const).map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => setNext6Var(k)}
-                    className={`rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wide transition-all ${
-                      next6Var === k
-                        ? "bg-neo-accent text-white shadow-sm"
-                        : "text-neo-muted hover:text-neo-text"
-                    }`}
-                  >
-                    {k === "rain" ? "Rain" : k === "temp" ? "Temp" : "Wind"}
-                  </button>
-                ))}
+          <>
+            {next6Mode === "numbers" ? (
+              <div key="numbers-view" className="fade-in-scale space-y-2">
+                {six.length ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-3 xl:grid-cols-6 gap-1">
+                    {six.map((h) => (
+                      <div
+                        key={h.t}
+                        className="neo-in flex flex-col items-center gap-0.5 rounded-xl py-1 px-1 text-center transition hover:bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] min-w-0"
+                      >
+                        <p className="text-[9px] font-semibold text-neo-muted truncate w-full">{h.t}</p>
+                        <p className="font-mono text-xs font-bold text-neo-accent truncate w-full">{temp(h.temp, units)}</p>
+                        <p className="text-[10px] font-mono text-neo-rain truncate w-full">{rain(h.rain, units)}</p>
+                        <p className="text-[8px] text-neo-muted truncate w-full">{speed(h.wind, units)}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="h-14 sm:h-16 pt-1">
+                  {six.length ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={six} margin={{ top: 2, right: 2, left: -20, bottom: 0 }}>
+                        <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="2 3" />
+                        <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} tickLine={false} />
+                        <YAxis stroke="var(--muted)" fontSize={8} width={20} />
+                        <Tooltip contentStyle={tip} />
+                        <Bar
+                          dataKey="rain"
+                          fill="var(--rain)"
+                          radius={[3, 3, 0, 0]}
+                          name={`Rain (${rainUnit(units)})`}
+                          isAnimationActive={true}
+                          animationDuration={300}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p className="flex h-full items-center justify-center text-xs text-neo-muted">—</p>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2 text-[10px] font-medium">
-                <span className="flex items-center gap-1 text-[#c45c26]">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#c45c26]" /> OM
-                </span>
-                <span className="flex items-center gap-1 text-[#8e44ad]">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#8e44ad]" /> Blend
-                </span>
-              </div>
-            </div>
+            ) : (
+              <div key="plot-view" className="fade-in-scale space-y-2">
+                <div className="flex items-center justify-between gap-1 flex-wrap">
+                  <div className="inline-flex rounded-lg bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner text-[10px]">
+                    {(["rain", "temp", "wind"] as const).map((k) => (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => setNext6Var(k)}
+                        className={`rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wide transition-all ${next6Var === k
+                            ? "bg-neo-accent text-white shadow-sm"
+                            : "text-neo-muted hover:text-neo-text"
+                          }`}
+                      >
+                        {k === "rain" ? "Rain" : k === "temp" ? "Temp" : "Wind"}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] font-medium">
+                    <span className="flex items-center gap-1 text-[#c45c26]">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#c45c26]" /> OM
+                    </span>
+                    <span className="flex items-center gap-1 text-[#8e44ad]">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#8e44ad]" /> Blend
+                    </span>
+                  </div>
+                </div>
 
-            <div className="h-24 sm:h-28">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={next6Comparison}>
-                  <CartesianGrid stroke="var(--line)" vertical={false} />
-                  <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} />
-                  <YAxis stroke="var(--muted)" fontSize={8} width={24} />
-                  <Tooltip contentStyle={tip} />
-                  <Line
-                    type="monotone"
-                    name="Open-Meteo"
-                    dataKey={next6Var === "rain" ? "rain_om" : next6Var === "temp" ? "temp_om" : "wind_om"}
-                    stroke="#c45c26"
-                    strokeWidth={2}
-                    strokeDasharray="4 3"
-                    dot={{ r: 2, fill: "#c45c26" }}
-                    isAnimationActive={true}
-                    animationDuration={300}
-                  />
-                  <Line
-                    type="monotone"
-                    name="Blend (MoE)"
-                    dataKey={next6Var === "rain" ? "rain_blend" : next6Var === "temp" ? "temp_blend" : "wind_blend"}
-                    stroke="#8e44ad"
-                    strokeWidth={2}
-                    dot={{ r: 2.5, fill: "#8e44ad" }}
-                    isAnimationActive={true}
-                    animationDuration={300}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+                <div className="h-24 sm:h-28">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={next6Comparison}>
+                      <CartesianGrid stroke="var(--line)" vertical={false} />
+                      <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} />
+                      <YAxis stroke="var(--muted)" fontSize={8} width={24} />
+                      <Tooltip contentStyle={tip} />
+                      <Line
+                        type="monotone"
+                        name="Open-Meteo"
+                        dataKey={next6Var === "rain" ? "rain_om" : next6Var === "temp" ? "temp_om" : "wind_om"}
+                        stroke="#c45c26"
+                        strokeWidth={2}
+                        strokeDasharray="4 3"
+                        dot={{ r: 2, fill: "#c45c26" }}
+                        isAnimationActive={true}
+                        animationDuration={300}
+                      />
+                      <Line
+                        type="monotone"
+                        name="Blend (MoE)"
+                        dataKey={next6Var === "rain" ? "rain_blend" : next6Var === "temp" ? "temp_blend" : "wind_blend"}
+                        stroke="#8e44ad"
+                        strokeWidth={2}
+                        dot={{ r: 2.5, fill: "#8e44ad" }}
+                        isAnimationActive={true}
+                        animationDuration={300}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </section>
@@ -3132,26 +3417,28 @@ function HomeHazardStrip({
   locale,
   units,
   onNavigateData,
+  forceSummary,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   units: "metric" | "imperial";
   onNavigateData?: (subTab: string) => void;
+  forceSummary?: boolean;
 }) {
   return (
     <div className="space-y-3">
       {/* 3 Innovative Environmental & Earth Science Cards */}
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-        <AirCard dash={dash} locale={locale} onNavigateData={onNavigateData} />
-        <LandWeatherCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} />
-        <MarineWeatherCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} />
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 items-start">
+        <AirCard dash={dash} locale={locale} onNavigateData={onNavigateData} forceSummary={forceSummary} />
+        <LandWeatherCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} forceSummary={forceSummary} />
+        <MarineWeatherCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} forceSummary={forceSummary} className="sm:col-span-2 lg:col-span-1" />
       </div>
 
       {/* 3 Dedicated Geo-Hazard & Disaster Early Warning Cards (Cyclone, Seismic/Tsunami, Nowcasting / Next 6h) */}
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-        <TropicalCycloneCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} />
-        <EarthquakeTsunamiCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} />
-        <NowcastSection dash={dash} locale={locale} units={units} className="w-full" />
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 items-start">
+        <TropicalCycloneCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} forceSummary={forceSummary} />
+        <EarthquakeTsunamiCard dash={dash} locale={locale} units={units} onNavigateData={onNavigateData} forceSummary={forceSummary} />
+        <NowcastSection dash={dash} locale={locale} units={units} className="w-full sm:col-span-2 lg:col-span-1" forceSummary={forceSummary} />
       </div>
     </div>
   );
@@ -3321,16 +3608,24 @@ function RainfallSection({
   units,
   onNavigateData,
   className,
+  forceSummary,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   units: "metric" | "imperial";
   onNavigateData?: (subTab: string) => void;
   className?: string;
+  forceSummary?: boolean;
 }) {
   const displayNull = useApp((s) => s.settings.displayNullValues);
   const t = COPY[locale];
   const [rainTab, setRainTab] = useState<"live" | "hourly" | "outlook">("live");
+
+  const [localSummary, setLocalSummary] = useState<boolean | null>(null);
+  useEffect(() => {
+    setLocalSummary(null);
+  }, [forceSummary]);
+  const isSummary = localSummary !== null ? localSummary : Boolean(forceSummary);
 
   const cur = dash.descriptive.current;
   const series = dash.descriptive.series;
@@ -3350,15 +3645,15 @@ function RainfallSection({
   // 24-hour hyetograph data
   const hourlyRain24 = (hourlySlots.length > 0
     ? hourlySlots.slice(0, 24).map((h) => ({
-        t: h.hour || hhmm(h.t),
-        v: units === "imperial" ? (h.precip_mm ? Math.round((h.precip_mm / 25.4) * 100) / 100 : 0) : (h.precip_mm ?? 0),
-        prob: h.precip_prob_pct ?? 0,
-      }))
+      t: h.hour || hhmm(h.t),
+      v: units === "imperial" ? (h.precip_mm ? Math.round((h.precip_mm / 25.4) * 100) / 100 : 0) : (h.precip_mm ?? 0),
+      prob: h.precip_prob_pct ?? 0,
+    }))
     : (series.precip_hourly || []).slice(0, 24).map((p) => ({
-        t: hhmm(p.t),
-        v: units === "imperial" ? Math.round((p.value / 25.4) * 100) / 100 : p.value,
-        prob: todayProb,
-      })));
+      t: hhmm(p.t),
+      v: units === "imperial" ? Math.round((p.value / 25.4) * 100) / 100 : p.value,
+      prob: todayProb,
+    })));
 
   // Next 8 hours mini hyetograph
   const rain8h = hourlyRain24.slice(0, 8);
@@ -3377,185 +3672,202 @@ function RainfallSection({
   const waterBalance = predictive.water_balance_7d_mm ?? (predictive.outlook_days?.[0]?.water_balance_mm ?? 0);
 
   return (
-    <section className={`neo p-4 ${className || "sm:col-span-6 lg:col-span-4 flex flex-col justify-between select-none min-h-[240px]"}`}>
+    <section
+      onClick={() => setLocalSummary(!isSummary)}
+      className={`neo neo-section-rain p-4 cursor-pointer transition hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--line))] ${className || "sm:col-span-6 lg:col-span-4 flex flex-col justify-start select-none"}`}
+      title="Click card to switch between detailed data and overview"
+    >
       {/* Header with Segmented Navigation */}
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 flex-wrap mb-2">
         <div className="flex items-center gap-1.5">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-neo-rain">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400">
             <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
             <path d="M16 14v6M8 14v6M12 16v6" />
           </svg>
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-700 dark:text-blue-400">
             {t.rainfall || "Rainfall"}
           </p>
         </div>
-        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-          <button
-            type="button"
-            onClick={() => setRainTab("live")}
-            className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-              rainTab === "live"
-                ? "bg-neo-accent text-white shadow-sm"
-                : "text-neo-muted hover:text-neo-text"
-            }`}
-          >
-            Live
-          </button>
-          <button
-            type="button"
-            onClick={() => setRainTab("hourly")}
-            className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-              rainTab === "hourly"
-                ? "bg-neo-accent text-white shadow-sm"
-                : "text-neo-muted hover:text-neo-text"
-            }`}
-            title="24-hour hyetograph"
-          >
-            24h
-          </button>
-          <button
-            type="button"
-            onClick={() => setRainTab("outlook")}
-            className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-              rainTab === "outlook"
-                ? "bg-neo-accent text-white shadow-sm"
-                : "text-neo-muted hover:text-neo-text"
-            }`}
-            title="7-Day precipitation & water budget"
-          >
-            7-Day
-          </button>
-        </div>
+        {!isSummary && (
+          <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRainTab("live");
+              }}
+              className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${rainTab === "live"
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : "text-neo-muted hover:text-neo-text"
+                }`}
+            >
+              Live
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRainTab("hourly");
+              }}
+              className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${rainTab === "hourly"
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : "text-neo-muted hover:text-neo-text"
+                }`}
+              title="24-hour hyetograph"
+            >
+              24h
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRainTab("outlook");
+              }}
+              className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${rainTab === "outlook"
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : "text-neo-muted hover:text-neo-text"
+                }`}
+              title="7-Day precipitation & water budget"
+            >
+              7-Day
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="min-h-[160px] flex flex-col justify-between">
-        {/* Tab 1: Live / Accumulation Summary */}
-        {rainTab === "live" && (
-          <div key="rain-live" className="fade-in-scale space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">1h Rate / Today</p>
-                <div className="flex items-baseline gap-2 mt-0.5">
-                  <span className="font-mono text-xl sm:text-2xl font-black text-neo-rain leading-none">
-                    {rain(precip1h, units)}
-                  </span>
-                  <span className="text-[10px] font-mono font-semibold text-neo-muted">
-                    ({rain(todayRainMm, units)} total)
+      <div className="w-full">
+        {isSummary ? (
+          <LaymanSummaryBody summary={getRainLaymanSummary(dash, locale, units)} />
+        ) : (
+          <>
+            {/* Tab 1: Live / Accumulation Summary */}
+            {rainTab === "live" && (
+              <div key="rain-live" className="fade-in-scale space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">1h Rate / Today</p>
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className="font-mono text-xl sm:text-2xl font-black text-neo-rain leading-none">
+                        {rain(precip1h, units)}
+                      </span>
+                      <span className="text-[10px] font-mono font-semibold text-neo-muted">
+                        ({rain(todayRainMm, units)} total)
+                      </span>
+                    </div>
+                  </div>
+                  <span
+                    className={`chip text-[9px] font-bold uppercase px-2 py-0.5 whitespace-nowrap border ${imdCat.isAlert
+                        ? "animate-pulse border-neo-danger text-neo-danger bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]"
+                        : "border-[color-mix(in_srgb,var(--line)_60%,transparent)]"
+                      }`}
+                    style={{ color: imdCat.color, backgroundColor: imdCat.bg }}
+                  >
+                    {imdCat.label}
                   </span>
                 </div>
-              </div>
-              <span
-                className={`chip text-[9px] font-bold uppercase px-2 py-0.5 whitespace-nowrap border ${
-                  imdCat.isAlert
-                    ? "animate-pulse border-neo-danger text-neo-danger bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]"
-                    : "border-[color-mix(in_srgb,var(--line)_60%,transparent)]"
-                }`}
-                style={{ color: imdCat.color, backgroundColor: imdCat.bg }}
-              >
-                {imdCat.label}
-              </span>
-            </div>
 
-            <div className="grid grid-cols-4 gap-1 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
-              <div className="neo-in p-1 rounded-xl text-center">
-                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">3-Day</span>
-                <span className="font-mono text-xs font-bold text-neo-rain mt-0.5 block truncate">
-                  {rain(precip3dMm, units)}
-                </span>
-              </div>
-              <div className="neo-in p-1 rounded-xl text-center">
-                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">7-Day</span>
-                <span className="font-mono text-xs font-bold text-neo-text mt-0.5 block truncate">
-                  {rain(precip7dMm, units)}
-                </span>
-              </div>
-              <div className="neo-in p-1 rounded-xl text-center">
-                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Chance</span>
-                <span className="font-mono text-xs font-bold text-neo-accent mt-0.5 block truncate">
-                  {todayProb}%
-                </span>
-              </div>
-              <div className="neo-in p-1 rounded-xl text-center">
-                <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Balance</span>
-                <span className="font-mono text-xs font-bold text-neo-text mt-0.5 block truncate">
-                  {waterBalance > 0 ? `+${waterBalance}` : `${waterBalance}`}
-                </span>
-              </div>
-            </div>
+                <div className="grid grid-cols-4 gap-1 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+                  <div className="neo-in p-1 rounded-xl text-center">
+                    <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">3-Day</span>
+                    <span className="font-mono text-xs font-bold text-neo-rain mt-0.5 block truncate">
+                      {rain(precip3dMm, units)}
+                    </span>
+                  </div>
+                  <div className="neo-in p-1 rounded-xl text-center">
+                    <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">7-Day</span>
+                    <span className="font-mono text-xs font-bold text-neo-text mt-0.5 block truncate">
+                      {rain(precip7dMm, units)}
+                    </span>
+                  </div>
+                  <div className="neo-in p-1 rounded-xl text-center">
+                    <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Chance</span>
+                    <span className="font-mono text-xs font-bold text-neo-accent mt-0.5 block truncate">
+                      {todayProb}%
+                    </span>
+                  </div>
+                  <div className="neo-in p-1 rounded-xl text-center">
+                    <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">Balance</span>
+                    <span className="font-mono text-xs font-bold text-neo-text mt-0.5 block truncate">
+                      {waterBalance > 0 ? `+${waterBalance}` : `${waterBalance}`}
+                    </span>
+                  </div>
+                </div>
 
-            {rain8h.length > 0 && (
-              <div className="h-14 pt-1.5 border-t border-[color-mix(in_srgb,var(--line)_40%,transparent)]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={rain8h} margin={{ top: 2, right: 2, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} tickLine={false} />
-                    <Tooltip contentStyle={tip} />
-                    <Bar dataKey="v" fill="var(--rain)" radius={[3, 3, 0, 0]} opacity={0.9} name={`Rain (${rainUnit(units)})`} />
-                  </BarChart>
-                </ResponsiveContainer>
+                {rain8h.length > 0 && (
+                  <div className="h-14 pt-1.5 border-t border-[color-mix(in_srgb,var(--line)_40%,transparent)]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={rain8h} margin={{ top: 2, right: 2, left: -20, bottom: 0 }}>
+                        <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} tickLine={false} />
+                        <Tooltip contentStyle={tip} />
+                        <Bar dataKey="v" fill="var(--rain)" radius={[3, 3, 0, 0]} opacity={0.9} name={`Rain (${rainUnit(units)})`} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
 
-        {/* Tab 2: 24h Hourly Hyetograph */}
-        {rainTab === "hourly" && (
-          <div key="rain-hourly" className="fade-in-scale space-y-1.5">
-            <div className="flex items-center justify-between text-[10px]">
-              <span className="text-neo-muted font-semibold">24h Hyetograph</span>
-              <span className="font-mono font-bold text-neo-rain">
-                {peakRainHour.v > 0 ? `Peak: ${peakRainHour.v} ${rainUnit(units)} @ ${peakRainHour.t}` : "Dry 24h"}
-              </span>
-            </div>
-            <div className="h-24 sm:h-28">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={hourlyRain24}>
-                  <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} interval={3} />
-                  <YAxis stroke="var(--muted)" fontSize={8} width={24} />
-                  <Tooltip contentStyle={tip} />
-                  <Bar
-                    dataKey="v"
-                    fill="var(--rain)"
-                    radius={[3, 3, 0, 0]}
-                    name={`Rain (${rainUnit(units)})`}
-                    isAnimationActive={true}
-                    animationDuration={300}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex items-center justify-between text-[9px] text-neo-muted pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
-              <span>{wetHoursCount} wet hour{wetHoursCount === 1 ? "" : "s"} forecast</span>
-              <span className="font-mono font-semibold text-neo-text">24h Sum: {rain(todayRainMm, units)}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 3: 7-Day Precipitation Outlook & Water Budget */}
-        {rainTab === "outlook" && (
-          <div key="rain-outlook" className="fade-in-scale space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] text-neo-muted font-semibold pb-1 border-b border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
-              <span>7-Day Rain Outlook</span>
-              <span className="font-mono font-bold text-neo-rain">Total: {rain(precip7dMm, units)}</span>
-            </div>
-            <div className="space-y-1">
-              {days7.map((d) => (
-                <div key={d.day} className="neo-in px-2 py-0.5 rounded-lg flex items-center justify-between gap-2 text-[10px]">
-                  <span className="font-medium text-neo-text w-8 shrink-0">{d.day}</span>
-                  <div className="flex-1 h-1.5 rounded-full bg-[var(--line)] overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-500 bg-neo-rain"
-                      style={{ width: `${Math.min(100, Math.round((Number(d.precip) / (units === "imperial" ? 1.5 : 35)) * 100))}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0 min-w-[4rem] justify-end">
-                    <span className="font-mono font-bold text-neo-rain">{d.precip} {rainUnit(units)}</span>
-                    <span className="text-[9px] text-neo-muted">({d.prob}%)</span>
-                  </div>
+            {/* Tab 2: 24h Hourly Hyetograph */}
+            {rainTab === "hourly" && (
+              <div key="rain-hourly" className="fade-in-scale space-y-1.5">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-neo-muted font-semibold">24h Hyetograph</span>
+                  <span className="font-mono font-bold text-neo-rain">
+                    {peakRainHour.v > 0 ? `Peak: ${peakRainHour.v} ${rainUnit(units)} @ ${peakRainHour.t}` : "Dry 24h"}
+                  </span>
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="h-24 sm:h-28">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={hourlyRain24}>
+                      <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="3 3" />
+                      <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} interval={3} />
+                      <YAxis stroke="var(--muted)" fontSize={8} width={24} />
+                      <Tooltip contentStyle={tip} />
+                      <Bar
+                        dataKey="v"
+                        fill="var(--rain)"
+                        radius={[3, 3, 0, 0]}
+                        name={`Rain (${rainUnit(units)})`}
+                        isAnimationActive={true}
+                        animationDuration={300}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex items-center justify-between text-[9px] text-neo-muted pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+                  <span>{wetHoursCount} wet hour{wetHoursCount === 1 ? "" : "s"} forecast</span>
+                  <span className="font-mono font-semibold text-neo-text">24h Sum: {rain(todayRainMm, units)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 3: 7-Day Precipitation Outlook & Water Budget */}
+            {rainTab === "outlook" && (
+              <div key="rain-outlook" className="fade-in-scale space-y-1.5">
+                <div className="flex items-center justify-between text-[10px] text-neo-muted font-semibold pb-1 border-b border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+                  <span>7-Day Rain Outlook</span>
+                  <span className="font-mono font-bold text-neo-rain">Total: {rain(precip7dMm, units)}</span>
+                </div>
+                <div className="space-y-1">
+                  {days7.map((d) => (
+                    <div key={d.day} className="neo-in px-2 py-0.5 rounded-lg flex items-center justify-between gap-2 text-[10px]">
+                      <span className="font-medium text-neo-text w-8 shrink-0">{d.day}</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-[var(--line)] overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 bg-neo-rain"
+                          style={{ width: `${Math.min(100, Math.round((Number(d.precip) / (units === "imperial" ? 1.5 : 35)) * 100))}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 min-w-[4rem] justify-end">
+                        <span className="font-mono font-bold text-neo-rain">{d.precip} {rainUnit(units)}</span>
+                        <span className="text-[9px] text-neo-muted">({d.prob}%)</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </section>
@@ -3568,15 +3880,24 @@ function WindSection({
   units,
   onNavigateData,
   className,
+  forceSummary,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   units: "metric" | "imperial";
   onNavigateData?: (subTab: string) => void;
   className?: string;
+  forceSummary?: boolean;
 }) {
   const displayNull = useApp((s) => s.settings.displayNullValues);
   const t = COPY[locale];
+
+  const [localSummary, setLocalSummary] = useState<boolean | null>(null);
+  useEffect(() => {
+    setLocalSummary(null);
+  }, [forceSummary]);
+  const isSummary = localSummary !== null ? localSummary : Boolean(forceSummary);
+
   const live = dash.live;
   const wind = live?.wind || {};
   const rose = wind.rose || [];
@@ -3648,211 +3969,241 @@ function WindSection({
   });
 
   return (
-    <section className={`neo p-4 ${className || "sm:col-span-6 lg:col-span-4 flex flex-col justify-between select-none min-h-[240px]"}`}>
+    <section
+      onClick={() => setLocalSummary(!isSummary)}
+      className={`neo neo-section-wind p-4 cursor-pointer transition hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--line))] ${className || "sm:col-span-6 lg:col-span-4 flex flex-col justify-start select-none"}`}
+      title="Click card to switch between detailed data and overview"
+    >
       {/* Header with Segmented Navigation */}
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 flex-wrap mb-2">
         <div className="flex items-center gap-1.5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">{t.windProfile}</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-teal-700 dark:text-teal-400">{t.windProfile}</p>
         </div>
-        <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-          <button
-            type="button"
-            onClick={() => setWindTab("live")}
-            className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-              windTab === "live"
-                ? "bg-neo-accent text-white shadow-sm"
-                : "text-neo-muted hover:text-neo-text"
-            }`}
-          >
-            Live
-          </button>
-          <button
-            type="button"
-            onClick={() => setWindTab("altitude")}
-            className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-              windTab === "altitude"
-                ? "bg-neo-accent text-white shadow-sm"
-                : "text-neo-muted hover:text-neo-text"
-            }`}
-            title="Atmospheric wind profile from 10m to 180m"
-          >
-            10–180m
-          </button>
-          <button
-            type="button"
-            onClick={() => setWindTab("trend")}
-            className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${
-              windTab === "trend"
-                ? "bg-neo-accent text-white shadow-sm"
-                : "text-neo-muted hover:text-neo-text"
-            }`}
-            title="24-hour wind forecast graph"
-          >
-            24h
-          </button>
-        </div>
+        {!isSummary && (
+          <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setWindTab("live");
+              }}
+              className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${windTab === "live"
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : "text-neo-muted hover:text-neo-text"
+                }`}
+            >
+              Live
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setWindTab("altitude");
+              }}
+              className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${windTab === "altitude"
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : "text-neo-muted hover:text-neo-text"
+                }`}
+              title="Atmospheric wind profile from 10m to 180m"
+            >
+              10–180m
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setWindTab("trend");
+              }}
+              className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${windTab === "trend"
+                  ? "bg-neo-accent text-white shadow-sm"
+                  : "text-neo-muted hover:text-neo-text"
+                }`}
+              title="24-hour wind forecast graph"
+            >
+              24h
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="min-h-[160px] flex flex-col justify-between">
-        {/* Tab 1: Live & Compass */}
-        {windTab === "live" && (
-          <div key="wind-live" className="fade-in-scale space-y-2">
-            <div className="flex items-center gap-2.5 sm:gap-3">
-              <WindRose
-                fromDeg={wind.direction_deg ?? null}
-                flowDeg={wind.flow_deg ?? null}
-                rose={rose}
-                compass={wind.compass || "—"}
-                flow={wind.flow_compass || "—"}
-              />
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <div className="flex items-center justify-between gap-1">
-                  <div>
-                    <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">Speed</p>
-                    <p className="font-mono text-xl sm:text-2xl font-black text-neo-accent leading-none mt-0.5">
-                      {speed(speedKmh, units)}
-                    </p>
-                  </div>
-                  <span className="chip text-[9px] font-bold uppercase px-2 py-0.5 whitespace-nowrap bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-neo-accent border border-[color-mix(in_srgb,var(--accent)_25%,transparent)] shadow-xs">
-                    {beaufort.label}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-xs py-0.5 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
-                  <span className="text-neo-muted text-[9px] uppercase tracking-wider font-semibold">Heading</span>
-                  <span className="font-bold font-mono text-[11px] flex items-center gap-1">
-                    <span>{wind.compass || "—"}</span>
-                    <span className="text-neo-muted text-[9px]">({wind.direction_deg ?? "—"}°)</span>
-                    <span className="text-neo-accent font-black">→</span>
-                    <span>{wind.flow_compass || "—"}</span>
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                  {(displayNull || windGusts != null) && (
-                    <div className="neo-in px-2 py-1 rounded-xl">
-                      <span className="text-neo-muted block text-[8px] uppercase tracking-wider font-bold">Gusts</span>
-                      <span className="font-mono font-extrabold text-neo-warn">{windGusts != null ? speed(windGusts, units) : "—"}</span>
-                    </div>
-                  )}
-                  {(displayNull || windMax10m != null) && (
-                    <div className="neo-in px-2 py-1 rounded-xl">
-                      <span className="text-neo-muted block text-[8px] uppercase tracking-wider font-bold">10m Max</span>
-                      <span className="font-mono font-extrabold text-neo-accent">{windMax10m != null ? speed(windMax10m, units) : "—"}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {wind8h.length > 0 && (
-              <div className="h-14 pt-1.5 border-t border-[color-mix(in_srgb,var(--line)_40%,transparent)]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={wind8h} margin={{ top: 2, right: 2, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} tickLine={false} />
-                    <Tooltip contentStyle={tip} />
-                    <Bar dataKey="v" fill="var(--accent)" radius={[3, 3, 0, 0]} opacity={0.85} name={`Wind (${units === "imperial" ? "mph" : "km/h"})`} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab 2: Altitude Profile 10m–180m */}
-        {windTab === "altitude" && (
-          <div key="wind-altitude" className="fade-in-scale space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] text-neo-muted font-semibold pb-1 border-b border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
-              <span>Altitude & Layer</span>
-              <span>Speed & Heading</span>
-            </div>
-            <div className="space-y-1.5">
-              {altLevels.map((a) => {
-                const pct = Math.min(100, Math.round((a.speed / Math.max(maxAltSpeed, 1)) * 100));
-                return (
-                  <div key={a.level} className="neo-in px-2 py-1 rounded-xl flex items-center justify-between gap-2 group transition-all hover:bg-[color-mix(in_srgb,var(--card)_80%,transparent)]">
-                    <div className="min-w-0 flex items-center gap-1.5">
-                      <span className="chip px-1.5 py-0 text-[8px] font-bold uppercase shrink-0" style={{ color: a.color }}>
-                        {a.level}
-                      </span>
-                      <span className="text-[10px] font-medium text-neo-muted truncate hidden sm:inline">{a.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {/* Bar indicator */}
-                      <div className="w-12 sm:w-16 h-1.5 rounded-full bg-[var(--line)] overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: a.color }} />
-                      </div>
-                      <span className="font-mono text-xs font-bold text-neo-text min-w-[3.5rem] text-right">
-                        {speed(a.speed, units)}
-                      </span>
-                      <span
-                        className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-[color-mix(in_srgb,var(--bg)_90%,transparent)] border border-[var(--line)] text-[8px] text-neo-muted font-bold transition-transform duration-300"
-                        style={{ transform: `rotate(${a.dir}deg)` }}
-                        title={`${a.dir}°`}
-                      >
-                        ↑
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {altLevels.length >= 2 && (
-              <p className="text-[9px] text-neo-muted text-center pt-0.5">
-                Wind Shear: +{speed(Math.max(0, altLevels[0].speed - altLevels[altLevels.length - 1].speed), units)} gradient ({altLevels[altLevels.length - 1].level} → {altLevels[0].level})
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Tab 3: 24h Trend Forecast */}
-        {windTab === "trend" && (
-          <div key="wind-trend" className="fade-in-scale space-y-1.5">
-            <div className="flex items-center justify-between text-[10px]">
-              <span className="text-neo-muted font-semibold">24-Hour Wind Forecast Curve</span>
-              <span className="font-mono font-bold text-neo-accent">{speed(windMax10m ?? speedKmh, units)} peak</span>
-            </div>
-            <div className="h-24 sm:h-28">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={wind24h}>
-                  <defs>
-                    <linearGradient id="windGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="var(--accent)" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} interval={4} />
-                  <YAxis stroke="var(--muted)" fontSize={8} width={24} />
-                  <Tooltip contentStyle={tip} />
-                  <Area
-                    type="monotone"
-                    dataKey="v"
-                    stroke="var(--accent)"
-                    strokeWidth={2.5}
-                    fill="url(#windGrad)"
-                    name={`Wind (${units === "imperial" ? "mph" : "km/h"})`}
-                    isAnimationActive={true}
-                    animationDuration={350}
+      <div className="w-full">
+        {isSummary ? (
+          <LaymanSummaryBody summary={getWindLaymanSummary(dash, locale, units)} />
+        ) : (
+          <>
+            {/* Tab 1: Live & Compass */}
+            {windTab === "live" && (
+              <div key="wind-live" className="fade-in-scale space-y-2">
+                <div className="flex items-center gap-2.5 sm:gap-3">
+                  <WindRose
+                    fromDeg={wind.direction_deg ?? null}
+                    flowDeg={wind.flow_deg ?? null}
+                    rose={rose}
+                    compass={wind.compass || "—"}
+                    flow={wind.flow_compass || "—"}
                   />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-3 gap-1 text-center pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
-              <div>
-                <span className="text-[8px] uppercase tracking-wider text-neo-muted block">Mean</span>
-                <span className="font-mono text-[11px] font-bold text-neo-text">{windMean10m != null ? speed(windMean10m, units) : "—"}</span>
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-center justify-between gap-1">
+                      <div>
+                        <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">Speed</p>
+                        <p className="font-mono text-xl sm:text-2xl font-black text-neo-accent leading-none mt-0.5">
+                          {speed(speedKmh, units)}
+                        </p>
+                      </div>
+                      <span className="chip text-[9px] font-bold uppercase px-2 py-0.5 whitespace-nowrap bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-neo-accent border border-[color-mix(in_srgb,var(--accent)_25%,transparent)] shadow-xs">
+                        {beaufort.label}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs py-0.5 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+                      <span className="text-neo-muted text-[9px] uppercase tracking-wider font-semibold">Heading</span>
+                      <span className="font-bold font-mono text-[11px] flex items-center gap-1">
+                        <span>{wind.compass || "—"}</span>
+                        <span className="text-neo-muted text-[9px]">({wind.direction_deg ?? "—"}°)</span>
+                        <span className="text-neo-accent font-black">→</span>
+                        <span>{wind.flow_compass || "—"}</span>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                      {(displayNull || windGusts != null) && (
+                        <div className="neo-in px-2 py-1 rounded-xl">
+                          <span className="text-neo-muted block text-[8px] uppercase tracking-wider font-bold">
+                            {locale === "hi" ? "झोंके" : locale === "bn" ? "দমকা" : "Gusts"}
+                          </span>
+                          <span className="font-mono font-extrabold text-neo-warn">{windGusts != null ? speed(windGusts, units) : "—"}</span>
+                        </div>
+                      )}
+                      {(displayNull || windMax10m != null) && (
+                        <div className="neo-in px-2 py-1 rounded-xl">
+                          <span className="text-neo-muted block text-[8px] uppercase tracking-wider font-bold">
+                            {locale === "hi" ? "अधिकतम 10m" : locale === "bn" ? "সর্বোচ্চ ১০ মি" : "10m Max"}
+                          </span>
+                          <span className="font-mono font-extrabold text-neo-accent">{windMax10m != null ? speed(windMax10m, units) : "—"}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {wind8h.length > 0 && (
+                  <div className="h-14 pt-1.5 border-t border-[color-mix(in_srgb,var(--line)_40%,transparent)]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={wind8h} margin={{ top: 2, right: 2, left: -20, bottom: 0 }}>
+                        <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} tickLine={false} />
+                        <Tooltip contentStyle={tip} />
+                        <Bar dataKey="v" fill="var(--accent)" radius={[3, 3, 0, 0]} opacity={0.85} name={`Wind (${units === "imperial" ? "mph" : "km/h"})`} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
-              <div>
-                <span className="text-[8px] uppercase tracking-wider text-neo-muted block">Max 10m</span>
-                <span className="font-mono text-[11px] font-bold text-neo-accent">{windMax10m != null ? speed(windMax10m, units) : "—"}</span>
+            )}
+
+            {/* Tab 2: Altitude Profile 10m–180m */}
+            {windTab === "altitude" && (
+              <div key="wind-altitude" className="fade-in-scale space-y-1.5">
+                <div className="flex items-center justify-between text-[10px] text-neo-muted font-semibold pb-1 border-b border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+                  <span>Altitude & Layer</span>
+                  <span>Speed & Heading</span>
+                </div>
+                <div className="space-y-1.5">
+                  {altLevels.map((a) => {
+                    const pct = Math.min(100, Math.round((a.speed / Math.max(maxAltSpeed, 1)) * 100));
+                    return (
+                      <div key={a.level} className="neo-in px-2 py-1 rounded-xl flex items-center justify-between gap-2 group transition-all hover:bg-[color-mix(in_srgb,var(--card)_80%,transparent)]">
+                        <div className="min-w-0 flex items-center gap-1.5">
+                          <span className="chip px-1.5 py-0 text-[8px] font-bold uppercase shrink-0" style={{ color: a.color }}>
+                            {a.level}
+                          </span>
+                          <span className="text-[10px] font-medium text-neo-muted truncate hidden sm:inline">{a.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Bar indicator */}
+                          <div className="w-12 sm:w-16 h-1.5 rounded-full bg-[var(--line)] overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: a.color }} />
+                          </div>
+                          <span className="font-mono text-xs font-bold text-neo-text min-w-[3.5rem] text-right">
+                            {speed(a.speed, units)}
+                          </span>
+                          <span
+                            className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-[color-mix(in_srgb,var(--bg)_90%,transparent)] border border-[var(--line)] text-[8px] text-neo-muted font-bold transition-transform duration-300"
+                            style={{ transform: `rotate(${a.dir}deg)` }}
+                            title={`${a.dir}°`}
+                          >
+                            ↑
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {altLevels.length >= 2 && (
+                  <p className="text-[9px] text-neo-muted text-center pt-0.5">
+                    Wind Shear: +{speed(Math.max(0, altLevels[0].speed - altLevels[altLevels.length - 1].speed), units)} gradient ({altLevels[altLevels.length - 1].level} → {altLevels[0].level})
+                  </p>
+                )}
               </div>
-              <div>
-                <span className="text-[8px] uppercase tracking-wider text-neo-muted block">Gusts</span>
-                <span className="font-mono text-[11px] font-bold text-neo-warn">{windGusts != null ? speed(windGusts, units) : "—"}</span>
+            )}
+
+            {/* Tab 3: 24h Trend Forecast */}
+            {windTab === "trend" && (
+              <div key="wind-trend" className="fade-in-scale space-y-1.5">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-neo-muted font-semibold">
+                    {locale === "hi" ? "24-घंटे का पवन पूर्वानुमान" : locale === "bn" ? "২৪ ঘণ্টার বাতাসের পূর্বাভাস" : "24-Hour Wind Forecast Curve"}
+                  </span>
+                  <span className="font-mono font-bold text-neo-accent">{speed(windMax10m ?? speedKmh, units)} {locale === "hi" ? "शिखर" : locale === "bn" ? "শীর্ষ" : "peak"}</span>
+                </div>
+                <div className="h-24 sm:h-28">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={wind24h}>
+                      <defs>
+                        <linearGradient id="windGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.4} />
+                          <stop offset="95%" stopColor="var(--accent)" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="var(--line)" vertical={false} strokeDasharray="3 3" />
+                      <XAxis dataKey="t" stroke="var(--muted)" fontSize={8} interval={4} />
+                      <YAxis stroke="var(--muted)" fontSize={8} width={24} />
+                      <Tooltip contentStyle={tip} />
+                      <Area
+                        type="monotone"
+                        dataKey="v"
+                        stroke="var(--accent)"
+                        strokeWidth={2.5}
+                        fill="url(#windGrad)"
+                        name={`Wind (${units === "imperial" ? "mph" : "km/h"})`}
+                        isAnimationActive={true}
+                        animationDuration={350}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="grid grid-cols-3 gap-1 text-center pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)]">
+                  <div>
+                    <span className="text-[8px] uppercase tracking-wider text-neo-muted block">
+                      {locale === "hi" ? "औसत" : locale === "bn" ? "গড়" : "Mean"}
+                    </span>
+                    <span className="font-mono text-[11px] font-bold text-neo-text">{windMean10m != null ? speed(windMean10m, units) : "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-[8px] uppercase tracking-wider text-neo-muted block">
+                      {locale === "hi" ? "अधिकतम 10m" : locale === "bn" ? "সর্বোচ্চ ১০ মি" : "Max 10m"}
+                    </span>
+                    <span className="font-mono text-[11px] font-bold text-neo-accent">{windMax10m != null ? speed(windMax10m, units) : "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-[8px] uppercase tracking-wider text-neo-muted block">
+                      {locale === "hi" ? "झोंके" : locale === "bn" ? "দমকা" : "Gusts"}
+                    </span>
+                    <span className="font-mono text-[11px] font-bold text-neo-warn">{windGusts != null ? speed(windGusts, units) : "—"}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
       </div>
     </section>

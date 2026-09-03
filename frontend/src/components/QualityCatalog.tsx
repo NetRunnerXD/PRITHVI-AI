@@ -117,12 +117,8 @@ export function QualityCatalog({ dash, group }: { dash: DashboardSnapshot; group
             <Stat k="O3" v={fmt(air.o3)} />
             <Stat k="NH3" v={fmt(air.nh3)} />
             <Stat k="CH4" v={fmt(air.ch4)} />
-            <Stat k="Pollen · alder" v={fmt(pollen.alder)} />
-            <Stat k="Pollen · birch" v={fmt(pollen.birch)} />
-            <Stat k="Pollen · grass" v={fmt(pollen.grass)} />
-            <Stat k="Pollen · mugwort" v={fmt(pollen.mugwort)} />
-            <Stat k="Pollen · olive" v={fmt(pollen.olive)} />
-            <Stat k="Pollen · ragweed" v={fmt(pollen.ragweed)} />
+            <Stat k="Pollen · Grass" v={pollen.grass != null ? `${pollen.grass} grains/m³` : "—"} />
+            <Stat k="Pollen · Ragweed" v={pollen.ragweed != null ? `${pollen.ragweed} grains/m³` : "—"} />
             <Stat k="Pollen source" v={fmt(pollen.source)} />
           </Sector>
 

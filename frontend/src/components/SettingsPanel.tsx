@@ -235,11 +235,11 @@ export function SettingsPanel() {
             onChange={(e) => setSettings({ refreshSec: Number(e.target.value) })}
           >
             {[
-              [30, "30 seconds"],
-              [60, "1 minute"],
-              [120, "2 minutes"],
-              [300, "5 minutes"],
-              [600, "10 minutes"],
+              [30, locale === "hi" ? "30 सेकंड" : locale === "bn" ? "৩০ সেকেন্ড" : "30 seconds"],
+              [60, locale === "hi" ? "1 मिनट" : locale === "bn" ? "১ মিনিট" : "1 minute"],
+              [120, locale === "hi" ? "2 मिनट" : locale === "bn" ? "২ মিনিট" : "2 minutes"],
+              [300, locale === "hi" ? "5 मिनट" : locale === "bn" ? "৫ মিনিট" : "5 minutes"],
+              [600, locale === "hi" ? "10 मिनट" : locale === "bn" ? "১০ মিনিট" : "10 minutes"],
             ].map(([s, label]) => (
               <option key={s} value={s}>
                 {label}

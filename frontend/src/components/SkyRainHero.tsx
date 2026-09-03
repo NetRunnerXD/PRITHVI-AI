@@ -17,6 +17,8 @@ import type { DashboardSnapshot } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
 import { dist, rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
 import { useApp } from "@/lib/store";
+import { LaymanSummaryBody } from "@/components/LaymanSummaryView";
+import { getSkyLaymanSummary } from "@/lib/laymanSummaries";
 
 /* -------------------------------------------------------------------------- */
 /* Precision Vector SVG Icons (Zero Emojis)                                   */
@@ -86,6 +88,14 @@ function IconSparkles({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className || "w-3.5 h-3.5"}>
       <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+    </svg>
+  );
+}
+
+function IconChevronDown({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className || "w-3.5 h-3.5"}>
+      <path d="m6 9 6 6 6-6" />
     </svg>
   );
 }
@@ -275,14 +285,22 @@ export function SkyRainHero({
   dash,
   locale,
   onNavigateData,
+  forceSummary,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   onNavigateData?: (subTab: string) => void;
+  forceSummary?: boolean;
 }) {
   const t = COPY[locale];
   const units = useApp((s) => s.settings.units);
   const displayNull = useApp((s) => s.settings.displayNullValues);
+
+  const [localSummary, setLocalSummary] = useState<boolean | null>(null);
+  useEffect(() => {
+    setLocalSummary(null);
+  }, [forceSummary]);
+  const isSummary = localSummary !== null ? localSummary : Boolean(forceSummary);
 
   const live = dash.live;
   const sky = live?.sky || {};
@@ -299,6 +317,7 @@ export function SkyRainHero({
   const feels = feelsLikeC(sky.temp_c ?? cur.temp_c, sky.humidity_pct ?? cur.humidity_pct);
 
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [mobileExpanded, setMobileExpanded] = useState(false);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -346,36 +365,76 @@ export function SkyRainHero({
   const rainOdds = (dash.predictive.precip_probability_pct || []).slice(0, 3);
 
   return (
-    <section className="neo p-4 relative overflow-hidden select-none transition-all">
+    <section
+      onClick={() => setLocalSummary(!isSummary)}
+      className="neo neo-section-sky p-4 relative overflow-hidden select-none transition-all cursor-pointer hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--line))]"
+      title="Click card to switch between detailed data and overview"
+    >
       {/* Header Banner */}
       <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
         <div className="flex items-center gap-2">
-          <span className="live-dot" aria-hidden />
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
-            SKY
+          <span className="live-dot bg-sky-500 shadow-[0_0_8px_#0ea5e9]" aria-hidden />
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-600 dark:text-sky-400">
+            SKY &amp; ATMOSPHERE
           </p>
-          <span className="chip text-[9px] font-mono px-1.5 py-0">
-            Live Telemetry
-          </span>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setInspectorOpen(true)}
-            className="neo-btn text-[10px] font-semibold px-2 py-1 flex items-center gap-1"
-            title="Inspect full atmospheric diurnal curves"
-          >
-            <IconSparkles className="w-3 h-3 text-neo-accent" />
-            <span className="hidden sm:inline">Synoptics</span>
-          </button>
+          {!isSummary && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMobileExpanded((v) => !v);
+                }}
+                className="lg:hidden neo-btn text-[10px] font-semibold px-2.5 py-1 flex items-center gap-1.5 transition-all text-neo-text"
+                aria-expanded={mobileExpanded}
+              >
+                <span>
+                  {mobileExpanded
+                    ? (locale === "hi" ? "विवरण छुपाएं" : locale === "bn" ? "তথ্য লুকান" : "Hide Telemetry")
+                    : (locale === "hi" ? "मापदंड देखें" : locale === "bn" ? "প্যারামিটার দেখুন" : "Parameters")}
+                </span>
+                <IconChevronDown
+                  className={`w-3.5 h-3.5 text-neo-accent transition-transform duration-300 ${
+                    mobileExpanded ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setInspectorOpen(true);
+                }}
+                className="neo-btn text-[10px] font-semibold px-2 py-1 flex items-center gap-1"
+                title="Inspect full atmospheric diurnal curves"
+              >
+                <IconSparkles className="w-3 h-3 text-neo-accent" />
+                <span className="hidden sm:inline">Synoptics</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Main Grid: Left Animated Diorama & Core Weather, Right Unified Telemetry */}
-      <div className="grid gap-4 lg:grid-cols-12 items-center">
-        {/* Left Column: Atmospheric Diorama & Live Hero Status */}
-        <div className="lg:col-span-6 flex items-center gap-3.5">
+      {isSummary ? (
+        <div className="py-1">
+          <LaymanSummaryBody summary={getSkyLaymanSummary(dash, locale, units)} isWide />
+        </div>
+      ) : (
+        /* Main Grid: Left Animated Diorama & Core Weather, Right Unified Telemetry */
+        <div className="grid gap-3.5 lg:grid-cols-12 items-center">
+          {/* Left Column: Atmospheric Diorama & Live Hero Status */}
+          <div
+            className="col-span-12 lg:col-span-6 flex items-center gap-3.5 cursor-pointer lg:cursor-default"
+            onClick={() => {
+              if (typeof window !== "undefined" && window.innerWidth < 1024) {
+              setMobileExpanded((v) => !v);
+            }
+          }}
+        >
           <AtmosphericDiorama
             isDay={isDay}
             cloudCoverPct={cloudPct}
@@ -413,13 +472,41 @@ export function SkyRainHero({
           </div>
         </div>
 
-        {/* Right Column: Unified Telemetry Deck */}
-        <div className="lg:col-span-6 min-h-[90px] flex flex-col justify-center">
+        {/* Mobile Dropdown Trigger Bar */}
+        <div className="lg:hidden col-span-12 -mt-1">
+          <button
+            type="button"
+            onClick={() => setMobileExpanded((v) => !v)}
+            className="w-full neo-in py-1.5 px-3 rounded-xl flex items-center justify-between text-[11px] font-bold text-neo-muted hover:text-neo-text hover:border-[var(--accent)] transition-all cursor-pointer"
+          >
+            <span className="flex items-center gap-1.5">
+              <IconCloud className="w-3.5 h-3.5 text-neo-accent" />
+              <span>
+                {mobileExpanded ? "Atmospheric Telemetry Deck" : "Parameters · Humidity, Visibility, Cloud Cover & Rain"}
+              </span>
+            </span>
+            <span className="flex items-center gap-1 font-mono text-[10px] text-neo-accent">
+              <span>{mobileExpanded ? "Hide" : "Expand"}</span>
+              <IconChevronDown
+                className={`w-3.5 h-3.5 transition-transform duration-300 ${
+                  mobileExpanded ? "rotate-180" : ""
+                }`}
+              />
+            </span>
+          </button>
+        </div>
+
+        {/* Right Column: Unified Telemetry Deck (Collapsible dropdown on mobile, static on desktop) */}
+        <div
+          className={`col-span-12 lg:col-span-6 min-h-[90px] flex flex-col justify-center transition-all duration-300 ${
+            mobileExpanded ? "block animate-in fade-in slide-in-from-top-2" : "hidden lg:flex"
+          }`}
+        >
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
             <div className="neo-in p-2 rounded-xl">
               <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
                 <IconDroplet className="w-2.5 h-2.5 text-neo-rain" />
-                Humidity
+                {t.humidity || (locale === "hi" ? "आर्द्रता" : locale === "bn" ? "আর্দ্রতা" : "Humidity")}
               </span>
               <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
                 {sky.humidity_pct != null ? `${Math.round(Number(sky.humidity_pct))}%` : "—"}
@@ -429,7 +516,7 @@ export function SkyRainHero({
             <div className="neo-in p-2 rounded-xl">
               <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
                 <IconCloud className="w-2.5 h-2.5 text-neo-muted" />
-                Cloud Cover
+                {t.cloudCover || (locale === "hi" ? "बादल" : locale === "bn" ? "মেঘের আচ্ছাদন" : "Cloud Cover")}
               </span>
               <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
                 {sky.cloud_cover_pct != null ? `${Math.round(Number(sky.cloud_cover_pct))}%` : "—"}
@@ -439,7 +526,7 @@ export function SkyRainHero({
             <div className="neo-in p-2 rounded-xl">
               <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
                 <IconEye className="w-2.5 h-2.5 text-neo-accent" />
-                Visibility
+                {t.visibility || (locale === "hi" ? "दृश्यता" : locale === "bn" ? "দৃশ্যমানতা" : "Visibility")}
               </span>
               <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
                 {sky.visibility_km != null ? dist(sky.visibility_km, units) : "—"}
@@ -449,7 +536,7 @@ export function SkyRainHero({
             <div className="neo-in p-2 rounded-xl">
               <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
                 <IconGauge className="w-2.5 h-2.5 text-neo-warn" />
-                Last 1h Rain
+                {t.lastHourRain || (locale === "hi" ? "पिछले 1 घंटे की बारिश" : locale === "bn" ? "বিগত ১ ঘণ্টার বৃষ্টি" : "Last 1h Rain")}
               </span>
               <p className="mt-0.5 font-mono text-sm font-bold text-neo-rain">
                 {rain(sky.precip_1h_mm, units)}
@@ -459,7 +546,7 @@ export function SkyRainHero({
             <div className="neo-in p-2 rounded-xl">
               <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
                 <IconCloudRain className="w-2.5 h-2.5 text-neo-rain" />
-                Today Total
+                {t.rainToday || (locale === "hi" ? "आज की कुल बारिश" : locale === "bn" ? "আজকের মোট বৃষ্টি" : "Today Total")}
               </span>
               <p className="mt-0.5 font-mono text-sm font-bold text-neo-rain">
                 {todayRain != null ? rain(todayRain, units) : "0 mm"}
@@ -469,7 +556,7 @@ export function SkyRainHero({
             <div className="neo-in p-2 rounded-xl">
               <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
                 <IconSparkles className="w-2.5 h-2.5 text-neo-accent" />
-                3-Day Accum
+                {locale === "hi" ? "3 दिनों का संचय" : locale === "bn" ? "৩ দিনের পুঞ্জীভূত" : "3-Day Accum"}
               </span>
               <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
                 {rain(dash.predictive.precip_next_3d_mm, units)}
@@ -478,6 +565,7 @@ export function SkyRainHero({
           </div>
         </div>
       </div>
+      )}
 
       {/* Floating Synoptic Deep-Dive Modal (Portaled to document.body) */}
       {mounted && typeof document !== "undefined" && inspectorOpen
@@ -498,10 +586,18 @@ export function SkyRainHero({
                     </div>
                     <div>
                       <h3 className="text-sm sm:text-base font-bold text-neo-text leading-tight">
-                        Atmospheric & Precipitation Synoptic Timeline
+                        {locale === "hi"
+                          ? "वायुमंडलीय और वर्षा सिनॉप्टिक समयरेखा"
+                          : locale === "bn"
+                          ? "বায়ুমণ্ডলীয় ও বৃষ্টিপাতের সিনপটিক টাইমলাইন"
+                          : "Atmospheric & Precipitation Synoptic Timeline"}
                       </h3>
                       <p className="text-[11px] text-neo-muted font-normal mt-0.5">
-                        24-Hour Diurnal Evolution & Hydrometeorological Dynamics
+                        {locale === "hi"
+                          ? "24 घंटे का दैनिक चक्र व जल-मौसम विज्ञान विश्लेषण"
+                          : locale === "bn"
+                          ? "২৪ ঘণ্টার প্রাত্যহিক চক্র ও জল-আবহাওয়া গতিপ্রকৃতি"
+                          : "24-Hour Diurnal Evolution & Hydrometeorological Dynamics"}
                       </p>
                     </div>
                   </div>
@@ -522,7 +618,7 @@ export function SkyRainHero({
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                     <div className="neo-in p-2.5 rounded-xl">
                       <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                        Surface Temperature
+                        {locale === "hi" ? "सतह का तापमान" : locale === "bn" ? "পৃষ্ঠের তাপমাত্রা" : "Surface Temperature"}
                       </span>
                       <p className="mt-0.5 font-mono text-base font-bold text-neo-accent">
                         {temp(sky.temp_c ?? cur.temp_c, units)}
@@ -531,7 +627,7 @@ export function SkyRainHero({
 
                     <div className="neo-in p-2.5 rounded-xl">
                       <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                        Relative Humidity
+                        {locale === "hi" ? "सापेक्ष आर्द्रता" : locale === "bn" ? "আপেক্ষিক আর্দ্রতা" : "Relative Humidity"}
                       </span>
                       <p className="mt-0.5 font-mono text-base font-bold text-neo-rain">
                         {sky.humidity_pct != null ? `${Math.round(Number(sky.humidity_pct))}%` : "—"}
@@ -540,7 +636,7 @@ export function SkyRainHero({
 
                     <div className="neo-in p-2.5 rounded-xl">
                       <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                        Cloud Cover
+                        {locale === "hi" ? "बादल आवरण" : locale === "bn" ? "মেঘের কভারেজ" : "Cloud Cover"}
                       </span>
                       <p className="mt-0.5 font-mono text-base font-bold text-neo-text">
                         {cloudPct}%
@@ -549,7 +645,7 @@ export function SkyRainHero({
 
                     <div className="neo-in p-2.5 rounded-xl">
                       <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                        7-Day Water Balance
+                        {locale === "hi" ? "7-दिवसीय जल संतुलन" : locale === "bn" ? "৭ দিনের জল ভারসাম্য" : "7-Day Water Balance"}
                       </span>
                       <p className={`mt-0.5 font-mono text-base font-bold ${Number(dash.predictive.water_balance_7d_mm ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
                         {rain(dash.predictive.water_balance_7d_mm, units)}

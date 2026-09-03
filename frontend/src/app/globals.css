@@ -500,5 +500,221 @@ select.neo-in {
   animation: float-badge 2.4s ease-in-out infinite;
 }
 
+/* Animated Earth Globe Animations */
+@keyframes earth-spin {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes cloud-spin {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes orbit-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes earth-globe-glow {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(14, 165, 233, 0.45), 0 0 32px rgba(16, 185, 129, 0.25), 0 10px 24px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(14, 165, 233, 0.7), 0 0 45px rgba(16, 185, 129, 0.4), 0 12px 28px rgba(0, 0, 0, 0.45);
+  }
+}
+
+@keyframes earth-gentle-hover {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(1.5deg);
+  }
+}
+
+.anim-earth-globe {
+  animation: earth-globe-glow 3.2s ease-in-out infinite, earth-gentle-hover 4s ease-in-out infinite;
+}
+
+.anim-earth-spin {
+  animation: earth-spin 12s linear infinite;
+}
+
+.anim-cloud-spin {
+  animation: cloud-spin 8s linear infinite;
+}
+
+.anim-orbit-spin {
+  animation: orbit-spin 4.5s linear infinite;
+  transform-origin: center;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Domain-Tailored Color Themes for Dashboard Sections
+   (Distinct Non-White Colored Backgrounds, Clean Uniform Borders, No Left Border)
+   ───────────────────────────────────────────────────────────── */
+
+/* 1. Sky & Atmosphere: Atmospheric Sky Blue */
+.neo-section-sky {
+  background-color: #eaf4fb !important;
+  border: 1px solid #bae6fd !important;
+  box-shadow: 0 4px 20px rgba(2, 132, 199, 0.06);
+}
+[data-theme="midnight"] .neo-section-sky {
+  background-color: #0e1a26 !important;
+  border: 1px solid #0369a1 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(2, 132, 199, 0.12);
+}
+
+/* 2. Rainfall: Hydrology & Precipitation Blue */
+.neo-section-rain {
+  background-color: #ebf3fe !important;
+  border: 1px solid #bfdbfe !important;
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.06);
+}
+[data-theme="midnight"] .neo-section-rain {
+  background-color: #0d172e !important;
+  border: 1px solid #1d4ed8 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(37, 99, 235, 0.12);
+}
+
+/* 3. Wind & Aerodynamics: Fresh Sea-Breeze Mint / Teal */
+.neo-section-wind {
+  background-color: #e8f7f4 !important;
+  border: 1px solid #99f6e4 !important;
+  box-shadow: 0 4px 20px rgba(13, 148, 136, 0.06);
+}
+[data-theme="midnight"] .neo-section-wind {
+  background-color: #0a211e !important;
+  border: 1px solid #0f766e !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(13, 148, 136, 0.12);
+}
+
+/* 4. Emergency Alerts & Risk Sentinel: Amber Hazard Parchment */
+.neo-section-alerts {
+  background-color: #fdf6ea !important;
+  border: 1px solid #fed7aa !important;
+  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.07);
+}
+[data-theme="midnight"] .neo-section-alerts {
+  background-color: #261a0d !important;
+  border: 1px solid #b45309 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(245, 158, 11, 0.14);
+}
+
+/* 5. Air Quality & Pollen: Distinct Light Greyish */
+.neo-section-air {
+  background-color: #e3e7ec !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 4px 20px rgba(71, 85, 105, 0.08);
+}
+[data-theme="midnight"] .neo-section-air {
+  background-color: #1a1e23 !important;
+  border: 1px solid #334155 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(148, 163, 184, 0.1);
+}
+
+/* 6. Land Weather & Soil Moisture: Botanical Earth Meadow / Sage */
+.neo-section-land {
+  background-color: #edf7f0 !important;
+  border: 1px solid #bbf7d0 !important;
+  box-shadow: 0 4px 20px rgba(5, 150, 105, 0.06);
+}
+[data-theme="midnight"] .neo-section-land {
+  background-color: #0d2114 !important;
+  border: 1px solid #15803d !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(16, 185, 129, 0.12);
+}
+
+/* 7. Marine Sea-State & Ocean: Coastal Aquamarine / Ocean Waters */
+.neo-section-marine {
+  background-color: #e8f6f9 !important;
+  border: 1px solid #a5f3fc !important;
+  box-shadow: 0 4px 20px rgba(2, 132, 199, 0.06);
+}
+[data-theme="midnight"] .neo-section-marine {
+  background-color: #081d2c !important;
+  border: 1px solid #0284c7 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(2, 132, 199, 0.12);
+}
+
+/* 8. Tropical Cyclone: Storm Warning Rose Blush */
+.neo-section-cyclone {
+  background-color: #fff0f2 !important;
+  border: 1px solid #fecdd3 !important;
+  box-shadow: 0 4px 20px rgba(225, 29, 72, 0.07);
+}
+[data-theme="midnight"] .neo-section-cyclone {
+  background-color: #2a0c16 !important;
+  border: 1px solid #be123c !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(225, 29, 72, 0.15);
+}
+
+/* 9. Earthquake & Tsunami: Tectonic Clay / Terracotta */
+.neo-section-seismic {
+  background-color: #fbf3ec !important;
+  border: 1px solid #fed7aa !important;
+  box-shadow: 0 4px 20px rgba(217, 119, 6, 0.06);
+}
+[data-theme="midnight"] .neo-section-seismic {
+  background-color: #24150b !important;
+  border: 1px solid #9a3412 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(217, 119, 6, 0.12);
+}
+
+/* 10. Nowcast 6-Hour AI: Cyber Neural Lavender */
+.neo-section-nowcast {
+  background-color: #f2f1fe !important;
+  border: 1px solid #c7d2fe !important;
+  box-shadow: 0 4px 20px rgba(79, 70, 229, 0.06);
+}
+[data-theme="midnight"] .neo-section-nowcast {
+  background-color: #14122d !important;
+  border: 1px solid #4338ca !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(99, 102, 241, 0.14);
+}
+
+/* 11. 7-Day Forecast: Sunlit Golden Horizon Wheat */
+.neo-section-forecast7d {
+  background-color: #fcf7e8 !important;
+  border: 1px solid #fef08a !important;
+  box-shadow: 0 4px 20px rgba(202, 138, 4, 0.06);
+}
+[data-theme="midnight"] .neo-section-forecast7d {
+  background-color: #211b0b !important;
+  border: 1px solid #854d0e !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(202, 138, 4, 0.12);
+}
+
+/* Frosted glass inner pods across colored sections for perfect depth and contrast */
+.neo-section-sky .neo-in,
+.neo-section-rain .neo-in,
+.neo-section-wind .neo-in,
+.neo-section-alerts .neo-in,
+.neo-section-air .neo-in,
+.neo-section-land .neo-in,
+.neo-section-marine .neo-in,
+.neo-section-cyclone .neo-in,
+.neo-section-seismic .neo-in,
+.neo-section-nowcast .neo-in,
+.neo-section-forecast7d .neo-in {
+  background-color: color-mix(in srgb, var(--card) 65%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 40%, transparent);
+}
+
 
 

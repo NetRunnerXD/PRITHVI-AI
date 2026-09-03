@@ -22,15 +22,25 @@ export function OutlookTable({ dash, locale }: { dash: DashboardSnapshot; locale
       <section className="neo overflow-auto p-4">
         <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
           <div>
-            <h3 className="text-sm font-bold">{t.tabForecast} · Summary Ledger</h3>
-            <p className="mt-0.5 text-[11px] text-neo-muted">7-day agricultural & meteorological water balance ledger</p>
+            <h3 className="text-sm font-bold">
+              {t.tabForecast} · {locale === "hi" ? "सारांश खाता" : locale === "bn" ? "সারসংক্ষেপ খতিয়ান" : "Summary Ledger"}
+            </h3>
+            <p className="mt-0.5 text-[11px] text-neo-muted">
+              {locale === "hi"
+                ? "7-दिवसीय कृषि व मौसम जल संतुलन बहीखाता"
+                : locale === "bn"
+                ? "৭ দিনের কৃষি ও আবহাওয়া জল ভারসাম্য খতিয়ান"
+                : "7-day agricultural & meteorological water balance ledger"}
+            </p>
           </div>
           <button
             type="button"
             onClick={() => setShowRawTable(!showRawTable)}
             className="neo-btn text-xs font-bold px-3 py-1"
           >
-            {showRawTable ? "Hide Raw Table" : "Show Raw Table"}
+            {showRawTable
+              ? (locale === "hi" ? "तालिका छुपाएं" : locale === "bn" ? "সারণী লুকান" : "Hide Raw Table")
+              : (locale === "hi" ? "पूर्ण तालिका देखें" : locale === "bn" ? "সম্পূর্ণ সারণী দেখুন" : "Show Raw Table")}
           </button>
         </div>
 

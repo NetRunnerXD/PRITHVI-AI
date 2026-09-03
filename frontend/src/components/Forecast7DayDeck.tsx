@@ -17,6 +17,8 @@ import type { DashboardSnapshot, HourlySlot } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
 import { rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
 import { useApp } from "@/lib/store";
+import { LaymanSummaryBody } from "@/components/LaymanSummaryView";
+import { get7DayLaymanSummary } from "@/lib/laymanSummaries";
 
 /* -------------------------------------------------------------------------- */
 /* Professional Lucide-Style SVG Icons (Zero Emojis)                          */
@@ -227,14 +229,22 @@ export function Forecast7DayDeck({
   dash,
   locale,
   initialOpenDate,
+  forceSummary,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   initialOpenDate?: string;
+  forceSummary?: boolean;
 }) {
   const t = COPY[locale];
   const units = useApp((s) => s.settings.units);
   const displayNull = useApp((s) => s.settings.displayNullValues);
+
+  const [localSummary, setLocalSummary] = useState<boolean | null>(null);
+  useEffect(() => {
+    setLocalSummary(null);
+  }, [forceSummary]);
+  const isSummary = localSummary !== null ? localSummary : Boolean(forceSummary);
 
   const days = useMemo(() => dash.predictive.outlook_days || [], [dash.predictive.outlook_days]);
   const hourly = useMemo(() => dash.predictive.hourly || [], [dash.predictive.hourly]);
@@ -339,24 +349,32 @@ export function Forecast7DayDeck({
       : null;
 
   return (
-    <section className="neo p-3.5 space-y-2.5 select-none">
+    <section
+      onClick={() => setLocalSummary(!isSummary)}
+      className="neo neo-section-forecast7d p-3.5 space-y-2.5 select-none cursor-pointer transition-all hover:border-[color-mix(in_srgb,var(--accent)_35%,var(--line))]"
+      title="Click card to switch between detailed data and overview"
+    >
       {/* Section Header */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1.5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-neo-accent">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400">
             {t.forecast7 || "Forecast 7 Days"}
           </p>
-          <span className="chip text-[9px] font-mono px-1.5 py-0">
-            7-Day
-          </span>
         </div>
-        <p className="text-[10px] text-neo-muted hidden sm:inline">
-          Select any day to inspect full hourly curves & agronomy
-        </p>
+        {!isSummary && (
+          <p className="text-[10px] text-neo-muted hidden sm:inline">
+            Select any day to inspect full hourly curves & agronomy
+          </p>
+        )}
       </div>
 
-      {/* 7-Day Compact & Scrollable Day Strip */}
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin sm:grid sm:grid-cols-7 sm:overflow-visible">
+      {isSummary ? (
+        <div className="py-1">
+          <LaymanSummaryBody summary={get7DayLaymanSummary(dash, locale)} isWide />
+        </div>
+      ) : (
+        /* 7-Day Compact & Scrollable Day Strip */
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin sm:grid sm:grid-cols-7 sm:overflow-visible">
         {days.map((d, idx) => {
           const isSelected = activeDate === d.date;
           const isToday = idx === 0;
@@ -372,7 +390,10 @@ export function Forecast7DayDeck({
           return (
             <div
               key={d.date}
-              onClick={() => setActiveDate(isSelected ? null : d.date)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveDate(isSelected ? null : d.date);
+              }}
               className={`min-w-[5.8rem] sm:min-w-0 cursor-pointer rounded-xl p-2 flex flex-col justify-between transition-all duration-150 border text-center group ${
                 isSelected
                   ? "bg-[color-mix(in_srgb,var(--accent)_14%,var(--card))] border-[var(--accent)] shadow-sm ring-1 ring-[var(--accent)]"
@@ -429,12 +450,12 @@ export function Forecast7DayDeck({
                 <div className="mt-1 flex flex-wrap gap-0.5 justify-center">
                   {d.flood_watch && (
                     <span className="chip level-alert text-[7px] font-semibold uppercase px-1 py-0">
-                      Flood
+                      {locale === "hi" ? "बाढ़" : locale === "bn" ? "বন্যা" : "Flood"}
                     </span>
                   )}
                   {d.irrigate && (
                     <span className="chip level-ok text-[7px] font-semibold uppercase px-1 py-0">
-                      Irrigate
+                      {locale === "hi" ? "सिंचाई" : locale === "bn" ? "সেচ" : "Irrigate"}
                     </span>
                   )}
                 </div>
@@ -443,6 +464,7 @@ export function Forecast7DayDeck({
           );
         })}
       </div>
+      )}
 
       {/* Floating Synoptic Detail Modal Window (Portaled to document.body) */}
       {mounted && typeof document !== "undefined" && activeDate && selectedDay && selectedWeather
@@ -494,7 +516,7 @@ export function Forecast7DayDeck({
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                     <div className="neo-in px-3 py-2 rounded-xl">
                       <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                        Thermal Range
+                        {locale === "hi" ? "तापमान सीमा" : locale === "bn" ? "তাপমাত্রার বিস্তার" : "Thermal Range"}
                       </span>
                       <div className="flex items-baseline gap-1 mt-0.5">
                         <span className="font-mono text-sm font-bold text-amber-600 dark:text-amber-400">
@@ -509,14 +531,14 @@ export function Forecast7DayDeck({
 
                     <div className="neo-in px-3 py-2 rounded-xl">
                       <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                        Precipitation
+                        {locale === "hi" ? "वर्षा की संभावना" : locale === "bn" ? "বৃষ্টিপাত ও সম্ভাবনা" : "Precipitation"}
                       </span>
                       <div className="flex items-baseline gap-1.5 mt-0.5">
                         <span className="font-mono text-sm font-bold text-neo-rain">
                           {rain(selectedDay.precip_mm, units)}
                         </span>
                         <span className="chip px-1.5 py-0 text-[8px] font-mono">
-                          {selectedDay.precip_prob_pct}% prob
+                          {selectedDay.precip_prob_pct}% {locale === "hi" ? "संभावना" : locale === "bn" ? "সম্ভাবনা" : "prob"}
                         </span>
                       </div>
                     </div>
@@ -524,7 +546,7 @@ export function Forecast7DayDeck({
                     {(displayNull || selectedDay.et0_mm != null || selectedDay.water_balance_mm != null) && (
                       <div className="neo-in px-3 py-2 rounded-xl">
                         <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                          Water Balance & ET₀
+                          {locale === "hi" ? "जल संतुलन व ET₀" : locale === "bn" ? "জল ভারসাম্য ও ET₀" : "Water Balance & ET₀"}
                         </span>
                         <div className="flex items-baseline gap-1 mt-0.5">
                           <span className={`font-mono text-sm font-bold ${selectedDay.water_balance_mm >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
@@ -540,11 +562,15 @@ export function Forecast7DayDeck({
                     {(displayNull || selectedDay.soil_m3m3 != null || selectedDay.irrigate != null) && (
                       <div className="neo-in px-3 py-2 rounded-xl">
                         <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                          Field Guidance
+                          {locale === "hi" ? "खेत मार्गदर्शन" : locale === "bn" ? "মাঠ নির্দেশনা" : "Field Guidance"}
                         </span>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <span className={`chip px-1.5 py-0 text-[8px] font-semibold uppercase ${selectedDay.irrigate ? "level-ok" : selectedDay.flood_watch ? "level-alert" : "text-neo-text"}`}>
-                            {selectedDay.flood_watch ? "Flood Watch" : selectedDay.irrigate ? "Irrigation Recommended" : "Hold Irrigation"}
+                            {selectedDay.flood_watch
+                              ? (locale === "hi" ? "बाढ़ चेतावनी" : locale === "bn" ? "বন্যা সতর্কতা" : "Flood Watch")
+                              : selectedDay.irrigate
+                              ? (locale === "hi" ? "सिंचाई अनुशंसित" : locale === "bn" ? "সেচ সুপারিশকৃত" : "Irrigation Recommended")
+                              : (locale === "hi" ? "सिंचाई रोकें" : locale === "bn" ? "সেচ স্থগিত" : "Hold Irrigation")}
                           </span>
                         </div>
                       </div>
@@ -564,7 +590,7 @@ export function Forecast7DayDeck({
                         }`}
                       >
                         <IconActivity className="w-3.5 h-3.5" />
-                        Hourly Curve
+                        {locale === "hi" ? "प्रति घंटा वक्र" : locale === "bn" ? "প্রতি ঘণ্টার বক্ররেখা" : "Hourly Curve"}
                       </button>
                       <button
                         type="button"
@@ -576,7 +602,7 @@ export function Forecast7DayDeck({
                         }`}
                       >
                         <IconClock className="w-3.5 h-3.5" />
-                        Hourly Reel
+                        {locale === "hi" ? "प्रति घंटा रील" : locale === "bn" ? "প্রতি ঘণ্টার রিল" : "Hourly Reel"}
                       </button>
                       <button
                         type="button"
@@ -588,7 +614,7 @@ export function Forecast7DayDeck({
                         }`}
                       >
                         <IconLeaf className="w-3.5 h-3.5" />
-                        Agronomy & Soil
+                        {locale === "hi" ? "कृषि व मृदा" : locale === "bn" ? "কৃষি ও মৃত্তিকা" : "Agronomy & Soil"}
                       </button>
                     </div>
 
@@ -605,7 +631,11 @@ export function Forecast7DayDeck({
                                 : "text-neo-muted hover:text-neo-text"
                             }`}
                           >
-                            {mode === "combo" ? "Temp & Rain" : mode === "wind" ? "Wind & Gusts" : "Humidity"}
+                            {mode === "combo"
+                              ? (locale === "hi" ? "तापमान व वर्षा" : locale === "bn" ? "তাপমাত্রা ও বৃষ্টি" : "Temp & Rain")
+                              : mode === "wind"
+                              ? (locale === "hi" ? "पवन व झोंके" : locale === "bn" ? "বাতাস ও দমকা" : "Wind & Gusts")
+                              : (locale === "hi" ? "आर्द्रता" : locale === "bn" ? "আর্দ্রতা" : "Humidity")}
                           </button>
                         ))}
                       </div>
@@ -717,54 +747,70 @@ export function Forecast7DayDeck({
                         {/* Diurnal Thermal Range */}
                         <div className="neo-in p-3 rounded-xl flex flex-col justify-between">
                           <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                            Thermal Amplitude
+                            {locale === "hi" ? "दैनिक तापमान विस्तार" : locale === "bn" ? "প্রাত্যহিক তাপমাত্রার বিস্তার" : "Thermal Amplitude"}
                           </span>
                           <div className="my-1">
                             <span className="font-mono text-lg font-bold text-amber-600 dark:text-amber-400">
                               {diurnalSpread ? `${diurnalSpread}°C` : "—"}
                             </span>
                             <p className="text-[10px] text-neo-muted mt-0.5">
-                              Spread between Tmax ({temp(selectedDay.temp_max_c, units)}) and Tmin ({temp(selectedDay.temp_min_c, units)}).
+                              {locale === "hi"
+                                ? `अधिकतम (${temp(selectedDay.temp_max_c, units)}) और न्यूनतम (${temp(selectedDay.temp_min_c, units)}) के बीच अंतर।`
+                                : locale === "bn"
+                                ? `সর্বোচ্চ (${temp(selectedDay.temp_max_c, units)}) ও সর্বনিম্ন (${temp(selectedDay.temp_min_c, units)})-এর পার্থক্য।`
+                                : `Spread between Tmax (${temp(selectedDay.temp_max_c, units)}) and Tmin (${temp(selectedDay.temp_min_c, units)}).`}
                             </p>
                           </div>
                           <span className="text-[8px] font-mono text-neo-accent uppercase tracking-wider">
-                            {Number(diurnalSpread ?? 0) > 10 ? "Elevated Diurnal Variation" : "Mild Temperature Variation"}
+                            {Number(diurnalSpread ?? 0) > 10
+                              ? (locale === "hi" ? "उच्च तापमान उतार-चढ़ाव" : locale === "bn" ? "উচ্চ তাপমাত্রার ওঠানামা" : "Elevated Diurnal Variation")
+                              : (locale === "hi" ? "सौम्य तापमान भिन्नता" : locale === "bn" ? "হালকা তাপমাত্রার পার্থক্য" : "Mild Temperature Variation")}
                           </span>
                         </div>
 
                         {/* Evaporative Water Deficit / Surplus */}
                         <div className="neo-in p-3 rounded-xl flex flex-col justify-between">
                           <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                            Hydrological Balance
+                            {locale === "hi" ? "जल-वैज्ञानिक संतुलन" : locale === "bn" ? "জলতাত্ত্বিক ভারসাম্য" : "Hydrological Balance"}
                           </span>
                           <div className="my-1">
                             <span className={`font-mono text-lg font-bold ${selectedDay.water_balance_mm >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
                               {selectedDay.water_balance_mm > 0 ? `+${rain(selectedDay.water_balance_mm, units)}` : rain(selectedDay.water_balance_mm, units)}
                             </span>
                             <p className="text-[10px] text-neo-muted mt-0.5">
-                              Rain ({rain(selectedDay.precip_mm, units)}) − ET₀ ({rain(selectedDay.et0_mm, units)})
+                              {locale === "hi" ? "वर्षा" : locale === "bn" ? "বৃষ্টি" : "Rain"} ({rain(selectedDay.precip_mm, units)}) − ET₀ ({rain(selectedDay.et0_mm, units)})
                             </p>
                           </div>
                           <span className={`text-[8px] font-mono uppercase tracking-wider ${selectedDay.water_balance_mm >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
-                            {selectedDay.water_balance_mm >= 0 ? "Hydrological Surplus" : "Soil Moisture Deficit"}
+                            {selectedDay.water_balance_mm >= 0
+                              ? (locale === "hi" ? "जल अधिशेष (सरप्लस)" : locale === "bn" ? "জল উদ্বৃত্ত (সারপ্লাস)" : "Hydrological Surplus")
+                              : (locale === "hi" ? "मृदा नमी घाटा" : locale === "bn" ? "মাটির আর্দ্রতা ঘাটতি" : "Soil Moisture Deficit")}
                           </span>
                         </div>
 
                         {/* Operational Spray Window */}
                         <div className="neo-in p-3 rounded-xl flex flex-col justify-between">
                           <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold block">
-                            Operational Spray Window
+                            {locale === "hi" ? "कीटनाशक छिड़काव उपयुक्तता" : locale === "bn" ? "কীটনাশক স্প্রে উপযুক্ততা" : "Operational Spray Window"}
                           </span>
                           <div className="my-1">
                             <span className="font-mono text-lg font-bold text-neo-accent">
-                              {selectedDay.precip_prob_pct > 50 ? "High Rain Risk" : "Favorable"}
+                              {selectedDay.precip_prob_pct > 50
+                                ? (locale === "hi" ? "बारिश का उच्च जोखिम" : locale === "bn" ? "বৃষ্টির উচ্চ ঝুঁকি" : "High Rain Risk")
+                                : (locale === "hi" ? "अनुकूल" : locale === "bn" ? "অনুকূল" : "Favorable")}
                             </span>
                             <p className="text-[10px] text-neo-muted mt-0.5">
-                              Crop spraying and chemical application suitability.
+                              {locale === "hi"
+                                ? "फसल छिड़काव और कृषि कार्यों के लिए उपयुक्तता।"
+                                : locale === "bn"
+                                ? "ফসল স্প্রে ও রাসায়নিক প্রয়োগের উপযোগিতা।"
+                                : "Crop spraying and chemical application suitability."}
                             </p>
                           </div>
                           <span className="text-[8px] font-mono text-neo-muted uppercase tracking-wider">
-                            {selectedDay.precip_prob_pct > 50 ? "Postpone Field Application" : "Suitable Window for Operations"}
+                            {selectedDay.precip_prob_pct > 50
+                              ? (locale === "hi" ? "छिड़काव कार्य स्थगित करें" : locale === "bn" ? "স্প্রে কার্যক্রম স্থগিত রাখুন" : "Postpone Field Application")
+                              : (locale === "hi" ? "छिड़काव कार्य हेतु उपयुक्त समय" : locale === "bn" ? "ক্ষেতের কাজের উপযুক্ত সময়" : "Suitable Window for Operations")}
                           </span>
                         </div>
 

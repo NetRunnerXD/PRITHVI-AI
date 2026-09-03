@@ -45,9 +45,9 @@ export function MandiPanel({ dash, locale }: { dash: DashboardSnapshot; locale: 
           <table className="w-full text-left text-sm">
             <thead className="text-xs text-neo-muted">
               <tr>
-                <th className="py-1 font-medium">{t.searchPrices.replace("…", "")}</th>
-                <th className="py-1 font-medium"></th>
-                <th className="py-1 font-medium">₹</th>
+                <th className="py-1 font-medium">{locale === "hi" ? "फसल / जींस" : locale === "bn" ? "ফসল / জাত" : "Commodity"}</th>
+                <th className="py-1 font-medium">{locale === "hi" ? "मंडी / बाजार" : locale === "bn" ? "মান্ডি / বাজার" : "Market"}</th>
+                <th className="py-1 font-medium">₹ / quintal</th>
               </tr>
             </thead>
             <tbody>
