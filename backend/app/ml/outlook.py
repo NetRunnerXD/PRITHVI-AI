@@ -136,6 +136,40 @@ def build_hourly_7d(f: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def pick_hourly_slot(
+    hours: list[dict[str, Any]] | None,
+    day: str | None,
+    hour: int | None,
+) -> dict[str, Any] | None:
+    """Open-Meteo hourly row for an IST clock hour on a named day."""
+    rows = [r for r in (hours or []) if isinstance(r, dict)]
+    if not rows or hour is None:
+        return None
+    day_s = str(day or "")[:10]
+    want = f"{int(hour):02d}"
+    day_rows = [r for r in rows if not day_s or str(r.get("date") or r.get("t") or "")[:10] == day_s]
+    pool = day_rows or rows
+
+    def _hh(r: dict[str, Any]) -> str:
+        h = str(r.get("hour") or "")
+        if ":" in h:
+            return h[:2]
+        t = str(r.get("t") or "")
+        if "T" in t and len(t) >= 13:
+            return t[11:13]
+        return ""
+
+    exact = next((r for r in pool if _hh(r) == want), None)
+    if exact:
+        return exact
+    try:
+        hi = int(want)
+    except ValueError:
+        return pool[0] if pool else None
+    nearest = min(pool, key=lambda r: abs((int(_hh(r) or 99) % 24) - hi))
+    return nearest
+
+
 def compact_compare(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     """a/b are snapshot.model_dump() fragments."""
     pa, pb = a.get("predictive") or {}, b.get("predictive") or {}

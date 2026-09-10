@@ -51,8 +51,8 @@ router = APIRouter()
 
 
 @router.get("/geo/search")
-async def geo_search(q: str = Query(min_length=1), limit: int = 8):
-    found = await search_places(q, limit=limit)
+async def geo_search(q: str = Query(min_length=1), limit: int = 8, local: bool = False):
+    found = await search_places(q, limit=limit, local_only=local)
     return {"results": [l.model_dump() for l in found]}
 
 

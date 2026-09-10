@@ -14,8 +14,16 @@ LOG = ROOT / ".cache" / "vera_hourly_log.jsonl"
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
+_MEM_CACHE: list[dict[str, Any]] | None = None
+_LAST_DISK_SAVE: float = 0.0
+
+
 def _load() -> list[dict[str, Any]]:
+    global _MEM_CACHE
+    if _MEM_CACHE is not None:
+        return _MEM_CACHE
     if not LOG.exists():
+        _MEM_CACHE = []
         return []
     rows = []
     try:
@@ -28,13 +36,24 @@ def _load() -> list[dict[str, Any]]:
             except json.JSONDecodeError:
                 continue
     except OSError:
+        _MEM_CACHE = []
         return []
-    return rows[-4000:]
+    _MEM_CACHE = rows[-4000:]
+    return _MEM_CACHE
 
 
 def _save(rows: list[dict[str, Any]]) -> None:
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    LOG.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in rows[-4000:]) + "\n", encoding="utf-8")
+    global _MEM_CACHE, _LAST_DISK_SAVE
+    _MEM_CACHE = rows[-4000:]
+    now = datetime.now(timezone.utc).timestamp()
+    # Debounce heavy full-file rewriting to at most once every 60 seconds
+    if now - _LAST_DISK_SAVE > 60.0:
+        _LAST_DISK_SAVE = now
+        try:
+            LOG.parent.mkdir(parents=True, exist_ok=True)
+            LOG.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in _MEM_CACHE) + "\n", encoding="utf-8")
+        except OSError:
+            pass
 
 
 def _hour_key(t: str) -> str:
@@ -130,6 +149,24 @@ def backfill_obs(
     return n
 
 
+def csi(pairs: list[tuple[float, float]], thresh: float) -> float | None:
+    """Critical success index at a millimetre threshold."""
+    if not pairs:
+        return None
+    hits = misses = false = 0
+    for pred, obs in pairs:
+        p = float(pred) >= thresh
+        o = float(obs) >= thresh
+        if p and o:
+            hits += 1
+        elif o and not p:
+            misses += 1
+        elif p and not o:
+            false += 1
+    den = hits + misses + false
+    return round(hits / den, 4) if den else None
+
+
 def _mae_rmse(pairs: list[tuple[float, float]]) -> dict[str, float]:
     if not pairs:
         return {"mae": None, "rmse": None, "n": 0}
@@ -172,6 +209,7 @@ def scores(pin: str) -> dict[str, Any]:
     for lo, hi, name in bins:
         grp = [r for r in rows if r.get("lead_h") is not None and lo <= int(r["lead_h"]) < hi]
         by_lead[name] = _mae_rmse([(float(r["ensemble"]), float(r["obs"])) for r in grp if r.get("ensemble") is not None])
+    ens_pairs = [(float(r["ensemble"]), float(r["obs"])) for r in rows if r.get("ensemble") is not None]
     return {
         "ensemble": ens,
         "moe": moe,
@@ -181,6 +219,11 @@ def scores(pin: str) -> dict[str, Any]:
         "skill_vs_om": skill,
         "by_lead": by_lead,
         "independent_obs": independent,
+        "csi": {
+            "2mm": csi(ens_pairs, 2.0),
+            "7mm": csi(ens_pairs, 7.0),
+            "25mm": csi(ens_pairs, 25.0),
+        },
     }
 
 

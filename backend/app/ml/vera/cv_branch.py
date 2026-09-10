@@ -167,19 +167,21 @@ def swin_encode(arr) -> dict[str, Any]:
     h, w = last.shape
     win = 8
     oh, ow = max(1, h // win), max(1, w // win)
-    tiles = []
-    for y in range(oh):
-        for x in range(ow):
-            patch = last[y * win : (y + 1) * win, x * win : (x + 1) * win]
-            tiles.append(float(patch.mean()) if patch.size else 0.0)
+    clipped = last[: oh * win, : ow * win]
+    if clipped.size > 0 and oh > 0 and ow > 0:
+        tiles_arr = clipped.reshape(oh, win, ow, win).mean(axis=(1, 3))
+        tiles = [float(v) for v in tiles_arr.ravel()]
+    else:
+        tiles = []
     shifted = last[win // 2 :, win // 2 :]
     sh, sw_ = shifted.shape
     soh, sow = max(1, sh // win), max(1, sw_ // win)
-    shift_tiles = []
-    for y in range(soh):
-        for x in range(sow):
-            patch = shifted[y * win : (y + 1) * win, x * win : (x + 1) * win]
-            shift_tiles.append(float(patch.mean()) if patch.size else 0.0)
+    s_clipped = shifted[: soh * win, : sow * win]
+    if s_clipped.size > 0 and soh > 0 and sow > 0:
+        shift_tiles_arr = s_clipped.reshape(soh, win, sow, win).mean(axis=(1, 3))
+        shift_tiles = [float(v) for v in shift_tiles_arr.ravel()]
+    else:
+        shift_tiles = []
     attn = []
     if tiles:
         m = max(tiles)
@@ -193,6 +195,7 @@ def swin_encode(arr) -> dict[str, Any]:
         "depths": [2, 2, 6, 2],
         "num_heads": [3, 6, 12, 24],
         "trained": (ROOT / ".cache" / "mlflow" / "swin_unet.pt").exists(),
+        "task": "lead-conditioned next-frame IR",
         "window_mean": round(float(sum(tiles) / len(tiles)), 4) if tiles else 0.0,
         "shift_mean": round(float(sum(shift_tiles) / len(shift_tiles)), 4) if shift_tiles else 0.0,
         "attn": attn,

@@ -60,16 +60,28 @@ async def fetch(loc: Any) -> dict[str, Any]:
         }
     import asyncio
 
-    from app.providers import gibs_ir, imd_insat, weatherbit_lightning
+    from app import cache
+    from app.providers import gibs_ir, gpm_imerg, imd_insat, weatherbit_lightning
 
     lat = float(getattr(loc, "lat", 0) or 0)
     lon = float(getattr(loc, "lon", 0) or 0)
+    sat_key = f"sat_live:{round(lat, 2)}:{round(lon, 2)}"
+    hit = cache.get(sat_key)
+    if hit is not None and isinstance(hit, dict):
+        return hit
+
+    async def _safe(coro, default):
+        try:
+            return await asyncio.wait_for(coro, timeout=1.2)
+        except Exception:
+            return default
+
     insat, ir, imerg, lightning, bands = await asyncio.gather(
-        imd_insat.fetch_ir(lat, lon),
-        gibs_ir.fetch_ir(lat, lon),
-        gibs_ir.fetch_imerg(lat, lon),
-        weatherbit_lightning.fetch(lat, lon),
-        imd_insat.fetch_channels(lat, lon),
+        _safe(imd_insat.fetch_ir(lat, lon), {"ok": False}),
+        _safe(gibs_ir.fetch_ir(lat, lon), {"ok": False}),
+        _safe(gpm_imerg.fetch_pin(lat, lon, heavy=False), {}),
+        _safe(weatherbit_lightning.fetch(lat, lon), {"ok": False, "strokes": []}),
+        _safe(imd_insat.fetch_channels(lat, lon), {"ok": False, "bands": []}),
     )
     grid, half = _pick_grid(insat, ir)
     try:
@@ -103,7 +115,7 @@ async def fetch(loc: Any) -> dict[str, Any]:
         _save_tracks(store)
     except OSError:
         pass
-    return {
+    out = {
         "as_of": now,
         "insat": {k: v for k, v in insat.items() if k != "grid"},
         "ir": {k: v for k, v in ir.items() if k != "grid"},
@@ -114,6 +126,8 @@ async def fetch(loc: Any) -> dict[str, Any]:
         "ok": bool(insat.get("ok") or ir.get("ok") or lightning.get("ok") or imerg.get("ok") or bands.get("ok")),
         "method": "imd-insat 5-band + gibs-ir/imerg + weatherbit",
     }
+    cache.set(sat_key, out, 900, swr_s=3600)
+    return out
 
 
 def compact(live: dict[str, Any] | None) -> dict[str, Any]:

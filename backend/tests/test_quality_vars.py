@@ -87,3 +87,52 @@ def test_usgs_row_shape():
     merged = _merge_quakes(a, b)
     assert len(merged) == 1
     assert merged[0]["magType"] == "mb"
+
+
+def test_quake_filter_drops_far_and_stale():
+    from datetime import datetime, timezone, timedelta
+    from app.providers.hazards import filter_quakes_for_pin, quake_affects_pin
+
+    now = datetime.now(timezone.utc)
+    near = {
+        "mag": 4.2,
+        "lat": 22.1,
+        "lon": 88.1,
+        "distance_km": 40,
+        "time_iso": (now - timedelta(hours=6)).isoformat(),
+        "place": "near Haldia",
+    }
+    far = {
+        "mag": 5.0,
+        "lat": 33.2,
+        "lon": 86.9,
+        "distance_km": 1200,
+        "time_iso": (now - timedelta(hours=6)).isoformat(),
+        "place": "western Xizang",
+    }
+    stale = {
+        "mag": 4.0,
+        "lat": 22.1,
+        "lon": 88.1,
+        "distance_km": 20,
+        "time_iso": (now - timedelta(days=10)).isoformat(),
+        "place": "old local",
+    }
+    assert quake_affects_pin(near, 22.07, 88.07, now)
+    assert not quake_affects_pin(far, 22.07, 88.07, now)
+    assert not quake_affects_pin(stale, 22.07, 88.07, now)
+    kept = filter_quakes_for_pin([near, far, stale], 22.07, 88.07)
+    assert [q.get("place") for q in kept] == ["near Haldia"]
+
+
+def test_pick_hourly_slot():
+    from app.ml.outlook import pick_hourly_slot
+
+    hours = [
+        {"t": "2026-08-19T14:00", "date": "2026-08-19", "hour": "14:00", "temp_c": 30, "precip_mm": 0.2},
+        {"t": "2026-08-19T15:00", "date": "2026-08-19", "hour": "15:00", "temp_c": 31.2, "precip_mm": 1.4},
+    ]
+    slot = pick_hourly_slot(hours, "2026-08-19", 15)
+    assert slot is not None
+    assert slot["temp_c"] == 31.2
+    assert slot["precip_mm"] == 1.4

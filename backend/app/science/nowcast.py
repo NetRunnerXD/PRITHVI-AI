@@ -809,6 +809,20 @@ def decide_actions(pack: dict[str, Any]) -> list[dict[str, Any]]:
                 },
             }
         )
+    ah = pack.get("alert_head") or {}
+    if ah.get("word") == "Warning":
+        out.append(
+            {
+                "id": "nowcast_alert_warning",
+                "priority": 0,
+                "verb": "take_cover",
+                "who": "public",
+                "when": "next 2 h",
+                "action": "Warning — heavy rain or lightning likely. Stay off open ground.",
+                "template_id": "nowcast_alert_warning",
+                "slots": {"p_heavy": ah.get("p_heavy"), "lightning_p": ah.get("lightning_p")},
+            }
+        )
     if tide.get("stay_off_ghat"):
         out.append(
             {
@@ -976,8 +990,45 @@ def build(
 
     pack["sat_live"] = compact_sat(live_sat)
     pack["convective"] = build_conv(f, loc, live=live_sat, phys=phys)
+    from app.science.rain_field import pack as rain_field_pack
+    from app.science import alert_head
+    from app.science.cv_nowcast import FRAME_PATH
+    import json as _json
+
+    prev_tb = curr_tb = None
+    ir_bounds = None
+    try:
+        ir_blob = _json.loads(FRAME_PATH.read_text(encoding="utf-8")) if FRAME_PATH.exists() else {}
+        curr_tb = ir_blob.get("grid")
+        prev_tb = ir_blob.get("prev") or None
+        if ir_blob.get("bounds"):
+            ir_bounds = tuple(ir_blob["bounds"])
+    except (OSError, _json.JSONDecodeError):
+        pass
+    imerg_mm = None
+    try:
+        raw = (pack["sat_live"] or {}).get("imerg") or {}
+        if raw.get("mm_h") is not None:
+            imerg_mm = float(raw["mm_h"])
+    except (TypeError, ValueError):
+        imerg_mm = None
+    pack["rain_field"] = rain_field_pack(
+        prev_tb,
+        curr_tb,
+        lat=float(lat or 0),
+        lon=float(getattr(loc, "lon", 0) or 0),
+        bounds=ir_bounds,
+        imerg_mm_h=imerg_mm,
+    )
+    for i, h in enumerate(hours):
+        ens_h = ((pack["rain_field"].get("ensemble") or {}).get("hours") or [])
+        if i < len(ens_h):
+            h["steps_mm"] = ens_h[i].get("mm")
+            h["steps_spread"] = ens_h[i].get("spread")
+    pack["alert_head"] = alert_head.build(hours, pack["convective"], cap, pack["rain_field"])
     pack["actions"] = decide_actions(pack)
     pack["locked"] = locked(pack)
+    pack["locked"]["alert_word"] = pack["alert_head"]["word"]
     from app.science.live import attach_live, persist_issue
     from app.science.sat_kalman import attach_to_nowcast
 
@@ -987,7 +1038,7 @@ def build(
     return pack
 
 
-async def fetch_neighbors(loc: Any, limit: int = 3) -> list[dict[str, Any]]:
+async def fetch_neighbors(loc: Any, limit: int = 2) -> list[dict[str, Any]]:
     """Cached Open-Meteo hours on nearby gazetteer points."""
     import asyncio
 
@@ -1001,11 +1052,11 @@ async def fetch_neighbors(loc: Any, limit: int = 3) -> list[dict[str, Any]]:
     hit = cache.get(key)
     if isinstance(hit, list):
         return hit
-    rows = nearby(lat, lon, limit=max(limit, 8))
+    rows = nearby(lat, lon, limit=max(limit, 3))[:limit]
 
     async def one(n: Any) -> dict[str, Any] | None:
         try:
-            om = await open_meteo.forecast(n.lat, n.lon)
+            om = await asyncio.wait_for(open_meteo.forecast(n.lat, n.lon), timeout=3.0)
             feat = extract(om, {}, [], None, None)
             return {
                 "id": n.id,
@@ -1020,5 +1071,5 @@ async def fetch_neighbors(loc: Any, limit: int = 3) -> list[dict[str, Any]]:
 
     got = await asyncio.gather(*[one(n) for n in rows])
     out = [g for g in got if g]
-    cache.set(key, out, 90)
+    cache.set(key, out, 180)
     return out

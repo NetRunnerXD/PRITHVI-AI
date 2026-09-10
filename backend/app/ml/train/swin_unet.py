@@ -1,4 +1,7 @@
-"""Tiny Swin-UNet trainer on cached INSAT IR patches. CUDA when available."""
+"""Lead-conditioned rain U-Net on cached INSAT IR patches. CUDA when available.
+
+Predicts next-frame IR (proxy rain) from the previous frame. Not an autoencoder.
+"""
 
 from __future__ import annotations
 
@@ -42,44 +45,59 @@ def train(epochs: int = 20, lr: float = 1e-3) -> dict[str, Any]:
         META.write_text(json.dumps({"ok": False, "error": "torch not installed"}), encoding="utf-8")
         return {"ok": False, "error": "pip install torch", "n_patches": len(patches)}
 
-    if not patches:
-        # synthetic cold-cloud discs so GPU path still runs
-        import math
-
-        for k in range(16):
-            g = [[240.0 + 8 * math.sin((i + k) / 3) for j in range(16)] for i in range(16)]
-            patches.append(g)
+    if len(patches) < 2:
+        meta = {"ok": False, "error": "need ≥2 cached INSAT frames under .cache/insat_frames", "n_patches": len(patches)}
+        META.write_text(json.dumps(meta), encoding="utf-8")
+        return meta
 
     class TinySwin(nn.Module):
         def __init__(self):
             super().__init__()
+            self.lead = nn.Linear(1, 16)
             self.enc = nn.Sequential(nn.Conv2d(1, 16, 3, padding=1), nn.GELU(), nn.Conv2d(16, 16, 3, padding=1))
             self.attn = nn.MultiheadAttention(16, 4, batch_first=True)
             self.dec = nn.Conv2d(16, 1, 1)
 
-        def forward(self, x):
+        def forward(self, x, lead):
             h = self.enc(x)
             b, c, hh, ww = h.shape
+            bias = self.lead(lead).view(b, c, 1, 1)
+            h = h + bias
             tok = h.flatten(2).transpose(1, 2)
             tok, _ = self.attn(tok, tok, tok)
             h = tok.transpose(1, 2).reshape(b, c, hh, ww)
             return self.dec(h)
 
+    pairs = [(patches[i], patches[i + 1]) for i in range(len(patches) - 1)]
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net = TinySwin().to(dev)
     opt = torch.optim.Adam(net.parameters(), lr=lr)
-    x = torch.tensor(patches, dtype=torch.float32, device=dev).unsqueeze(1)
+    x = torch.tensor([p[0] for p in pairs], dtype=torch.float32, device=dev).unsqueeze(1)
+    y = torch.tensor([p[1] for p in pairs], dtype=torch.float32, device=dev).unsqueeze(1)
     x = (x - 220.0) / 40.0
+    y = (y - 220.0) / 40.0
+    lead = torch.ones((x.shape[0], 1), dtype=torch.float32, device=dev)
     last = 0.0
     for _ in range(max(1, epochs)):
         opt.zero_grad()
-        y = net(x)
-        loss = nn.functional.l1_loss(y, x)
+        pred = net(x, lead)
+        # heavier penalty on cold (rainy) pixels
+        w = 1.0 + torch.relu(-y)
+        loss = (w * (pred - y).abs()).mean()
         loss.backward()
         opt.step()
         last = float(loss.item())
-    torch.save(net.state_dict(), WEIGHTS)
-    meta = {"ok": True, "device": str(dev), "epochs": epochs, "n_patches": len(patches), "l1": round(last, 6), "path": str(WEIGHTS)}
+    torch.save({"state": net.state_dict(), "task": "next-frame-ir"}, WEIGHTS)
+    meta = {
+        "ok": True,
+        "device": str(dev),
+        "epochs": epochs,
+        "n_patches": len(patches),
+        "n_pairs": len(pairs),
+        "l1": round(last, 6),
+        "path": str(WEIGHTS),
+        "task": "lead-conditioned next-frame IR",
+    }
     META.write_text(json.dumps(meta), encoding="utf-8")
     return meta
 

@@ -94,6 +94,8 @@ def test_speech_does_not_change_millimetres(monkeypatch):
     fused = apply_speech_only(pack, "কালবৈশাখী ঝমাঝম")
     assert [h["mm"] for h in fused["hours"]] == mm0
     assert fused["speech"]["mm_changed"] is False
+    assert pack.get("rain_field", {}).get("source_kind") == "satellite-nowcast"
+    assert pack.get("alert_head", {}).get("word") in {"No alert", "Possible", "Warning"}
     assert "squall" in fused["speech"]["heard"]["tags"] or "heavy_rain" in fused["speech"]["heard"]["tags"]
 
 

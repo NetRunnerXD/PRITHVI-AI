@@ -228,18 +228,22 @@ def _town_loc(t: dict) -> Location:
     )
 
 
-async def search_places(q: str, limit: int = 8) -> list[Location]:
+async def search_places(q: str, limit: int = 8, *, local_only: bool = False) -> list[Location]:
     """Districts + curated towns + Open-Meteo India cities."""
     qlow = (q or "").strip().lower()
     towns = [_town_loc(t) for t in search_towns(q, limit=limit)]
     local = search(q, limit=limit)
     extra: list[Location] = []
-    try:
-        from app.providers import open_meteo
+    raw: list = []
+    if not local_only:
+        try:
+            import asyncio
 
-        raw = await open_meteo.geocode_india(q)
-    except Exception:
-        raw = []
+            from app.providers import open_meteo
+
+            raw = await asyncio.wait_for(open_meteo.geocode_india(q), timeout=2.5)
+        except Exception:
+            raw = []
     seen = {(round(x.lat, 2), round(x.lon, 2)) for x in towns + local}
     seen_names = {((x.place_name or x.district).lower(), x.state.lower()) for x in towns}
     for r in raw:

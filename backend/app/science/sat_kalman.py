@@ -541,15 +541,28 @@ def attach_to_nowcast(pack_nc: dict[str, Any], loc: Any, f: dict[str, Any]) -> d
         live = pack_nc.get("sat_live") or {}
         imerg = live.get("imerg") or {}
         imerg_mm = imerg.get("mm_h")
-        if imerg.get("ok") and imerg_mm is not None:
-            obs = sat_obs.from_imerg_rate(float(imerg_mm))
-            om = sat_obs.from_open_meteo_hours(times, vals, past_only=True)
-            knots = list(om.get("knots") or [])
-            if obs["knots"]:
-                knots.append(obs["knots"][0])
-            obs = {**obs, "knots": knots[-16:]}
+        hem = None
+        import os
+
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            try:
+                from app.providers import mosdac as mosdac_mod
+
+                hem = mosdac_mod.hem_knot(float(getattr(loc, "lat", 0) or 0), float(getattr(loc, "lon", 0) or 0))
+            except Exception:
+                hem = None
+        om = sat_obs.from_open_meteo_hours(times, vals, past_only=True)
+        knots = list(om.get("knots") or [])
+        sat_src = None
+        if hem and hem.get("mm_h") is not None:
+            sat_src = sat_obs.from_satellite_rate(float(hem["mm_h"]), source="insat-hem")
+        elif imerg.get("ok") and imerg_mm is not None:
+            sat_src = sat_obs.from_imerg_rate(float(imerg_mm))
+        if sat_src and sat_src.get("knots"):
+            knots.append(sat_src["knots"][0])
+            obs = {**sat_src, "knots": knots[-16:]}
         else:
-            obs = sat_obs.from_open_meteo_hours(times, vals, past_only=True)
+            obs = {**om, "knots": knots[-16:]}
         locked_mm = [h.get("mm") for h in (pack_nc.get("hours") or [])]
         from app.science.sat_phys import drivers_from_features
 

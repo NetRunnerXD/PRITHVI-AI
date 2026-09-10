@@ -6,7 +6,7 @@ from app.providers import gpm_imerg
 
 
 async def main() -> None:
-    print(await gpm_imerg.fetch_pin(22.07, 88.07))
+    print(await gpm_imerg.fetch_late_pin(22.07, 88.07))
 
 
 if __name__ == "__main__":

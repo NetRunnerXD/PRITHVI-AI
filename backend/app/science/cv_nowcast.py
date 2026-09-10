@@ -190,7 +190,7 @@ def enhance(
             "dt_min": round(dt_min, 1),
         }
     try:
-        _save({"t": now, "grid": grid, "bounds": bounds})
+        _save({"t": now, "grid": grid, "prev": prev, "bounds": bounds})
     except OSError:
         pass
 

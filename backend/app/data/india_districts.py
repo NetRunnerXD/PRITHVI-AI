@@ -342,7 +342,10 @@ def match_states(text: str) -> list[str]:
     found: list[str] = []
     seen: set[str] = set()
     for s in all_states():
-        if s.lower() in blob and s not in seen:
+        key = s.lower()
+        if key in seen:
+            continue
+        if re.search(rf"(?<![a-z]){re.escape(key)}(?![a-z])", blob):
             seen.add(s)
             found.append(s)
     for alias, full in {
@@ -375,53 +378,15 @@ def match_states(text: str) -> list[str]:
         "केरल": "Kerala",
         "पंजाब": "Punjab",
     }.items():
-        if alias in blob and full not in seen:
+        if re.search(rf"(?<![a-z]){re.escape(alias.strip())}(?![a-z])", blob) and full not in seen:
             seen.add(full)
             found.append(full)
     return found
 
 
 def match_state(text: str) -> str | None:
-    blob = (text or "").lower()
-    for s in all_states():
-        if s.lower() in blob:
-            return s
-    for alias, full in {
-        "west bengal": "West Bengal",
-        "wb ": "West Bengal",
-        " gangetic": "West Bengal",
-        "odisha": "Odisha",
-        "orissa": "Odisha",
-        "tamil nadu": "Tamil Nadu",
-        "uttar pradesh": "Uttar Pradesh",
-        "madhya pradesh": "Madhya Pradesh",
-        "andhra": "Andhra Pradesh",
-        "maharashtra": "Maharashtra",
-        "karnataka": "Karnataka",
-        "kerala": "Kerala",
-        "gujarat": "Gujarat",
-        "rajasthan": "Rajasthan",
-        "bihar": "Bihar",
-        "jharkhand": "Jharkhand",
-        "assam": "Assam",
-        "punjab": "Punjab",
-        "haryana": "Haryana",
-        "delhi": "Delhi",
-        "telangana": "Telangana",
-        "chhattisgarh": "Chhattisgarh",
-        "পশ্চিমবঙ্গ": "West Bengal",
-        "পশ্চিম বঙ্গ": "West Bengal",
-        "पश्चिम बंगाल": "West Bengal",
-        "ओडिशा": "Odisha",
-        "उड़ीसा": "Odisha",
-        "राजस्थान": "Rajasthan",
-        "महाराष्ट्र": "Maharashtra",
-        "बिहार": "Bihar",
-        "অসম": "Assam",
-    }.items():
-        if alias in blob:
-            return full
-    return None
+    hits = match_states(text)
+    return hits[0] if hits else None
 
 
 def nearest(lat: float, lon: float) -> dict:

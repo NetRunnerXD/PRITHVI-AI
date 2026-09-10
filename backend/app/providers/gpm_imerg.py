@@ -11,6 +11,7 @@ from app.config import ROOT, get_settings
 
 ARCHIVE = ROOT / ".cache" / "imerg"
 CMR = "https://cmr.earthdata.nasa.gov/search/granules.json"
+OBS_LOG = ROOT / ".cache" / "imerg" / "obs_log.jsonl"
 
 
 def earthdata_token() -> str | None:
@@ -42,18 +43,33 @@ def status() -> dict[str, Any]:
             "env": ["NASA_EARTHDATA_API"],
             "prompt": "Set NASA_EARTHDATA_API to an Earthdata user token from https://urs.earthdata.nasa.gov/documentation/for_users/user_token (or NASA_EARTHDATA_USER + NASA_EARTHDATA_PASS).",
         },
+        "gesdisc_eula": GESDISC_EULA,
+        "note": "GES DISC HDF/OPeNDAP needs the Earthdata token plus one-time GES DISC EULA approval.",
     }
+
+
+GESDISC_EULA = "https://urs.earthdata.nasa.gov/approve_app?client_id=e2WVk8Pw6weeLUKZYOxvTQ"
 
 
 def _headers() -> dict[str, str]:
     tok = earthdata_token()
+    h = {"Accept": "*/*"}
     if tok:
-        return {"Authorization": f"Bearer {tok}"}
-    return {}
+        h["Authorization"] = f"Bearer {tok}"
+    return h
 
 
-async def _cmr_latest() -> dict[str, Any] | None:
-    hit = cache.get("imerg:cmr")
+def _eula_from_body(status_code: int, text: str) -> str | None:
+    if status_code != 403:
+        return None
+    if "EULA" in (text or "") or "approve_app" in (text or ""):
+        return GESDISC_EULA
+    return None
+
+
+async def _cmr_latest(short_name: str = "GPM_3IMERGHHE") -> dict[str, Any] | None:
+    ck = f"imerg:cmr:{short_name}"
+    hit = cache.get(ck)
     if isinstance(hit, dict):
         return hit
     from app.providers.http import client
@@ -61,12 +77,12 @@ async def _cmr_latest() -> dict[str, Any] | None:
     r = await client().get(
         CMR,
         params={
-            "short_name": "GPM_3IMERGHHE",
+            "short_name": short_name,
             "version": "07",
             "page_size": 1,
             "sort_key": "-start_date",
         },
-        headers={"Accept": "application/json"},
+        headers={**_headers(), "Accept": "application/json"},
     )
     if r.status_code >= 400:
         return None
@@ -87,7 +103,7 @@ async def _cmr_latest() -> dict[str, Any] | None:
         "opendap": opendap,
         "n_links": len(hrefs),
     }
-    cache.set("imerg:cmr", pack, 900)
+    cache.set(ck, pack, 900)
     return pack
 
 
@@ -104,9 +120,10 @@ async def _opendap_point(lat: float, lon: float) -> dict[str, Any] | None:
     urls = []
     if cmr and cmr.get("opendap"):
         base = str(cmr["opendap"]).rstrip("/")
+        urls.append(f"{base}.ascii?precipitationCal[0:0][{lj}:1:{lj}][{li}:1:{li}]")
+        urls.append(f"{base}.ascii?Grid/precipitationCal[0:0][{lj}:1:{lj}][{li}:1:{li}]")
         urls.append(f"{base}.ascii?Grid/precipitation[0:0][{lj}:1:{lj}][{li}:1:{li}]")
         urls.append(f"{base}.ascii?precipitation[0:0][{lj}][{li}]")
-    urls.append(f"https://gpm1.gesdisc.eosdis.nasa.gov/dods/GPM_3IMERGHHE_07.ascii?precip[0:1:0][{lj}:1:{lj}][{li}:1:{li}]")
     last: dict[str, Any] = {"ok": False, "status": "empty"}
     for url in urls:
         try:
@@ -115,7 +132,14 @@ async def _opendap_point(lat: float, lon: float) -> dict[str, Any] | None:
             last = {"ok": False, "status": "error", "error": str(e)[:160]}
             continue
         if r.status_code >= 400:
-            last = {"ok": False, "status": f"http_{r.status_code}", "error": (r.text or "")[:120], "url_kind": "opendap"}
+            eula = _eula_from_body(r.status_code, r.text or "")
+            last = {
+                "ok": False,
+                "status": f"http_{r.status_code}",
+                "error": (r.text or "")[:120],
+                "url_kind": "opendap",
+                "eula": eula,
+            }
             continue
         text = r.text
         nums = []
@@ -135,14 +159,82 @@ async def _opendap_point(lat: float, lon: float) -> dict[str, Any] | None:
     return last
 
 
-async def fetch_pin(lat: float, lon: float) -> dict[str, Any]:
+async def _hdf_point(
+    lat: float, lon: float, cmr: dict[str, Any] | None, *, download: bool = True
+) -> dict[str, Any] | None:
+    """Sample IMERG HDF5 at the pin. Live snapshot must not download granules."""
+    ARCHIVE.mkdir(parents=True, exist_ok=True)
+    name = str((cmr or {}).get("title") or "").split(":")[-1]
+    dest = ARCHIVE / name if name else None
+    if dest is None or not dest.exists() or dest.stat().st_size < 1024:
+        existing = sorted(ARCHIVE.glob("*.HDF5"), key=lambda p: p.stat().st_mtime, reverse=True)
+        dest = existing[0] if existing else dest
+    if dest is None or not dest.exists() or dest.stat().st_size < 1024:
+        if not download or not cmr or not cmr.get("href"):
+            return None
+        from app.providers.http import client
+
+        name = str(cmr.get("title") or "imerg").split(":")[-1]
+        dest = ARCHIVE / name
+        r = await client().get(cmr["href"], headers=_headers(), timeout=120.0)
+        if r.status_code >= 400:
+            return {
+                "ok": False,
+                "status": f"http_{r.status_code}",
+                "eula": _eula_from_body(r.status_code, r.text or ""),
+                "url_kind": "hdf5",
+            }
+        dest.write_bytes(r.content)
+    try:
+        import h5py
+        import numpy as np
+    except ImportError:
+        return {"ok": False, "status": "h5py_missing"}
+    li = int(round((lon + 179.95) / 0.1))
+    lj = int(round((lat + 89.95) / 0.1))
+    li = max(0, min(3599, li))
+    lj = max(0, min(1799, lj))
+    try:
+        with h5py.File(dest, "r") as f:
+            ds = None
+            for key in ("precipitationCal", "precipitation", "/Grid/precipitationCal", "/Grid/precipitation"):
+                if key in f:
+                    ds = f[key]
+                    break
+            if ds is None and "Grid" in f:
+                g = f["Grid"]
+                for key in ("precipitationCal", "precipitation"):
+                    if key in g:
+                        ds = g[key]
+                        break
+            if ds is None:
+                return {"ok": False, "status": "no_precip_dataset"}
+            a = np.array(ds[()])
+            while a.ndim > 2:
+                a = a[0]
+            # IMERG often lon,lat
+            if a.shape[0] == 3600 and a.shape[1] == 1800:
+                v = float(a[li, lj])
+            elif a.shape[0] == 1800 and a.shape[1] == 3600:
+                v = float(a[lj, li])
+            else:
+                v = float(a.flat[min(len(a.flat) - 1, lj * a.shape[-1] + li)])
+            if v != v or v < 0:
+                v = 0.0
+            return {"ok": True, "mm_h": v, "source": "gesdisc-hdf5-GPM_3IMERGHHE", "path": str(dest)}
+    except Exception as e:
+        return {"ok": False, "status": "hdf_error", "error": str(e)[:160]}
+
+
+async def fetch_pin(lat: float, lon: float, *, heavy: bool = False) -> dict[str, Any]:
+    """Live path: GIBS + cached HDF only. heavy=True downloads the latest granule (nightly/verify)."""
     from app.providers import gibs_ir
 
     live = await gibs_ir.fetch_imerg(lat, lon)
     st = status()
     cmr = None
     ges = None
-    if earthdata_ready():
+    if earthdata_ready() and heavy:
         try:
             cmr = await _cmr_latest()
         except Exception:
@@ -151,7 +243,17 @@ async def fetch_pin(lat: float, lon: float) -> dict[str, Any]:
             ges = await _opendap_point(lat, lon)
         except Exception as e:
             ges = {"ok": False, "error": str(e)[:160]}
+    if heavy and not (ges or {}).get("ok"):
+        try:
+            hdf = await _hdf_point(lat, lon, cmr, download=True)
+        except Exception as e:
+            hdf = {"ok": False, "error": str(e)[:160]}
+        if hdf and hdf.get("ok"):
+            ges = hdf
+        elif hdf and hdf.get("eula"):
+            ges = {**(ges or {}), **hdf}
     mmh = (ges or {}).get("mm_h") if (ges or {}).get("ok") else live.get("mm_h")
+    append_obs(lat, lon, mmh, "gpm-imerg")
     ARCHIVE.mkdir(parents=True, exist_ok=True)
     try:
         (ARCHIVE / "last.json").write_text(
@@ -178,4 +280,46 @@ async def fetch_pin(lat: float, lon: float) -> dict[str, Any]:
         "ges_disc": ges,
         "cmr": cmr,
         "source": (ges or {}).get("source") if (ges or {}).get("ok") else live.get("source"),
+    }
+
+
+def append_obs(lat: float, lon: float, mm_h: float | None, source: str) -> None:
+    if mm_h is None:
+        return
+    ARCHIVE.mkdir(parents=True, exist_ok=True)
+    OBS_LOG.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "lat": round(lat, 4),
+        "lon": round(lon, 4),
+        "mm_h": float(mm_h),
+        "source": source,
+        "t": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    try:
+        with OBS_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except OSError:
+        pass
+
+
+async def fetch_late_pin(lat: float, lon: float) -> dict[str, Any]:
+    """IMERG Late (GPM_3IMERGHHL) for verification labels. Not a live 15-min nowcast."""
+    st = status()
+    cmr = None
+    if earthdata_ready():
+        try:
+            cmr = await _cmr_latest("GPM_3IMERGHHL")
+        except Exception as e:
+            cmr = {"ok": False, "error": str(e)[:160]}
+    live = await fetch_pin(lat, lon, heavy=True)
+    mmh = live.get("mm_h")
+    append_obs(lat, lon, mmh, str(live.get("source") or "imerg"))
+    return {
+        **st,
+        "ok": bool(live.get("ok") or (cmr and cmr.get("href"))),
+        "mm_h": mmh,
+        "cmr_late": cmr,
+        "live": live,
+        "source": "gpm-imerg-late" if cmr else live.get("source"),
+        "note": "Late/Final are labels. Early/GIBS may still be the live rate.",
     }

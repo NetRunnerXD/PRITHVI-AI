@@ -27,6 +27,120 @@ INCOIS_FEEDS = (
 )
 
 
+def _parse_quake_time(q: dict[str, Any]) -> datetime | None:
+    raw = q.get("time_iso") or q.get("origin") or q.get("time")
+    if isinstance(raw, (int, float)):
+        try:
+            ms = float(raw)
+            if ms > 1e12:
+                ms /= 1000.0
+            return datetime.fromtimestamp(ms, tz=timezone.utc)
+        except (OSError, OverflowError, ValueError):
+            return None
+    if not raw:
+        return None
+    s = str(raw).strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
+def felt_radius_km(mag: float | None) -> float:
+    m = float(mag or 0)
+    if m < 3.5:
+        return 80.0
+    if m < 4.5:
+        return 180.0
+    if m < 5.5:
+        return 350.0
+    if m < 6.5:
+        return 600.0
+    return 1200.0
+
+
+def quake_affects_pin(q: dict[str, Any], lat: float, lon: float, now: datetime | None = None) -> bool:
+    """Keep only recent events that can be felt or tsunami-relevant at the pin."""
+    now = now or datetime.now(timezone.utc)
+    mag = q.get("mag")
+    try:
+        mag_f = float(mag) if mag is not None else 0.0
+    except (TypeError, ValueError):
+        mag_f = 0.0
+    when = _parse_quake_time(q)
+    max_age_h = 168.0 if mag_f >= 6.0 else 72.0
+    if when is not None:
+        age_h = (now - when.astimezone(timezone.utc)).total_seconds() / 3600.0
+        if age_h < -2 or age_h > max_age_h:
+            return False
+    dist = q.get("distance_km")
+    if dist is None and q.get("lat") is not None and q.get("lon") is not None:
+        try:
+            dist = _km(lat, lon, float(q["lat"]), float(q["lon"]))
+        except (TypeError, ValueError):
+            dist = None
+    if dist is None:
+        return False
+    if mag_f >= 6.5 and dist <= 1500:
+        return True
+    return float(dist) <= felt_radius_km(mag_f)
+
+
+def filter_quakes_for_pin(quakes: list[dict[str, Any]], lat: float, lon: float) -> list[dict[str, Any]]:
+    now = datetime.now(timezone.utc)
+    kept = [q for q in quakes if quake_affects_pin(q, lat, lon, now)]
+    kept.sort(
+        key=lambda x: (
+            _parse_quake_time(x) is None,
+            -(_parse_quake_time(x) or datetime(1970, 1, 1, tzinfo=timezone.utc)).timestamp(),
+            x.get("distance_km") is None,
+            x.get("distance_km") or 1e9,
+        )
+    )
+    return kept
+
+
+def tsunami_affects_pin(
+    item: dict[str, Any],
+    *,
+    coast_km: float | None,
+    inland: bool,
+    now: datetime | None = None,
+) -> bool:
+    now = now or datetime.now(timezone.utc)
+    if item.get("threat"):
+        if inland and coast_km is not None and coast_km > 200:
+            return False
+        return True
+    if inland or (coast_km is not None and coast_km > 120):
+        return False
+    when = _parse_quake_time(item)
+    if when is None:
+        return False
+    age_h = (now - when.astimezone(timezone.utc)).total_seconds() / 3600.0
+    if age_h > 72:
+        return False
+    mag = item.get("mag")
+    try:
+        mag_f = float(mag) if mag is not None else 0.0
+    except (TypeError, ValueError):
+        mag_f = 0.0
+    return mag_f >= 6.0
+
+
+def filter_tsunami_for_pin(
+    items: list[dict[str, Any]],
+    *,
+    coast_km: float | None = None,
+    inland: bool = False,
+) -> list[dict[str, Any]]:
+    now = datetime.now(timezone.utc)
+    return [t for t in items if tsunami_affects_pin(t, coast_km=coast_km, inland=inland, now=now)]
+
+
 def _quake_india(q: dict[str, Any]) -> bool:
     place = (q.get("place") or "").lower()
     if any(x in place for x in ("indonesia", "sumatra", "java", "philippines", "myanmar", "burma", "bangladesh")):
@@ -128,16 +242,9 @@ async def recent_quakes(lat: float, lon: float, limit: int = 8) -> tuple[list[di
             return [], "error"
     out = parse_usgs_csv(hit if isinstance(hit, str) else "", lat, lon)
     out = [q for q in out if _quake_india(q)]
-    out.sort(
-        key=lambda x: (
-            x.get("nst") in (None, 0),
-            x.get("gap") is None,
-            x.get("distance_km") is None,
-            x.get("distance_km") or 1e9,
-        )
-    )
-    emsc, _ = await emsc_quakes(lat, lon, limit=limit)
+    emsc, _ = await emsc_quakes(lat, lon, limit=max(limit, 8))
     merged = _merge_quakes(out, emsc)
+    merged = filter_quakes_for_pin(merged, lat, lon)
     return merged[:limit], "ok" if merged else "empty"
 
 

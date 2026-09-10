@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -146,12 +147,92 @@ def _low_elev(lat: float, lon: float) -> bool:
     return lat < 27.5 and lon > 80
 
 
-async def gather_observations(loc: Location) -> dict[str, Any]:
-    status: dict[str, str] = {}
+def pin_key(loc: Location) -> str:
+    la = round(round(float(loc.lat) / 0.05) * 0.05, 2)
+    lo = round(round(float(loc.lon) / 0.05) * 0.05, 2)
+    return f"snap8:{la}:{lo}"
 
-    async def run(name: str, coro, default):
+
+def peek_snapshot(loc: Location) -> DashboardSnapshot | None:
+    hit = cache.peek(pin_key(loc))
+    return hit if isinstance(hit, DashboardSnapshot) else None
+
+
+def _blank_obs() -> dict[str, Any]:
+    return {
+        "om": {},
+        "flood": {},
+        "aqi": {},
+        "marine": {},
+        "nasa_precip": [],
+        "caps": [],
+        "official": None,
+        "naqi": None,
+        "mandi": [],
+        "quakes": [],
+        "tsunami": [],
+        "aq_hist": [],
+        "sachet": [],
+        "port": {},
+        "gdacs": [],
+        "waqi": None,
+        "ow_air": None,
+        "om_models": {},
+        "nasa_clim": {},
+        "era5": {},
+        "imerg": {},
+        "mosdac": {},
+        "status": {},
+    }
+
+
+async def gather_observations(
+    loc: Location,
+    *,
+    enrich: bool = True,
+    disabled: set[str] | None = None,
+) -> dict[str, Any]:
+    status: dict[str, str] = {}
+    disabled = disabled or set()
+    coast = nearest_coast(loc.lat, loc.lon)
+    marine_stub = {
+        "inland": coast["km"] > 250,
+        "nearest_coast": coast["name"],
+        "coast_km": coast["km"],
+    }
+
+    async def cached_nat(key: str, factory, ttl: float):
+        async def run_f():
+            val = factory() if callable(factory) else factory
+            if asyncio.iscoroutine(val):
+                return await val
+            return val
+
+        return await cache.aget(key, run_f, ttl_s=ttl, swr_s=ttl * 2)
+
+    def is_disabled(name: str) -> bool:
+        if name in disabled:
+            return True
+        if "open-meteo" in disabled and (name.startswith("open-meteo") or name == "era5"):
+            return True
+        if "open-meteo-air" in disabled and name == "openweather-air":
+            return True
+        if ("mosdac" in disabled or "sat_live" in disabled) and name == "gpm-imerg":
+            return True
+        if "data.gov.in-mandi" in disabled and name == "aikosh":
+            return True
+        if ("open-meteo-marine" in disabled or "science" in disabled) and name == "imd-port":
+            return True
+        return False
+
+    async def run(name: str, coro, default, timeout: float = 4.5):
+        if is_disabled(name):
+            status[name] = "disabled"
+            if asyncio.iscoroutine(coro):
+                coro.close()
+            return default
         try:
-            val = await coro
+            val = await asyncio.wait_for(coro, timeout=timeout)
             if isinstance(val, dict) and val.get("_stale"):
                 status[name] = "stale"
             else:
@@ -161,9 +242,14 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
             status[name] = "error"
             return default
 
-    async def run_pair(name: str, coro, default):
+    async def run_pair(name: str, coro, default, timeout: float = 3.5):
+        if is_disabled(name):
+            status[name] = "disabled"
+            if asyncio.iscoroutine(coro):
+                coro.close()
+            return default
         try:
-            val, st = await coro
+            val, st = await asyncio.wait_for(coro, timeout=timeout)
             status[name] = st
             return val
         except Exception:
@@ -218,6 +304,19 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
                 return merged
         return raw
 
+    if not enrich:
+        om, caps = await asyncio.gather(
+            run("open-meteo", open_meteo.forecast(loc.lat, loc.lon), {}, timeout=2.0),
+            run("imd-cap", cached_nat("nat:imd-cap", imd.cap_alerts, 900), [], timeout=1.2),
+        )
+        out = _blank_obs()
+        out["om"] = om
+        out["caps"] = caps or []
+        out["marine"] = marine_stub
+        out["moon"] = moon_at(loc.lat, loc.lon)
+        out["status"] = status
+        return out
+
     (
         om,
         fl,
@@ -236,32 +335,36 @@ async def gather_observations(loc: Location) -> dict[str, Any]:
         waqi_row,
         ow_air,
         mosdac_st,
+        sachet_rows,
+        port,
+        om_models,
+        nasa_clim,
+        era5,
+        imerg_live,
     ) = await asyncio.gather(
-        run("open-meteo", open_meteo.forecast(loc.lat, loc.lon), {}),
-        run("open-meteo-flood", open_meteo.flood(loc.lat, loc.lon), {}),
-        run("open-meteo-air", open_meteo.air_quality(loc.lat, loc.lon), {}),
-        run("open-meteo-marine", marine_bundle(), {}),
-        run("nasa-power", nasa_precip(), []),
-        run("imd-cap", imd.cap_alerts(), []),
-        run_pair("imd-rest", imd.official_get("current_wx"), None),
-        run_pair("data.gov.in-aqi", datagov.nearest_aqi(loc.lat, loc.lon, loc.state, loc.district, place=loc.place_name or loc.district), None),
-        run_pair("data.gov.in-mandi", datagov.mandi_prices(loc.state, loc.district), []),
-        run_pair("usgs-seismic", hazards.recent_quakes(loc.lat, loc.lon), []),
-        run_pair("incois-tsunami", hazards.incois_tsunami(), []),
-        run_pair("aikosh", aikosh.search_datasets("agriculture"), None),
-        run_pair("openaq-hist", openaq.history(loc.lat, loc.lon), []),
-        run_pair("gdacs", gdacs.events(), []),
-        run_pair("waqi", waqi.nearest(loc.lat, loc.lon), None),
-        run_pair("openweather-air", openweather_air.current(loc.lat, loc.lon), None),
-        run("mosdac", mosdac.fetch_live(), {}),
-    )
-    sachet_rows = await run_pair("sachet", sachet.alerts(loc.state), [])
-    port = await run_pair("imd-port", port_signal.hooghly(), {})
-    om_models = await run("open-meteo-models", open_meteo.forecast_models(loc.lat, loc.lon), {})
-    nasa_clim, era5, imerg_live = await asyncio.gather(
-        run("nasa-power-clim", nasa_power.daily_years(loc.lat, loc.lon, 8), {}),
-        run("era5", open_meteo.era5_context(loc.lat, loc.lon), {}),
-        run("gpm-imerg", gpm_imerg.fetch_pin(loc.lat, loc.lon), {}),
+        run("open-meteo", open_meteo.forecast(loc.lat, loc.lon), {}, timeout=4.0),
+        run("open-meteo-flood", open_meteo.flood(loc.lat, loc.lon), {}, timeout=2.5),
+        run("open-meteo-air", open_meteo.air_quality(loc.lat, loc.lon), {}, timeout=2.5),
+        run("open-meteo-marine", marine_bundle(), {}, timeout=2.5),
+        run("nasa-power", nasa_precip(), [], timeout=2.5),
+        run("imd-cap", cached_nat("nat:imd-cap", imd.cap_alerts, 900), [], timeout=2.0),
+        run_pair("imd-rest", imd.official_get("current_wx"), None, timeout=3.0),
+        run_pair("data.gov.in-aqi", datagov.nearest_aqi(loc.lat, loc.lon, loc.state, loc.district, place=loc.place_name or loc.district), None, timeout=3.0),
+        run_pair("data.gov.in-mandi", datagov.mandi_prices(loc.state, loc.district), [], timeout=3.0),
+        run_pair("usgs-seismic", hazards.recent_quakes(loc.lat, loc.lon), [], timeout=2.5),
+        run_pair("incois-tsunami", hazards.incois_tsunami(), [], timeout=2.0),
+        run_pair("aikosh", aikosh.search_datasets("agriculture"), None, timeout=1.5),
+        run_pair("openaq-hist", openaq.history(loc.lat, loc.lon), [], timeout=2.0),
+        run_pair("gdacs", gdacs.events(), [], timeout=2.5),
+        run_pair("waqi", waqi.nearest(loc.lat, loc.lon), None, timeout=2.5),
+        run_pair("openweather-air", openweather_air.current(loc.lat, loc.lon), None, timeout=2.5),
+        run("mosdac", mosdac.fetch_live(), {}, timeout=2.0),
+        run_pair("sachet", sachet.alerts(loc.state), [], timeout=2.0),
+        run_pair("imd-port", port_signal.hooghly(), {}, timeout=2.0),
+        run("open-meteo-models", open_meteo.forecast_models(loc.lat, loc.lon), {}, timeout=3.0),
+        run("nasa-power-clim", nasa_power.daily_years(loc.lat, loc.lon, 8), {}, timeout=2.5),
+        run("era5", open_meteo.era5_context(loc.lat, loc.lon), {}, timeout=2.5),
+        run("gpm-imerg", gpm_imerg.fetch_pin(loc.lat, loc.lon, heavy=False), {}, timeout=1.5),
     )
     mosdac_live = mosdac_st
     dg_ok = {status.get("data.gov.in-aqi"), status.get("data.gov.in-mandi")}
@@ -471,16 +574,30 @@ def _vera_pack(f: dict[str, Any], loc: Location, live_sat: dict[str, Any] | None
         }
 
 
-async def build_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot:
-    key = f"snap8:{round(float(loc.lat), 3)}:{round(float(loc.lon), 3)}"
-
-    async def factory() -> DashboardSnapshot:
-        return await _assemble_snapshot(loc, locale)
-
+async def build_snapshot(
+    loc: Location,
+    locale: str = "en",
+    *,
+    full: bool | None = None,
+    disabled: set[str] | None = None,
+) -> DashboardSnapshot:
+    """Always wait for the complete snapshot (all providers) before returning."""
+    key = pin_key(loc)
+    if disabled:
+        # Avoid caching customized disabled profiles in the global pin key
+        key = f"{key}:dis:{'_'.join(sorted(disabled))}"
     from app.config import get_settings
 
     s = get_settings()
-    return await cache.aget(key, factory, ttl_s=float(s.snapshot_ttl_s or 600), swr_s=float(s.snapshot_swr_s or 3600))
+    ttl = float(s.snapshot_ttl_s or 600)
+    swr = float(s.snapshot_swr_s or 3600)
+
+    async def factory() -> DashboardSnapshot:
+        snap = await _assemble_snapshot(loc, locale, enrich=True, disabled=disabled)
+        snap.enriching = False
+        return snap
+
+    return await cache.aget(key, factory, ttl_s=ttl, swr_s=swr)
 
 
 async def refresh_recent_snapshots(limit: int = 8) -> int:
@@ -505,15 +622,31 @@ async def refresh_recent_snapshots(limit: int = 8) -> int:
     swr = float(s.snapshot_swr_s or 3600)
     for lat, lon in pins[:limit]:
         loc = resolve_location(lat=lat, lon=lon)
-        snap = await _assemble_snapshot(loc)
-        cache.set(f"snap8:{round(lat, 3)}:{round(lon, 3)}", snap, ttl, swr)
+        snap = await _assemble_snapshot(loc, enrich=True)
+        snap.enriching = False
+        cache.set(pin_key(loc), snap, ttl, swr)
         n += 1
     return n
 
 
-async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnapshot:
-    obs = await gather_observations(loc)
+async def _assemble_snapshot(
+    loc: Location,
+    locale: str = "en",
+    *,
+    enrich: bool = True,
+    disabled: set[str] | None = None,
+) -> DashboardSnapshot:
+    disabled = disabled or set()
+    obs = await gather_observations(loc, enrich=enrich, disabled=disabled)
     f = extract(obs["om"], obs["flood"], obs["nasa_precip"], obs["aqi"], obs.get("marine") or {})
+    inland = bool(f.get("marine_inland"))
+    coast_km = f.get("coast_km")
+    obs["quakes"] = hazards.filter_quakes_for_pin(obs.get("quakes") or [], loc.lat, loc.lon)
+    obs["tsunami"] = hazards.filter_tsunami_for_pin(
+        obs.get("tsunami") or [],
+        coast_km=float(coast_km) if coast_km is not None else None,
+        inland=inland,
+    )
     raw_models = dict(obs.get("om_models") or {})
     if not raw_models and isinstance(obs.get("om"), dict) and (obs["om"].get("daily") or obs["om"].get("hourly")):
         # Open-Meteo member quota often 429s; still blend on the cached best-match series.
@@ -536,16 +669,18 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
     local_caps = imd.alerts_for_location(obs["caps"], loc)
     cap_hit = bool(local_caps)
     pre = enrich_features(f, loc, obs.get("mandi") or [])
-    try:
-        pre["neighbors"] = await fetch_neighbors(loc, limit=3)
-    except Exception:
-        pre["neighbors"] = []
+    pre["neighbors"] = []
+    if enrich and "science" not in disabled and "open-meteo" not in disabled:
+        try:
+            pre["neighbors"] = await fetch_neighbors(loc, limit=2)
+        except Exception:
+            pre["neighbors"] = []
     rg0 = evaluate_regret(
         f,
         plot_m2=loc.plot_m2,
         crop_stage=float(f.get("crop_stage") or 0.55),
         runoff_3d_mm=float(f.get("hy_runoff_3d_mm") or 0),
-    )
+    ) if "regret" not in disabled else {"action": "disabled", "regret_hold_mm": 0, "regret_apply_mm": 0, "method": "disabled"}
     f["regret"] = rg0
     f["regret_apply_mm"] = rg0["regret_apply_mm"]
     risks = all_risks(
@@ -554,26 +689,38 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
         low_elev=_low_elev(loc.lat, loc.lon),
         quakes=obs.get("quakes") or [],
         tsunami=obs.get("tsunami") or [],
-    )
-    flood = next(r for r in risks if r.id == "flood")
-    live_sat = {}
-    try:
-        from app.science.sat_live import fetch as fetch_sat_live
+    ) if "risks" not in disabled else []
+    flood = next((r for r in risks if r.id == "flood"), None)
+    flood_score = flood.score_pct if flood else 10
+    live_sat: dict[str, Any] = {"ok": False, "status": "shell"}
+    if enrich and "sat_live" not in disabled:
+        try:
+            from app.science.sat_live import fetch as fetch_sat_live
 
-        live_sat = await fetch_sat_live(loc)
-    except Exception:
-        live_sat = {"ok": False, "status": "error"}
+            live_sat = await asyncio.wait_for(fetch_sat_live(loc), timeout=2.5)
+        except Exception:
+            live_sat = {"ok": False, "status": "error"}
     science = build_science(
         f,
         loc,
         pre=pre,
-        flood_score=flood.score_pct,
+        flood_score=flood_score,
         cap_hit=cap_hit,
         plot_m2=loc.plot_m2,
         caps=local_caps,
         live_sat=live_sat,
-    )
-    anomalies, drivers, stories = compute_anomalies(f, obs["nasa_precip"])
+    ) if "science" not in disabled else {
+        "hysteresis": pre.get("hysteresis", {}),
+        "phenology": pre.get("phenology", {}),
+        "regret": rg0,
+        "livelihood": {"score_pct": 0, "task": "normal", "closed_days": []},
+        "blindspot": {"level": "clear"},
+        "vernacular": {},
+        "budget": {},
+        "nowcast": {},
+        "bandit": {},
+    }
+    anomalies, drivers, stories = compute_anomalies(f, obs["nasa_precip"]) if "anomalies" not in disabled else ([], [], [])
     if science["hysteresis"]["flip"] == "runoff":
         drivers.append("hysteresis on runoff limb")
         stories.append(
@@ -702,21 +849,26 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
         f["lightning"] = (live_sat.get("lightning") or live_sat.get("convective") or {}).get("n_strokes") or live_sat.get("n_strokes")
     if isinstance(live_sat, dict) and obs.get("imerg"):
         live_sat = {**live_sat, "imerg": obs.get("imerg")}
-    vera = _vera_pack(f, loc, live_sat)
+    vera = (
+        _vera_pack(f, loc, live_sat)
+        if (enrich and "vera" not in disabled)
+        else {"name": "VERA-MoE", "guidance_only": True, "disabled": True}
+    )
     f["vera_gate_weights"] = (vera.get("gate") or {}).get("weights") or {}
     scan_hits: list[dict] = []
-    try:
-        from app.services.alert_scan import capital_warning_hits
+    if enrich and "open-meteo" not in disabled and "risks" not in disabled:
+        try:
+            from app.services.alert_scan import capital_warning_hits
 
-        scan_hits = await capital_warning_hits()
-    except Exception:
-        scan_hits = []
+            scan_hits = await capital_warning_hits()
+        except Exception:
+            scan_hits = []
     conv = ((science.get("nowcast") or {}).get("convective") or {})
     cloudburst = conv.get("cloudburst") if isinstance(conv.get("cloudburst"), dict) else conv
     warnings = _warnings(
         loc,
         obs["caps"],
-        flood.score_pct,
+        flood_score,
         f,
         obs.get("quakes") or [],
         obs.get("tsunami") or [],
@@ -807,6 +959,7 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
     )
     return DashboardSnapshot(
         location=loc,
+        enriching=not enrich,
         generated_at=generated_at,
         sources=sources,
         descriptive=Descriptive(
@@ -937,7 +1090,7 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
             **dual,
             "hazards": build_hazard_forecast(
                 f,
-                flood_score=flood.score_pct,
+                flood_score=flood_score,
                 quakes=obs.get("quakes") or [],
                 tsunami=obs.get("tsunami") or [],
                 coast_km=f.get("coast_km"),
@@ -945,7 +1098,7 @@ async def _assemble_snapshot(loc: Location, locale: str = "en") -> DashboardSnap
             ),
             "vera": vera,
         },
-        live=_build_live(loc, f, obs, flood.score_pct, generated_at),
+        live=_build_live(loc, f, obs, flood_score, generated_at),
         science=science,
         quality=_finalize_quality({
             "air": {

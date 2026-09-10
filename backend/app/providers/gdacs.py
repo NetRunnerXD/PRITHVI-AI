@@ -94,7 +94,7 @@ async def events() -> tuple[list[dict[str, Any]], str]:
         r = await client().get(
             SEARCH,
             params={"eventlist": "EQ,TC,FL,TS"},
-            timeout=12.0,
+            timeout=4.0,
         )
         if r.status_code >= 400:
             return []

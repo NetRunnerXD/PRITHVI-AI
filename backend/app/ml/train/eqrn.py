@@ -42,16 +42,20 @@ def _rows() -> list[tuple[list[float], float]]:
                 float(r.get("lead_h") or 0) / 48.0,
             ]
             out.append((x, float(r["obs"])))
-    if len(out) < 64:
-        for i in range(128):
-            mu = (i % 17) * 1.7
-            out.append(([mu, mu * 0.9, mu * 1.1, (i % 24) / 48.0], mu + (i % 5) * 0.4))
     return out
 
 
 def train(epochs: int = 40, lr: float = 1e-3) -> dict[str, Any]:
     WEIGHTS.parent.mkdir(parents=True, exist_ok=True)
     rows = _rows()
+    if len(rows) < 24:
+        meta = {
+            "ok": False,
+            "error": "need independent obs in vera_hourly_log.jsonl (IMERG/HEM). Refusing synthetic labels.",
+            "n": len(rows),
+        }
+        META.write_text(json.dumps(meta), encoding="utf-8")
+        return meta
     try:
         import torch
         import torch.nn as nn

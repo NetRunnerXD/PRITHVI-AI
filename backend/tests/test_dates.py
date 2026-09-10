@@ -56,6 +56,10 @@ def test_tomorrow_at_ten():
     assert w["start"] == date(2026, 8, 19)
     assert w.get("hour") == 10
     assert parse_hour("at 10:30 pm") == 22
+    three = parse_window("What is the forecast for this place tomorrow at 3 pm", today=today)
+    assert three is not None
+    assert three["start"] == date(2026, 8, 19)
+    assert three.get("hour") == 15
 
 
 def test_tomorrow_today_weekend():

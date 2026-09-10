@@ -173,11 +173,19 @@ def extract(
     else:
         trend = "steady"
 
-    clim_daily = mean(nasa_precip) if nasa_precip else 6.0
+    if nasa_precip:
+        clim_daily = mean(nasa_precip)
+    elif precip_all and len(precip_all) > 1:
+        clim_daily = mean([float(x or 0) for x in precip_all])
+    else:
+        clim_daily = 6.0
     clim_3d = clim_daily * 3
     ratio = precip_3d / clim_3d if clim_3d > 0 else 1.0
     if len(nasa_precip) >= 5:
         sd = pstdev(nasa_precip) or 1.0
+        z = (precip_today - clim_daily) / sd
+    elif precip_all and len(precip_all) >= 5:
+        sd = pstdev([float(x or 0) for x in precip_all]) or 1.0
         z = (precip_today - clim_daily) / sd
     else:
         z = (ratio - 1.0) * 1.5

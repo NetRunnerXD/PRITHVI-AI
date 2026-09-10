@@ -73,6 +73,20 @@ def knots_from_nowcast(nc: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def from_satellite_rate(mm_h: float, t_iso: str | None = None, *, source: str = "gibs-imerg") -> dict[str, Any]:
+    now = _parse(str(t_iso)) if t_iso else _now()
+    t = now.isoformat(timespec="seconds") if now else ""
+    val = max(0.0, float(mm_h))
+    kind = "satellite-qpe"
+    return {
+        "knots": [{"t": t, "mm": round(val, 3), "mm_h": round(val, 3), "engine": "observed"}],
+        "source": source,
+        "source_kind": kind,
+        "native_step_s": 1800,
+        "note": f"{source} precipitation rate. Not a rain-gauge.",
+    }
+
+
 def from_imerg_rate(mm_h: float, t_iso: str | None = None) -> dict[str, Any]:
     now = _parse(str(t_iso)) if t_iso else _now()
     t = now.isoformat(timespec="seconds") if now else ""

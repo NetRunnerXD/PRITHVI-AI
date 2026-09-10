@@ -1,4 +1,12 @@
+from app.api.deps import loc_from_query
 from app.services.location_svc import nearby, resolve_location, search
+
+
+def test_query_lat_lon_win_over_name():
+    loc = loc_from_query(district="Pune", place="Pune", lat=18.52, lon=73.86)
+    assert abs(loc.lat - 18.52) < 0.01
+    assert abs(loc.lon - 73.86) < 0.01
+    assert "Pune" in (loc.place_name or loc.district or loc.label)
 
 
 def test_search_pune():
