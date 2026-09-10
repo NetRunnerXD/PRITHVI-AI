@@ -727,9 +727,21 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
     <div className="space-y-3">
       {/* ── Top Unified Grid: Left (Sky on top + Rain & Wind side-by-side) & Right (Extended Alert & Risk Panel) ── */}
       <div className="grid gap-3 grid-cols-1 lg:grid-cols-12 items-start">
-        {/* Left Column: Sky on top, followed by Rain & Wind side-by-side */}
+        {/* Left Column: Sky on top, followed by Mobile Risk Panel, then Rain & Wind */}
         <div className="w-full lg:col-span-7 xl:col-span-8 flex flex-col gap-3">
           <SkyRainHero dash={dash} locale={locale} onNavigateData={onNavigateData} forceSummary={allSummary} />
+
+          {/* Mobile-only collapsible Risk & Alert Panel (placed directly below Sky & Atmosphere) */}
+          <div className="w-full lg:hidden">
+            <RiskAlertPanel
+              dash={dash}
+              locale={locale}
+              onNavigateData={onNavigateData}
+              allAlerts={allAlerts}
+              className="w-full"
+              isMobileCollapsible
+            />
+          </div>
 
           <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 items-start">
             <RainfallSection
@@ -752,8 +764,8 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
           </div>
         </div>
 
-        {/* Right Column: Alert & Risk Panel (Auto adjustable height with max-height scroll) */}
-        <div className="w-full lg:col-span-5 xl:col-span-4 flex flex-col justify-start">
+        {/* Right Column: Desktop Alert & Risk Panel (hidden on mobile, visible lg+) */}
+        <div className="hidden lg:flex w-full lg:col-span-5 xl:col-span-4 flex-col justify-start">
           <RiskAlertPanel
             dash={dash}
             locale={locale}
@@ -838,6 +850,14 @@ function IconCross({ className, style }: { className?: string; style?: React.CSS
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-4 h-4"}>
       <line x1="18" y1="6" x2="6" y2="18" />
       <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+function IconChevronDown({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className || "w-4 h-4"}>
+      <polyline points="6 9 12 15 18 9" />
     </svg>
   );
 }
@@ -1096,12 +1116,14 @@ function RiskAlertPanel({
   onNavigateData,
   allAlerts,
   className,
+  isMobileCollapsible,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   onNavigateData?: (subTab: string) => void;
   allAlerts: any[];
   className?: string;
+  isMobileCollapsible?: boolean;
 }) {
   const t = COPY[locale];
   const setTab = useApp((s) => s.setTab);
@@ -1110,44 +1132,72 @@ function RiskAlertPanel({
   const applySuggestion = useApp((s) => s.applySuggestion);
   const [panelTab, setPanelTab] = useState<"alerts" | "risks">("alerts");
   const [selectedCluster, setSelectedCluster] = useState<AlertCluster | null>(null);
+  const [mobileExpanded, setMobileExpanded] = useState<boolean>(allAlerts.length > 0);
+  const [expandedRiskId, setExpandedRiskId] = useState<string | null>(null);
+
+  const devDisabled = useApp((s) => s.settings.devDisabledProviders || []);
+  const risksDisabled = devDisabled.includes("risks");
 
   const risks = useMemo(() => {
+    if (risksDisabled) return [];
     return [...(dash.risks || [])].sort((a, b) => (b.score_pct ?? 0) - (a.score_pct ?? 0));
-  }, [dash.risks]);
+  }, [dash.risks, risksDisabled]);
 
   const clusters = useMemo(() => {
     return groupAlertsByLocation(allAlerts, dash.location);
   }, [allAlerts, dash.location]);
 
   const handleSwitchLocation = (locInfo: {
-    city: string;
-    state: string;
+    city?: string | null;
+    state?: string | null;
     lat?: number | null;
     lon?: number | null;
-    placeFormatted: string;
+    placeFormatted?: string | null;
+    alerts?: any[];
   }) => {
-    if (locInfo.lat != null && locInfo.lon != null) {
+    // 1. Direct coordinates if present on the cluster or inside any alert item
+    let lat = locInfo.lat != null && !isNaN(Number(locInfo.lat)) ? Number(locInfo.lat) : null;
+    let lon = locInfo.lon != null && !isNaN(Number(locInfo.lon)) ? Number(locInfo.lon) : null;
+
+    if ((lat == null || lon == null) && locInfo.alerts && locInfo.alerts.length > 0) {
+      for (const a of locInfo.alerts) {
+        if (a.lat != null && a.lon != null && !isNaN(Number(a.lat)) && !isNaN(Number(a.lon))) {
+          lat = Number(a.lat);
+          lon = Number(a.lon);
+          break;
+        }
+      }
+    }
+
+    const rawCity = (locInfo.city || "").trim();
+    const rawState = (locInfo.state || "").trim();
+    const cleanCity = rawCity.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase();
+    const cleanState = rawState.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase();
+
+    // 2. Check instant India cities / state capital dictionary map
+    const matched =
+      (cleanCity ? INDIA_CITIES_MAP[cleanCity] : null) ||
+      Object.values(INDIA_CITIES_MAP).find(
+        (c) => (cleanState && c.state.toLowerCase() === cleanState) || (cleanCity && c.city.toLowerCase() === cleanCity)
+      );
+
+    if (lat != null && lon != null) {
+      const cName = matched?.city || locInfo.city || locInfo.placeFormatted || "Area";
+      const sName = matched?.state || locInfo.state || "India";
       setLocation({
-        id: `loc_${locInfo.lat}_${locInfo.lon}`,
-        label: `${locInfo.city}, ${locInfo.state}`,
-        district: locInfo.city,
-        state: locInfo.state,
+        id: `loc_${lat}_${lon}`,
+        label: `${cName}, ${sName}`,
+        district: cName,
+        state: sName,
         country: "India",
-        lat: Number(locInfo.lat),
-        lon: Number(locInfo.lon),
+        lat,
+        lon,
         timezone: "Asia/Kolkata",
         crop_hint: "Rice",
-        place_name: locInfo.city,
+        place_name: cName,
       });
       return;
     }
-
-    const key = locInfo.city.toLowerCase().trim();
-    const matched =
-      INDIA_CITIES_MAP[key] ||
-      Object.values(INDIA_CITIES_MAP).find(
-        (c) => c.state.toLowerCase() === locInfo.state.toLowerCase() || c.city.toLowerCase() === key
-      );
 
     if (matched) {
       setLocation({
@@ -1165,11 +1215,16 @@ function RiskAlertPanel({
       return;
     }
 
-    searchPlaces(`${locInfo.city}, ${locInfo.state}`).then((res) => {
-      if (res && res[0]) {
-        setLocation(res[0]);
-      }
-    });
+    const searchQuery = [rawCity, rawState].filter(Boolean).join(", ") || locInfo.placeFormatted || "";
+    if (!searchQuery) return;
+
+    searchPlaces(searchQuery)
+      .then((res) => {
+        if (res && res[0]) {
+          setLocation(res[0]);
+        }
+      })
+      .catch(() => undefined);
   };
 
   return (
@@ -1177,52 +1232,86 @@ function RiskAlertPanel({
       <aside
         className={`neo neo-section-alerts flex flex-col overflow-hidden select-none ${className || "w-full"}`}
       >
-        {/* Header with Segmented Navigation */}
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[color-mix(in_srgb,var(--line)_60%,#f59e0b_40%)] px-3 py-2 bg-[color-mix(in_srgb,var(--card)_80%,#f59e0b_8%)]">
-          <div className="flex items-center gap-1.5">
+        {/* Header with Segmented Navigation & Collapsible Trigger on Mobile */}
+        <div
+          className={`flex shrink-0 items-center justify-between gap-2 border-b border-[color-mix(in_srgb,var(--line)_60%,#f59e0b_40%)] px-3 py-2 bg-[color-mix(in_srgb,var(--card)_80%,#f59e0b_8%)] ${
+            isMobileCollapsible ? "cursor-pointer" : ""
+          }`}
+          onClick={isMobileCollapsible ? () => setMobileExpanded((v) => !v) : undefined}
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
             <span className="live-dot bg-amber-500 shadow-[0_0_8px_#f59e0b]" aria-hidden />
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400 truncate">
               {panelTab === "alerts" ? t.alertsPanel || "Alerts" : "Risk Index"}
             </p>
           </div>
 
-          <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setPanelTab("alerts");
-              }}
-              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${panelTab === "alerts"
-                  ? "bg-neo-accent text-white shadow-sm"
-                  : "text-neo-muted hover:text-neo-text"
-                }`}
-            >
-              <span>{t.alertsPanel || (locale === "hi" ? "अलर्ट" : locale === "bn" ? "সতর্কতা" : "Alerts")}</span>
-              {allAlerts.length > 0 && (
-                <span className="rounded-full bg-gradient-to-r from-rose-500 to-red-600 text-white px-1.5 py-0.5 text-[8px] font-black leading-none shadow-sm animate-pulse">
-                  {allAlerts.length}
-                </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPanelTab("alerts");
+                  if (isMobileCollapsible && !mobileExpanded) setMobileExpanded(true);
+                }}
+                className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${panelTab === "alerts"
+                    ? "bg-neo-accent text-white shadow-sm"
+                    : "text-neo-muted hover:text-neo-text"
+                  }`}
+              >
+                <span>{t.alertsPanel || (locale === "hi" ? "अलर्ट" : locale === "bn" ? "সতর্কতা" : "Alerts")}</span>
+                {allAlerts.length > 0 && (
+                  <span className="rounded-full bg-gradient-to-r from-rose-500 to-red-600 text-white px-1.5 py-0.5 text-[8px] font-black leading-none shadow-sm animate-pulse">
+                    {allAlerts.length}
+                  </span>
+                )}
+              </button>
+              {!risksDisabled && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPanelTab("risks");
+                    if (isMobileCollapsible && !mobileExpanded) setMobileExpanded(true);
+                  }}
+                  className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${panelTab === "risks"
+                      ? "bg-neo-accent text-white shadow-sm"
+                      : "text-neo-muted hover:text-neo-text"
+                    }`}
+                >
+                  {(locale === "hi" ? "जोखिम" : locale === "bn" ? "ঝুঁকি" : "Risks")} ({risks.length})
+                </button>
               )}
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setPanelTab("risks");
-              }}
-              className={`rounded-lg px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${panelTab === "risks"
-                  ? "bg-neo-accent text-white shadow-sm"
-                  : "text-neo-muted hover:text-neo-text"
-                }`}
-            >
-              {(locale === "hi" ? "जोखिम" : locale === "bn" ? "ঝুঁকি" : "Risks")} ({risks.length})
-            </button>
+            </div>
+
+            {isMobileCollapsible && (
+              <button
+                type="button"
+                aria-expanded={mobileExpanded}
+                aria-label={mobileExpanded ? "Collapse Risk Section" : "Expand Risk Section"}
+                className="neo-btn p-1 h-7 w-7 flex items-center justify-center rounded-lg text-neo-muted hover:text-neo-text"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMobileExpanded((v) => !v);
+                }}
+              >
+                <IconChevronDown
+                  className={`w-3.5 h-3.5 text-amber-500 transition-transform duration-300 ${
+                    mobileExpanded ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Content Area with Custom Scrollbar (Auto-adjusting up to max-h-[380px]) */}
-        <div className="modal-scrollbar min-h-0 max-h-[450px] overflow-y-auto p-2.5 space-y-2.5">
+        {/* Content Area with Custom Scrollbar (Auto-adjusting up to max-h-[450px]) */}
+        <div
+          className={`modal-scrollbar min-h-0 max-h-[450px] overflow-y-auto p-2.5 space-y-2.5 transition-all duration-300 ${
+            isMobileCollapsible && !mobileExpanded ? "hidden" : "block animate-in fade-in slide-in-from-top-1"
+          }`}
+        >
           {panelTab === "alerts" ? (
             clusters.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full min-h-[140px] text-center p-4">
@@ -1258,79 +1347,38 @@ function RiskAlertPanel({
                         >
                           <IconPin className="w-3 h-3" />
                         </div>
-                        <h4 className="text-xs font-black text-neo-text tracking-tight leading-snug break-words">
+                        <h4 className="truncate text-xs font-black tracking-tight text-neo-text" title={cluster.placeFormatted}>
                           {cluster.placeFormatted}
                         </h4>
                       </div>
+
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {cluster.alerts.length > 1 ? (
-                          <span className="chip text-[8px] font-black uppercase px-2 py-0.5 rounded-md border border-[var(--line)] bg-[color-mix(in_srgb,var(--card)_80%,var(--line))] text-neo-muted">
-                            {cluster.alerts.length} Hazards Active
-                          </span>
-                        ) : (
-                          <span
-                            className="chip text-[8px] font-bold px-2 py-0.5 rounded-md border"
-                            style={{
-                              color: theme.color,
-                              backgroundColor: `color-mix(in srgb, ${theme.color} 10%, var(--card))`,
-                              borderColor: `color-mix(in srgb, ${theme.color} 30%, transparent)`,
-                            }}
-                          >
-                            {theme.label}
+                        {cluster.alerts.length > 1 && (
+                          <span className="rounded-md bg-black/40 backdrop-blur-md px-1.5 py-0.5 text-[8px] font-mono font-black uppercase text-white shadow-xs border border-white/20">
+                            {cluster.alerts.length} Hazards
                           </span>
                         )}
                         <span
-                          className={`chip text-[8px] font-black uppercase px-2 py-0.5 rounded-md shadow-sm ${cluster.isExtreme
-                              ? "bg-gradient-to-r from-red-600 to-rose-600 text-white font-extrabold"
-                              : cluster.isWarning
-                                ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold"
-                                : "bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-extrabold"
-                            }`}
+                          className="rounded-md px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-white shadow-sm flex items-center gap-1"
+                          style={{ backgroundColor: theme.color }}
                         >
-                          {cluster.highestSeverity}
+                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping" />
+                          <span>{cluster.highestSeverity}</span>
                         </span>
                       </div>
                     </div>
 
-                    {/* Multi-Hazard Micro-Pills Row */}
-                    {cluster.alerts.length > 1 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {cluster.hazardItems.map((hi, i) => (
-                          <span
-                            key={i}
-                            className="inline-flex items-center gap-1 text-[8.5px] font-bold px-2 py-0.5 rounded-lg border shadow-xs"
-                            style={{
-                              color: hi.theme.color,
-                              backgroundColor: `color-mix(in srgb, ${hi.theme.color} 10%, var(--card))`,
-                              borderColor: `color-mix(in srgb, ${hi.theme.color} 30%, transparent)`,
-                            }}
-                          >
-                            <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: hi.theme.color }} />
-                            <span>{hi.label}</span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Hazard Title (Synthesized / Non-redundant) */}
-                    <p
-                      className="mt-1.5 text-xs font-black leading-snug tracking-tight"
-                      style={{ color: theme.color }}
-                    >
+                    {/* Threat Subtitle / Compound Title */}
+                    <p className="mt-1 line-clamp-1 text-[11px] font-bold text-neo-text">
                       {cluster.compositeTitle}
                     </p>
 
-                    {/* Synthesized Impact Message */}
-                    <p className="mt-1 text-[10px] leading-relaxed text-neo-text font-normal line-clamp-2">
-                      {cluster.compositeGuidance}
-                    </p>
-
-                    {/* Action directive snippet */}
+                    {/* Directive / Action Line */}
                     <div
-                      className="mt-2 flex items-start gap-1.5 text-[9px] p-2 rounded-xl border font-medium"
+                      className="mt-1.5 rounded-xl px-2.5 py-1.5 text-[10px] leading-snug flex items-start gap-1.5 shadow-xs border"
                       style={{
-                        backgroundColor: `color-mix(in srgb, ${theme.color} 8%, var(--card))`,
-                        borderColor: `color-mix(in srgb, ${theme.color} 25%, transparent)`,
+                        backgroundColor: `color-mix(in srgb, ${theme.color} 10%, var(--card))`,
+                        borderColor: `color-mix(in srgb, ${theme.color} 30%, transparent)`,
                       }}
                     >
                       <IconWarningSign
@@ -1397,6 +1445,7 @@ function RiskAlertPanel({
                   const score = r.score_pct ?? 0;
                   const isSevere = score >= 70 || r.severity === "danger" || r.severity === "extreme";
                   const isElevated = !isSevere && (score >= 40 || r.severity === "warning" || r.severity === "alert");
+                  const isExpanded = expandedRiskId === r.id;
 
                   const toneColor = isSevere
                     ? "text-rose-600 dark:text-rose-400"
@@ -1424,12 +1473,23 @@ function RiskAlertPanel({
                   return (
                     <div
                       key={r.id}
-                      className="neo-in p-2.5 rounded-xl cursor-pointer hover:border-[color-mix(in_srgb,var(--line)_60%,var(--accent))] transition-all border border-[var(--line)]"
-                      onClick={() => onNavigateData?.("risks")}
+                      className={`neo-in p-2.5 rounded-xl cursor-pointer hover:border-[color-mix(in_srgb,var(--line)_60%,var(--accent))] transition-all border ${
+                        isExpanded
+                          ? "border-neo-accent shadow-sm bg-[color-mix(in_srgb,var(--accent)_3%,var(--card))]"
+                          : "border-[var(--line)]"
+                      }`}
+                      onClick={() => setExpandedRiskId(isExpanded ? null : r.id)}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-neo-text">{r.label}</span>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <IconChevronDown
+                            className={`w-3.5 h-3.5 text-neo-muted transition-transform duration-200 shrink-0 ${
+                              isExpanded ? "rotate-180 text-neo-accent" : ""
+                            }`}
+                          />
+                          <span className="text-xs font-bold text-neo-text truncate">{r.label}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
                           <span className={`font-mono text-xs font-black ${toneColor}`}>
                             {score}%
                           </span>
@@ -1438,6 +1498,7 @@ function RiskAlertPanel({
                           </span>
                         </div>
                       </div>
+
                       {/* Progress bar */}
                       <div className="mt-1.5 h-1.5 w-full rounded-full bg-[color-mix(in_srgb,var(--line)_70%,transparent)] overflow-hidden">
                         <div
@@ -1447,15 +1508,55 @@ function RiskAlertPanel({
                           }}
                         />
                       </div>
+
                       {score === 0 || topContrib === 0 ? (
                         <p className="mt-1.5 text-[9px] text-neo-muted truncate flex items-center gap-1.5">
                           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/80 inline-block shrink-0" />
                           <span>Nominal baseline · No active risk drivers</span>
                         </p>
                       ) : (
-                        <p className="mt-1.5 text-[9px] text-neo-muted truncate">
-                          Primary driver: <span className="font-semibold text-neo-text">{topFactor.label}</span> ({topContrib}%)
+                        <p className="mt-1.5 text-[9px] text-neo-muted truncate flex items-center justify-between">
+                          <span>Primary driver: <span className="font-semibold text-neo-text">{topFactor.label}</span> ({topContrib}%)</span>
+                          <span className="text-[8px] text-neo-accent font-semibold ml-1">
+                            {isExpanded ? "Hide factors ▲" : "Show factors ▼"}
+                          </span>
                         </p>
+                      )}
+
+                      {/* Expanded Factor Breakdown Drawer */}
+                      {isExpanded && (
+                        <div className="mt-2.5 pt-2.5 border-t border-[var(--line)] space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div className="flex items-center justify-between text-[10px] text-neo-muted font-bold">
+                            <span>Contributing Drivers &amp; Factors</span>
+                            <span>Weight</span>
+                          </div>
+
+                          {(r.factors || []).length === 0 ? (
+                            <p className="text-[10px] text-neo-muted italic">No isolated risk factors.</p>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {r.factors.map((f, idx) => (
+                                <div key={idx} className="bg-[var(--card)] p-1.5 rounded-lg border border-[var(--line)] text-[10px]">
+                                  <div className="flex items-center justify-between font-semibold">
+                                    <span className="text-neo-text">{f.label}</span>
+                                    <span className="font-mono text-neo-accent font-bold">{f.contribution_pct}%</span>
+                                  </div>
+                                  <div className="mt-1 h-1 w-full rounded-full bg-[color-mix(in_srgb,var(--line)_60%,transparent)] overflow-hidden">
+                                    <div
+                                      className="h-full rounded-full bg-neo-accent transition-all duration-300"
+                                      style={{ width: `${Math.min(100, Math.max(5, f.contribution_pct))}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between pt-1 text-[9px] text-neo-muted font-mono">
+                            {r.confidence_pct != null && <span>Confidence: {r.confidence_pct}%</span>}
+                            {r.horizon_hours != null && <span>Horizon: {r.horizon_hours}h</span>}
+                          </div>
+                        </div>
                       )}
                     </div>
                   );
@@ -1909,9 +2010,19 @@ function aqiCategory(aqiNum?: unknown) {
   const v = Number(aqiNum);
   if (v <= 50) return { label: "Good", color: "#10b981", bg: "rgba(16,185,129,0.12)" };
   if (v <= 100) return { label: "Moderate", color: "#eab308", bg: "rgba(234,179,8,0.12)" };
-  if (v <= 200) return { label: "Poor", color: "#f97316", bg: "rgba(249,115,22,0.12)" };
-  if (v <= 300) return { label: "Very Poor", color: "#ef4444", bg: "rgba(239,68,68,0.12)" };
-  return { label: "Severe", color: "#7f1d1d", bg: "rgba(127,29,29,0.15)" };
+  if (v <= 150) return { label: "USG", color: "#f97316", bg: "rgba(249,115,22,0.12)" };
+  if (v <= 200) return { label: "Unhealthy", color: "#ef4444", bg: "rgba(239,68,68,0.12)" };
+  if (v <= 300) return { label: "Very Unhealthy", color: "#7f1d1d", bg: "rgba(127,29,29,0.15)" };
+  return { label: "Hazardous", color: "#7f1d1d", bg: "rgba(127,29,29,0.15)" };
+}
+
+function pinUsAqi(dash: DashboardSnapshot): number | null {
+  const series = dash.descriptive.series;
+  const hourlyNow = series.aqi_hourly?.[0]?.value;
+  const om = dash.descriptive.current.om_us_aqi ?? (dash.quality?.air as Record<string, unknown> | undefined)?.us_aqi;
+  const n = om ?? hourlyNow;
+  if (n == null || isNaN(Number(n))) return null;
+  return Number(n);
 }
 
 function seaState(waveHeightM?: unknown) {
@@ -1977,13 +2088,18 @@ function AirCard({
   const pollen = (air.pollen || {}) as Record<string, unknown>;
   const series = dash.descriptive.series;
 
-  const aqiVal = cpcb.value ?? dash.descriptive.current.aqi ?? air.us_aqi;
+  const aqiVal = pinUsAqi(dash);
   const aqiInfo = aqiCategory(aqiVal);
+  const cpcbVal = cpcb.value != null ? Number(cpcb.value) : null;
+  const cpcbCat = cpcb.category != null ? String(cpcb.category) : null;
 
   const aqi24h = (series.aqi_hourly || []).slice(0, 24).map((p) => ({
     t: hhmm(p.t),
     v: p.value,
   }));
+  if (aqi24h.length && aqiVal != null) {
+    aqi24h[0] = { ...aqi24h[0], v: aqiVal };
+  }
 
   const rawParticulates = [
     { k: "PM2.5", v: air.pm2_5, max: 60, color: "#f97316" },
@@ -2059,7 +2175,7 @@ function AirCard({
               <div key="air-live" className="fade-in-scale space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">AQI Index</p>
+                    <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">US AQI (Open-Meteo)</p>
                     <div className="flex items-baseline gap-2 mt-0.5">
                       <span className="font-mono text-2xl font-black text-neo-accent leading-none">
                         {aqiVal != null ? String(aqiVal) : "—"}
@@ -2068,9 +2184,16 @@ function AirCard({
                         className="chip text-[9px] font-bold uppercase px-2 py-0.5"
                         style={{ color: aqiInfo.color, backgroundColor: aqiInfo.bg }}
                       >
-                        {String(cpcb.category ?? aqiInfo.label)}
+                        {aqiInfo.label}
                       </span>
                     </div>
+                    {cpcbVal != null && (
+                      <p className="text-[9px] text-neo-muted mt-1">
+                        CPCB NAQI {cpcbVal}
+                        {cpcbCat ? ` (${cpcbCat})` : ""}
+                        {cpcb.station ? ` · ${String(cpcb.station)}` : ""} — different scale, not the chart
+                      </p>
+                    )}
                   </div>
                   {(displayNull || air.uv_index != null) && (
                     <div className="text-right">

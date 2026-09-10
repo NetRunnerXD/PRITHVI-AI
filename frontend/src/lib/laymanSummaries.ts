@@ -432,17 +432,21 @@ export function getAirLaymanSummary(
   const q = dash.quality || {};
   const air = (q.air || {}) as Record<string, unknown>;
   const cpcb = (air.cpcb || {}) as Record<string, unknown>;
-  const aqiVal = Number(cpcb.value ?? dash.descriptive.current.aqi ?? air.us_aqi ?? 65);
+  const hourlyNow = dash.descriptive.series.aqi_hourly?.[0]?.value;
+  const om = dash.descriptive.current.om_us_aqi ?? air.us_aqi ?? hourlyNow;
+  const aqiVal = Number(om ?? 65);
   const pm25 = air.pm2_5 != null ? Number(air.pm2_5) : null;
   const pm10 = air.pm10 != null ? Number(air.pm10) : null;
 
-  const isSevere = aqiVal > 250;
+  const isSevere = aqiVal > 200;
   const isPoor = aqiVal > 150;
-  const isModerate = aqiVal > 80;
+  const isModerate = aqiVal > 100;
 
   let aqiLabel = "Good";
-  if (isSevere) aqiLabel = "Severe";
-  else if (isPoor) aqiLabel = "Poor";
+  if (aqiVal > 300) aqiLabel = "Hazardous";
+  else if (isSevere) aqiLabel = "Very Unhealthy";
+  else if (isPoor) aqiLabel = "Unhealthy";
+  else if (aqiVal > 100) aqiLabel = "USG";
   else if (isModerate) aqiLabel = "Moderate";
 
   let headline = "";

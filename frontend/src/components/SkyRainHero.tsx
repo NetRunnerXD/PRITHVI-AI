@@ -317,7 +317,6 @@ export function SkyRainHero({
   const feels = feelsLikeC(sky.temp_c ?? cur.temp_c, sky.humidity_pct ?? cur.humidity_pct);
 
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [mobileExpanded, setMobileExpanded] = useState(false);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -381,40 +380,18 @@ export function SkyRainHero({
 
         <div className="flex items-center gap-2">
           {!isSummary && (
-            <>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMobileExpanded((v) => !v);
-                }}
-                className="lg:hidden neo-btn text-[10px] font-semibold px-2.5 py-1 flex items-center gap-1.5 transition-all text-neo-text"
-                aria-expanded={mobileExpanded}
-              >
-                <span>
-                  {mobileExpanded
-                    ? (locale === "hi" ? "विवरण छुपाएं" : locale === "bn" ? "তথ্য লুকান" : "Hide Telemetry")
-                    : (locale === "hi" ? "मापदंड देखें" : locale === "bn" ? "প্যারামিটার দেখুন" : "Parameters")}
-                </span>
-                <IconChevronDown
-                  className={`w-3.5 h-3.5 text-neo-accent transition-transform duration-300 ${
-                    mobileExpanded ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setInspectorOpen(true);
-                }}
-                className="neo-btn text-[10px] font-semibold px-2 py-1 flex items-center gap-1"
-                title="Inspect full atmospheric diurnal curves"
-              >
-                <IconSparkles className="w-3 h-3 text-neo-accent" />
-                <span className="hidden sm:inline">Synoptics</span>
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setInspectorOpen(true);
+              }}
+              className="neo-btn text-[10px] font-semibold px-2 py-1 flex items-center gap-1"
+              title="Inspect full atmospheric diurnal curves"
+            >
+              <IconSparkles className="w-3 h-3 text-neo-accent" />
+              <span className="hidden sm:inline">Synoptics</span>
+            </button>
           )}
         </div>
       </div>
@@ -427,81 +404,47 @@ export function SkyRainHero({
         /* Main Grid: Left Animated Diorama & Core Weather, Right Unified Telemetry */
         <div className="grid gap-3.5 lg:grid-cols-12 items-center">
           {/* Left Column: Atmospheric Diorama & Live Hero Status */}
-          <div
-            className="col-span-12 lg:col-span-6 flex items-center gap-3.5 cursor-pointer lg:cursor-default"
-            onClick={() => {
-              if (typeof window !== "undefined" && window.innerWidth < 1024) {
-              setMobileExpanded((v) => !v);
-            }
-          }}
-        >
-          <AtmosphericDiorama
-            isDay={isDay}
-            cloudCoverPct={cloudPct}
-            precip1hMm={precip1h}
-            isStorm={isStorm}
-            windSpeedKmh={windSpeed}
-            windDirDeg={windDeg}
-          />
+          <div className="col-span-12 lg:col-span-6 flex items-center gap-3 sm:gap-3.5">
+            <AtmosphericDiorama
+              isDay={isDay}
+              cloudCoverPct={cloudPct}
+              precip1hMm={precip1h}
+              isStorm={isStorm}
+              windSpeedKmh={windSpeed}
+              windDirDeg={windDeg}
+            />
 
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h3 className="text-xl sm:text-2xl font-black text-neo-text truncate leading-tight">
-                {sky.label || cur.sky_label || "Clear Sky"}
-              </h3>
-              <span className={`chip text-[8px] font-mono uppercase px-1.5 py-0 ${isDay ? "text-amber-600 bg-amber-500/10" : "text-indigo-500 bg-indigo-500/10"}`}>
-                {isDay ? "Day" : "Night"}
-              </span>
-            </div>
-
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="font-mono text-3xl sm:text-4xl font-extrabold text-neo-accent">
-                {temp(sky.temp_c ?? cur.temp_c, units)}
-              </span>
-              {feels != null && (
-                <span className="text-[11px] font-mono text-neo-muted">
-                  Feels {temp(feels, units)}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg sm:text-2xl font-black text-neo-text truncate leading-tight">
+                  {sky.label || cur.sky_label || "Clear Sky"}
+                </h3>
+                <span className={`chip text-[8px] font-mono uppercase px-1.5 py-0 ${isDay ? "text-amber-600 bg-amber-500/10" : "text-indigo-500 bg-indigo-500/10"}`}>
+                  {isDay ? "Day" : "Night"}
                 </span>
-              )}
+              </div>
+
+              <div className="mt-0.5 sm:mt-1 flex items-baseline gap-2">
+                <span className="font-mono text-2xl sm:text-4xl font-extrabold text-neo-accent">
+                  {temp(sky.temp_c ?? cur.temp_c, units)}
+                </span>
+                {feels != null && (
+                  <span className="text-[10px] sm:text-[11px] font-mono text-neo-muted">
+                    Feels {temp(feels, units)}
+                  </span>
+                )}
+              </div>
+
+              {sky.place ? (
+                <p className="text-[10px] text-neo-muted truncate mt-0.5">
+                  {sky.place}
+                </p>
+              ) : null}
             </div>
-
-            <p className="text-[10px] text-neo-muted truncate mt-0.5">
-              {sky.place ? `${sky.place} · ` : ""}
-              {isStorm ? "Convective Thunder Activity" : precip1h > 0.5 ? "Active Inflow" : "Stable Boundary Layer"}
-            </p>
           </div>
-        </div>
 
-        {/* Mobile Dropdown Trigger Bar */}
-        <div className="lg:hidden col-span-12 -mt-1">
-          <button
-            type="button"
-            onClick={() => setMobileExpanded((v) => !v)}
-            className="w-full neo-in py-1.5 px-3 rounded-xl flex items-center justify-between text-[11px] font-bold text-neo-muted hover:text-neo-text hover:border-[var(--accent)] transition-all cursor-pointer"
-          >
-            <span className="flex items-center gap-1.5">
-              <IconCloud className="w-3.5 h-3.5 text-neo-accent" />
-              <span>
-                {mobileExpanded ? "Atmospheric Telemetry Deck" : "Parameters · Humidity, Visibility, Cloud Cover & Rain"}
-              </span>
-            </span>
-            <span className="flex items-center gap-1 font-mono text-[10px] text-neo-accent">
-              <span>{mobileExpanded ? "Hide" : "Expand"}</span>
-              <IconChevronDown
-                className={`w-3.5 h-3.5 transition-transform duration-300 ${
-                  mobileExpanded ? "rotate-180" : ""
-                }`}
-              />
-            </span>
-          </button>
-        </div>
-
-        {/* Right Column: Unified Telemetry Deck (Collapsible dropdown on mobile, static on desktop) */}
-        <div
-          className={`col-span-12 lg:col-span-6 min-h-[90px] flex flex-col justify-center transition-all duration-300 ${
-            mobileExpanded ? "block animate-in fade-in slide-in-from-top-2" : "hidden lg:flex"
-          }`}
-        >
+        {/* Right Column: Unified Telemetry Deck */}
+        <div className="col-span-12 lg:col-span-6 min-h-[90px] flex flex-col justify-center">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
             <div className="neo-in p-2 rounded-xl">
               <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">

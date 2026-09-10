@@ -37,6 +37,8 @@ export function Sidebar() {
     tab,
     setTab,
     dashboard,
+    location,
+    status,
     refresh,
     sidebarOpen,
     setSidebarOpen,
@@ -48,6 +50,7 @@ export function Sidebar() {
     signOut,
     viewMode,
     setViewMode,
+    settings,
   } = useApp();
   const t = COPY[locale];
   const tabLabel: Record<TabId, string> = {
@@ -60,6 +63,22 @@ export function Sidebar() {
     settings: t.tabSettings,
   };
 
+  const visibleTabs = TABS.filter(({ id }) => {
+    if (settings.showAdvancedTabs) return true;
+    if (["analytics", "data", "model"].includes(id)) {
+      return tab === id;
+    }
+    return true;
+  });
+
+  const mobileVisibleTabs = TABS.filter(({ id }) => {
+    if (settings.showAdvancedTabs) return true;
+    if (["analytics", "data", "model"].includes(id)) {
+      return tab === id;
+    }
+    return true;
+  });
+
   return (
     <>
       {/* ── Mobile bottom tab bar (< lg) ── */}
@@ -67,7 +86,7 @@ export function Sidebar() {
         className="mobile-bottom-bar fixed bottom-0 left-0 right-0 z-[1100] flex items-center justify-around border-t border-neo-line bg-neo-card/90 backdrop-blur-2xl px-1.5 py-1 lg:hidden shadow-lg select-none"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 8px)" }}
       >
-        {TABS.map(({ id, Icon }) => {
+        {mobileVisibleTabs.map(({ id, Icon }) => {
           const active = tab === id;
           return (
             <button
@@ -160,7 +179,7 @@ export function Sidebar() {
 
         {/* Navigation Tabs */}
         <nav className="flex flex-col gap-1">
-          {TABS.map(({ id, Icon }) => {
+          {visibleTabs.map(({ id, Icon }) => {
             const active = tab === id;
             return (
               <button
@@ -197,7 +216,7 @@ export function Sidebar() {
         </nav>
 
         {/* Focused Location */}
-        {dashboard ? (
+        {dashboard && status === "ready" ? (
           <div
             className={`neo-in rounded-2xl transition-all duration-300 overflow-hidden ${
               sidebarOpen ? "px-3 py-2" : "py-2 px-0"
@@ -230,7 +249,8 @@ export function Sidebar() {
                   <button
                     key={f.id}
                     className="chip hover:scale-105 hover:bg-neo-accent hover:text-white transition-all text-[9px] font-semibold flex items-center gap-1"
-                    onClick={() => setLocation(f)}
+                    onClick={() => status === "ready" && setLocation(f)}
+                    disabled={status === "loading"}
                     title={f.label}
                   >
                     <span className="text-amber-400 font-bold">★</span>
@@ -245,7 +265,8 @@ export function Sidebar() {
                   <button
                     key={f.id}
                     className="chip hover:scale-105 hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] hover:text-neo-accent transition-all text-[9px]"
-                    onClick={() => setLocation(f)}
+                    onClick={() => status === "ready" && setLocation(f)}
+                    disabled={status === "loading"}
                     title={f.label}
                   >
                     <span className="truncate max-w-[80px]">{f.district}</span>

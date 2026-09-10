@@ -1,66 +1,70 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=JetBrains+Mono:wght@400;500;700;800&family=Manrope:wght@400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,600&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap");
 @import "leaflet/dist/leaflet.css";
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   GLOBAL DESIGN TOKENS & BASE THEME DEFINITIONS
+   ========================================================================== */
+
 :root,
 [data-theme="sand"] {
-  --bg: #f4efe4;
-  --card: #fffaf2;
-  --text: #1c2430;
-  --muted: #5c6570;
-  --accent: #0d6e63;
-  --accent2: #c45c26;
-  --warn: #c17f2a;
-  --danger: #b42318;
-  --flood: #1d4e89;
-  --rain: #2b7cbf;
-  --gold: #e0a106;
-  --indigo: #3d4a8a;
-  --line: #ead9c2;
-  --glow1: rgba(224, 161, 6, 0.28);
-  --glow2: rgba(13, 110, 99, 0.16);
+  --bg: #f5eedc;
+  --card: #fdfaf3;
+  --text: #2a221b;
+  --muted: #6e6255;
+  --accent: #b45309;
+  --accent2: #c2410c;
+  --warn: #d97706;
+  --danger: #b91c1c;
+  --flood: #0369a1;
+  --rain: #1d4ed8;
+  --gold: #b45309;
+  --indigo: #4338ca;
+  --line: #dccdb3;
+  --glow1: rgba(180, 83, 9, 0.08);
+  --glow2: rgba(194, 65, 12, 0.06);
   color-scheme: light;
 }
 
 [data-theme="monsoon"] {
-  --bg: #e4f0ec;
-  --card: #f4fbf8;
-  --text: #12332c;
-  --muted: #4a6b63;
-  --accent: #0b6b4f;
-  --accent2: #1a7a6d;
-  --warn: #b86a12;
-  --danger: #a61b12;
-  --flood: #155e75;
-  --rain: #0e7490;
-  --gold: #ca8a04;
-  --indigo: #115e59;
-  --line: #c5ddd4;
-  --glow1: rgba(16, 185, 129, 0.18);
-  --glow2: rgba(14, 116, 144, 0.14);
-  color-scheme: light;
+  --bg: #031e17;
+  --card: #082d23;
+  --text: #e6fcf5;
+  --muted: #7be1c3;
+  --accent: #10b981;
+  --accent2: #06b6d4;
+  --warn: #fbbf24;
+  --danger: #fb7185;
+  --flood: #38bdf8;
+  --rain: #34d399;
+  --gold: #fde047;
+  --indigo: #818cf8;
+  --line: #124e3f;
+  --glow1: rgba(16, 185, 129, 0.22);
+  --glow2: rgba(6, 182, 212, 0.18);
+  color-scheme: dark;
 }
 
 [data-theme="ocean"] {
-  --bg: #e6eef6;
-  --card: #f5f8fc;
-  --text: #122033;
-  --muted: #4d6178;
-  --accent: #1d4e89;
-  --accent2: #0e7490;
-  --warn: #c17f2a;
-  --danger: #b42318;
-  --flood: #1e3a8a;
-  --rain: #2563eb;
-  --gold: #d97706;
-  --indigo: #3730a3;
-  --line: #c9d7e8;
-  --glow1: rgba(37, 99, 235, 0.16);
-  --glow2: rgba(14, 116, 144, 0.14);
-  color-scheme: light;
+  --bg: #071326;
+  --card: #0d2240;
+  --text: #e2f1ff;
+  --muted: #7bb5e8;
+  --accent: #00d2ff;
+  --accent2: #38bdf8;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --flood: #38bdf8;
+  --rain: #60a5fa;
+  --gold: #fcd34d;
+  --indigo: #a5b4fc;
+  --line: #193b68;
+  --glow1: rgba(0, 210, 255, 0.22);
+  --glow2: rgba(56, 189, 248, 0.16);
+  color-scheme: dark;
 }
 
 [data-theme="midnight"] {
@@ -80,6 +84,576 @@
   --glow1: rgba(78, 224, 208, 0.1);
   --glow2: rgba(79, 195, 247, 0.08);
   color-scheme: dark;
+}
+
+[data-theme="contrast"] {
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --text: #020617;
+  --muted: #1e293b;
+  --accent: #000000;
+  --accent2: #c2410c;
+  --warn: #854d0e;
+  --danger: #991b1b;
+  --flood: #1e40af;
+  --rain: #1d4ed8;
+  --gold: #a16207;
+  --indigo: #312e81;
+  --line: #000000;
+  --glow1: transparent;
+  --glow2: transparent;
+  color-scheme: light;
+}
+
+/* ==========================================================================
+   THEME-SPECIFIC UI ARCHITECTURES & TEMPLATES
+   ========================================================================== */
+
+/* ──────────────────────────────────────────────────────────────────────────
+   1. SAND THEME: "Terra Editorial" (Warm Clay, Editorial Serif & Tactile Paper)
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="sand"] {
+  font-family: "Newsreader", "Instrument Sans", Georgia, serif;
+}
+
+[data-theme="sand"] h1,
+[data-theme="sand"] h2,
+[data-theme="sand"] h3 {
+  font-family: "Newsreader", Georgia, serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+[data-theme="sand"] button,
+[data-theme="sand"] input,
+[data-theme="sand"] select,
+[data-theme="sand"] .neo-btn,
+[data-theme="sand"] .chip {
+  font-family: "Instrument Sans", sans-serif;
+}
+
+[data-theme="sand"] body {
+  background-color: var(--bg);
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(180, 83, 9, 0.06), transparent 60%),
+    linear-gradient(rgba(180, 83, 9, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 83, 9, 0.03) 1px, transparent 1px);
+  background-size: 100% 100%, 32px 32px, 32px 32px;
+}
+
+[data-theme="sand"] .neo {
+  border-radius: 12px !important;
+  background: var(--card) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: 0 4px 16px rgba(60, 42, 22, 0.06), 0 1px 3px rgba(60, 42, 22, 0.04) !important;
+  backdrop-filter: none !important;
+}
+
+[data-theme="sand"] .neo-in {
+  border-radius: 8px !important;
+  background: #f4ecdc !important;
+  border: 1px solid #d8caa7 !important;
+  box-shadow: inset 0 1px 3px rgba(60, 42, 22, 0.05) !important;
+}
+
+[data-theme="sand"] .neo-btn {
+  border-radius: 8px !important;
+  background: #ede2cd !important;
+  border: 1px solid #d5c3a3 !important;
+  color: var(--text) !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 2px rgba(60, 42, 22, 0.08) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+[data-theme="sand"] .neo-btn:hover {
+  background: #e4d6bd !important;
+  border-color: #bfa67c !important;
+  transform: translateY(-1px) !important;
+}
+
+[data-theme="sand"] .neo-btn-on {
+  background: #b45309 !important;
+  color: #ffffff !important;
+  border-color: #92400e !important;
+  box-shadow: 0 2px 6px rgba(180, 83, 9, 0.3) !important;
+}
+
+[data-theme="sand"] .chip {
+  border-radius: 6px !important;
+  background: #ede2cd !important;
+  border: 1px solid #d5c3a3 !important;
+  color: #78350f !important;
+  font-weight: 700 !important;
+}
+
+/* Sand Section Bespoke Individual Themes */
+[data-theme="sand"] .neo-section-sky { 
+  background: radial-gradient(circle at 85% 15%, #fef3c7 0%, #faf3e0 60%, #f6ece0 100%) !important; 
+  border: 1px solid #dcc298 !important; 
+  box-shadow: 0 6px 20px rgba(180, 83, 9, 0.08) !important;
+}
+[data-theme="sand"] .neo-section-sky .neo-in {
+  background: rgba(255, 255, 255, 0.65) !important;
+  border-color: #dfcdb2 !important;
+}
+
+[data-theme="sand"] .neo-section-rain { 
+  background: linear-gradient(145deg, #eef4fb 0%, #e3ecf8 100%) !important; 
+  border: 1px solid #b9d0ea !important; 
+  box-shadow: 0 6px 20px rgba(29, 78, 216, 0.06) !important;
+}
+[data-theme="sand"] .neo-section-rain .neo-in {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border-color: #c7d9ec !important;
+}
+
+[data-theme="sand"] .neo-section-wind { 
+  background: linear-gradient(145deg, #edf6f1 0%, #dff0e6 100%) !important; 
+  border: 1px solid #b2dac3 !important; 
+  box-shadow: 0 6px 20px rgba(13, 148, 136, 0.06) !important;
+}
+[data-theme="sand"] .neo-section-wind .neo-in {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border-color: #c4e4d2 !important;
+}
+
+[data-theme="sand"] .neo-section-alerts { 
+  background: radial-gradient(circle at 10% 10%, #fff7ed 0%, #fef0dd 100%) !important; 
+  border: 1.5px solid #f59e0b !important; 
+  box-shadow: 0 6px 22px rgba(217, 119, 6, 0.12) !important;
+}
+[data-theme="sand"] .neo-section-alerts .neo-in {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border-color: #fbd38d !important;
+}
+
+[data-theme="sand"] .neo-section-air { 
+  background: linear-gradient(145deg, #f5f3ef 0%, #ebe7df 100%) !important; 
+  border: 1px solid #d4cbbd !important; 
+}
+[data-theme="sand"] .neo-section-air .neo-in {
+  background: rgba(255, 255, 255, 0.65) !important;
+  border-color: #ded6cb !important;
+}
+
+[data-theme="sand"] .neo-section-land { 
+  background: radial-gradient(circle at 90% 90%, #ecfdf5 0%, #f1f7ed 50%, #e5ede0 100%) !important; 
+  border: 1px solid #bdd5b4 !important; 
+  box-shadow: 0 6px 20px rgba(22, 101, 52, 0.06) !important;
+}
+[data-theme="sand"] .neo-section-land .neo-in {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border-color: #cbdec4 !important;
+}
+
+[data-theme="sand"] .neo-section-marine { 
+  background: radial-gradient(circle at 50% 0%, #e0f2fe 0%, #ebf5fa 60%, #e1edf5 100%) !important; 
+  border: 1px solid #aed6ea !important; 
+  box-shadow: 0 6px 20px rgba(2, 132, 199, 0.08) !important;
+}
+[data-theme="sand"] .neo-section-marine .neo-in {
+  background: rgba(255, 255, 255, 0.75) !important;
+  border-color: #bee0f0 !important;
+}
+
+[data-theme="sand"] .neo-section-cyclone { 
+  background: radial-gradient(circle at 80% 20%, #ffe4e6 0%, #fdf2f4 60%, #f8e5e8 100%) !important; 
+  border: 1.5px solid #f43f5e !important; 
+  box-shadow: 0 6px 22px rgba(225, 29, 72, 0.1) !important;
+}
+[data-theme="sand"] .neo-section-cyclone .neo-in {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border-color: #fecdd3 !important;
+}
+
+[data-theme="sand"] .neo-section-seismic { 
+  background: radial-gradient(circle at 20% 80%, #ffedd5 0%, #fcf4ec 60%, #f6e6d8 100%) !important; 
+  border: 1.5px solid #ea580c !important; 
+  box-shadow: 0 6px 22px rgba(234, 88, 12, 0.1) !important;
+}
+[data-theme="sand"] .neo-section-seismic .neo-in {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border-color: #fed7aa !important;
+}
+
+[data-theme="sand"] .neo-section-nowcast { 
+  background: linear-gradient(145deg, #f5f3ff 0%, #ebe7fa 100%) !important; 
+  border: 1px solid #c8c2ec !important; 
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.06) !important;
+}
+[data-theme="sand"] .neo-section-nowcast .neo-in {
+  background: rgba(255, 255, 255, 0.75) !important;
+  border-color: #ddd6fe !important;
+}
+
+[data-theme="sand"] .neo-section-forecast7d { 
+  background: linear-gradient(145deg, #fefce8 0%, #faf5d8 100%) !important; 
+  border: 1px solid #e4d799 !important; 
+  box-shadow: 0 6px 22px rgba(180, 83, 9, 0.08) !important;
+}
+[data-theme="sand"] .neo-section-forecast7d .neo-in {
+  background: rgba(255, 255, 255, 0.75) !important;
+  border-color: #ede2ae !important;
+}
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   2. MONSOON THEME: "Hydro-Bioluminescent Glassmorphism" (Deep Emerald & Aqua)
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="monsoon"] {
+  font-family: "Space Grotesk", "Manrope", sans-serif;
+}
+
+[data-theme="monsoon"] body {
+  background-color: var(--bg);
+  background-image: 
+    radial-gradient(800px 500px at 15% 10%, rgba(16, 185, 129, 0.15), transparent 70%),
+    radial-gradient(700px 500px at 85% 90%, rgba(6, 182, 212, 0.12), transparent 65%),
+    linear-gradient(rgba(16, 185, 129, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.04) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+}
+
+[data-theme="monsoon"] .neo {
+  border-radius: 24px !important;
+  background: rgba(8, 45, 35, 0.65) !important;
+  border: 1px solid rgba(16, 185, 129, 0.28) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(16, 185, 129, 0.2) !important;
+  backdrop-filter: blur(20px) saturate(1.4) !important;
+}
+
+[data-theme="monsoon"] .neo-in {
+  border-radius: 16px !important;
+  background: rgba(3, 30, 23, 0.75) !important;
+  border: 1px solid rgba(16, 185, 129, 0.18) !important;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35) !important;
+}
+
+[data-theme="monsoon"] .neo-btn {
+  border-radius: 16px !important;
+  background: rgba(18, 78, 63, 0.6) !important;
+  border: 1px solid rgba(52, 211, 153, 0.3) !important;
+  color: #e6fcf5 !important;
+  font-weight: 600 !important;
+  backdrop-filter: blur(12px) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.25s ease !important;
+}
+
+[data-theme="monsoon"] .neo-btn:hover {
+  background: rgba(16, 185, 129, 0.25) !important;
+  border-color: #34d399 !important;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.35) !important;
+  transform: translateY(-2px) !important;
+}
+
+[data-theme="monsoon"] .neo-btn-on {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  color: #022018 !important;
+  border-color: #34d399 !important;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.6) !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="monsoon"] .chip {
+  border-radius: 9999px !important;
+  background: rgba(16, 185, 129, 0.15) !important;
+  border: 1px solid rgba(52, 211, 153, 0.35) !important;
+  color: #34d399 !important;
+}
+
+/* Monsoon Section Bespoke Individual Themes */
+[data-theme="monsoon"] .neo-section-sky { 
+  background: radial-gradient(circle at 85% 15%, rgba(6, 182, 212, 0.25) 0%, rgba(8, 48, 56, 0.85) 100%) !important; 
+  border: 1px solid rgba(6, 182, 212, 0.4) !important; 
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 16px rgba(6, 182, 212, 0.15) !important;
+}
+[data-theme="monsoon"] .neo-section-rain { 
+  background: radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.2) 0%, rgba(6, 42, 48, 0.85) 100%) !important; 
+  border: 1px solid rgba(56, 189, 248, 0.4) !important; 
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 16px rgba(56, 189, 248, 0.15) !important;
+}
+[data-theme="monsoon"] .neo-section-wind { 
+  background: radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.22) 0%, rgba(6, 48, 38, 0.85) 100%) !important; 
+  border: 1px solid rgba(16, 185, 129, 0.45) !important; 
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 16px rgba(16, 185, 129, 0.18) !important;
+}
+[data-theme="monsoon"] .neo-section-alerts { 
+  background: radial-gradient(circle at 10% 10%, rgba(245, 158, 11, 0.25) 0%, rgba(52, 38, 12, 0.9) 100%) !important; 
+  border: 1.5px solid rgba(245, 158, 11, 0.55) !important; 
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(245, 158, 11, 0.2) !important;
+}
+[data-theme="monsoon"] .neo-section-air { 
+  background: radial-gradient(circle at 50% 50%, rgba(94, 234, 212, 0.12) 0%, rgba(14, 38, 34, 0.85) 100%) !important; 
+  border: 1px solid rgba(94, 234, 212, 0.3) !important; 
+}
+[data-theme="monsoon"] .neo-section-land { 
+  background: radial-gradient(circle at 85% 85%, rgba(52, 211, 153, 0.2) 0%, rgba(8, 48, 28, 0.85) 100%) !important; 
+  border: 1px solid rgba(52, 211, 153, 0.4) !important; 
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 16px rgba(52, 211, 153, 0.15) !important;
+}
+[data-theme="monsoon"] .neo-section-marine { 
+  background: radial-gradient(circle at 50% 10%, rgba(14, 165, 233, 0.25) 0%, rgba(6, 44, 54, 0.88) 100%) !important; 
+  border: 1px solid rgba(14, 165, 233, 0.45) !important; 
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 18px rgba(14, 165, 233, 0.18) !important;
+}
+[data-theme="monsoon"] .neo-section-cyclone { 
+  background: radial-gradient(circle at 75% 25%, rgba(244, 63, 94, 0.3) 0%, rgba(54, 16, 28, 0.9) 100%) !important; 
+  border: 1.5px solid rgba(244, 63, 94, 0.55) !important; 
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 22px rgba(244, 63, 94, 0.22) !important;
+}
+[data-theme="monsoon"] .neo-section-seismic { 
+  background: radial-gradient(circle at 25% 75%, rgba(249, 115, 22, 0.28) 0%, rgba(52, 28, 12, 0.9) 100%) !important; 
+  border: 1.5px solid rgba(249, 115, 22, 0.55) !important; 
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(249, 115, 22, 0.2) !important;
+}
+[data-theme="monsoon"] .neo-section-nowcast { 
+  background: radial-gradient(circle at 50% 50%, rgba(129, 140, 248, 0.2) 0%, rgba(24, 20, 56, 0.85) 100%) !important; 
+  border: 1px solid rgba(129, 140, 248, 0.4) !important; 
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 16px rgba(129, 140, 248, 0.15) !important;
+}
+[data-theme="monsoon"] .neo-section-forecast7d { 
+  background: radial-gradient(circle at 50% 0%, rgba(234, 179, 8, 0.2) 0%, rgba(44, 40, 14, 0.85) 100%) !important; 
+  border: 1px solid rgba(234, 179, 8, 0.45) !important; 
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 18px rgba(234, 179, 8, 0.18) !important;
+}
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   3. OCEAN THEME: "Deep-Sea Cyber-HUD" (Cyberpunk Cyan, Navy & High-Tech Glow)
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="ocean"] {
+  font-family: "Fira Code", "Space Grotesk", monospace;
+}
+
+[data-theme="ocean"] h1,
+[data-theme="ocean"] h2,
+[data-theme="ocean"] h3 {
+  font-family: "Space Grotesk", sans-serif;
+  letter-spacing: -0.01em;
+}
+
+[data-theme="ocean"] body {
+  background-color: var(--bg);
+  background-image: 
+    radial-gradient(1000px 600px at 50% -10%, rgba(0, 210, 255, 0.15), transparent 70%),
+    radial-gradient(600px 600px at 100% 100%, rgba(56, 189, 248, 0.1), transparent 60%),
+    repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 210, 255, 0.02) 2px, rgba(0, 210, 255, 0.02) 4px);
+}
+
+[data-theme="ocean"] .neo {
+  border-radius: 14px !important;
+  background: rgba(13, 34, 64, 0.75) !important;
+  border: 1px solid rgba(0, 210, 255, 0.3) !important;
+  box-shadow: 0 10px 30px rgba(2, 12, 27, 0.7), inset 0 0 12px rgba(0, 210, 255, 0.08) !important;
+  backdrop-filter: blur(16px) !important;
+}
+
+[data-theme="ocean"] .neo-in {
+  border-radius: 10px !important;
+  background: rgba(7, 19, 38, 0.85) !important;
+  border: 1px solid rgba(0, 210, 255, 0.2) !important;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5) !important;
+}
+
+[data-theme="ocean"] .neo-btn {
+  border-radius: 10px !important;
+  background: rgba(25, 59, 104, 0.6) !important;
+  border: 1px solid rgba(0, 210, 255, 0.35) !important;
+  color: #e2f1ff !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+  font-size: 0.75rem !important;
+  transition: all 0.2s ease !important;
+}
+
+[data-theme="ocean"] .neo-btn:hover {
+  background: rgba(0, 210, 255, 0.2) !important;
+  border-color: #00d2ff !important;
+  box-shadow: 0 0 14px rgba(0, 210, 255, 0.4) !important;
+}
+
+[data-theme="ocean"] .neo-btn-on {
+  background: #00d2ff !important;
+  color: #051428 !important;
+  border-color: #38bdf8 !important;
+  font-weight: 800 !important;
+  box-shadow: 0 0 22px rgba(0, 210, 255, 0.75) !important;
+}
+
+[data-theme="ocean"] .chip {
+  border-radius: 4px !important;
+  background: rgba(0, 210, 255, 0.12) !important;
+  border: 1px solid rgba(0, 210, 255, 0.35) !important;
+  color: #00d2ff !important;
+  font-family: "Fira Code", monospace !important;
+}
+
+/* Ocean Section Bespoke Individual Themes */
+[data-theme="ocean"] .neo-section-sky { 
+  background: radial-gradient(circle at 85% 15%, rgba(0, 210, 255, 0.25) 0%, rgba(14, 46, 84, 0.88) 100%) !important; 
+  border: 1px solid rgba(0, 210, 255, 0.45) !important; 
+  box-shadow: 0 10px 30px rgba(2, 12, 27, 0.8), 0 0 20px rgba(0, 210, 255, 0.22) !important;
+}
+[data-theme="ocean"] .neo-section-rain { 
+  background: radial-gradient(circle at 20% 20%, rgba(96, 165, 250, 0.22) 0%, rgba(12, 40, 80, 0.88) 100%) !important; 
+  border: 1px solid rgba(96, 165, 250, 0.45) !important; 
+  box-shadow: 0 10px 30px rgba(2, 12, 27, 0.8), 0 0 20px rgba(96, 165, 250, 0.2) !important;
+}
+[data-theme="ocean"] .neo-section-wind { 
+  background: radial-gradient(circle at 80% 80%, rgba(56, 189, 248, 0.22) 0%, rgba(10, 50, 72, 0.88) 100%) !important; 
+  border: 1px solid rgba(56, 189, 248, 0.45) !important; 
+  box-shadow: 0 10px 30px rgba(2, 12, 27, 0.8), 0 0 20px rgba(56, 189, 248, 0.2) !important;
+}
+[data-theme="ocean"] .neo-section-alerts { 
+  background: radial-gradient(circle at 10% 10%, rgba(251, 191, 36, 0.25) 0%, rgba(54, 40, 16, 0.9) 100%) !important; 
+  border: 1.5px solid rgba(251, 191, 36, 0.55) !important; 
+  box-shadow: 0 10px 30px rgba(2, 12, 27, 0.8), 0 0 22px rgba(251, 191, 36, 0.25) !important;
+}
+[data-theme="ocean"] .neo-section-air { 
+  background: radial-gradient(circle at 50% 50%, rgba(148, 163, 184, 0.15) 0%, rgba(16, 32, 54, 0.88) 100%) !important; 
+  border: 1px solid rgba(148, 163, 184, 0.35) !important; 
+}
+[data-theme="ocean"] .neo-section-land { 
+  background: radial-gradient(circle at 85% 85%, rgba(52, 211, 153, 0.2) 0%, rgba(10, 48, 42, 0.88) 100%) !important; 
+  border: 1px solid rgba(52, 211, 153, 0.4) !important; 
+  box-shadow: 0 10px 30px rgba(2, 12, 27, 0.8), 0 0 18px rgba(52, 211, 153, 0.18) !important;
+}
+[data-theme="ocean"] .neo-section-marine { 
+  background: radial-gradient(circle at 50% 10%, rgba(0, 210, 255, 0.35) 0%, rgba(10, 52, 92, 0.92) 100%) !important; 
+  border: 1.5px solid rgba(0, 210, 255, 0.6) !important; 
+  box-shadow: 0 12px 36px rgba(2, 12, 27, 0.9), 0 0 28px rgba(0, 210, 255, 0.35) !important;
+}
+[data-theme="ocean"] .neo-section-cyclone { 
+  background: radial-gradient(circle at 75% 25%, rgba(248, 113, 113, 0.3) 0%, rgba(56, 18, 32, 0.9) 100%) !important; 
+  border: 1.5px solid rgba(248, 113, 113, 0.55) !important; 
+  box-shadow: 0 10px 30px rgba(2, 12, 27, 0.8), 0 0 24px rgba(248, 113, 113, 0.25) !important;
+}
+[data-theme="ocean"] .neo-section-seismic { 
+  background: radial-gradient(circle at 25% 75%, rgba(251, 146, 60, 0.28) 0%, rgba(54, 30, 16, 0.9) 100%) !important; 
+  border: 1.5px solid rgba(251, 146, 60, 0.55) !important; 
+  box-shadow: 0 10px 30px rgba(2, 12, 27, 0.8), 0 0 22px rgba(251, 146, 60, 0.22) !important;
+}
+[data-theme="ocean"] .neo-section-nowcast { 
+  background: radial-gradient(circle at 50% 50%, rgba(165, 180, 252, 0.22) 0%, rgba(28, 26, 72, 0.88) 100%) !important; 
+  border: 1px solid rgba(165, 180, 252, 0.45) !important; 
+  box-shadow: 0 10px 30px rgba(2, 12, 27, 0.8), 0 0 18px rgba(165, 180, 252, 0.2) !important;
+}
+[data-theme="ocean"] .neo-section-forecast7d { 
+  background: radial-gradient(circle at 50% 0%, rgba(252, 211, 77, 0.22) 0%, rgba(48, 42, 16, 0.88) 100%) !important; 
+  border: 1px solid rgba(252, 211, 77, 0.45) !important; 
+  box-shadow: 0 10px 30px rgba(2, 12, 27, 0.8), 0 0 20px rgba(252, 211, 77, 0.2) !important;
+}
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   4. CONTRAST THEME: "High-Contrast Minimalist" (Clean Monochromatic, Maximum Readability)
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="contrast"] {
+  font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+[data-theme="contrast"] h1,
+[data-theme="contrast"] h2,
+[data-theme="contrast"] h3 {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+[data-theme="contrast"] body {
+  background-color: #f8fafc;
+  background-image: none;
+}
+
+[data-theme="contrast"] .neo {
+  border-radius: 12px !important;
+  background: #ffffff !important;
+  border: 1.5px solid #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+  backdrop-filter: none !important;
+}
+
+[data-theme="contrast"] .neo-in {
+  border-radius: 8px !important;
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="contrast"] .neo-btn {
+  border-radius: 8px !important;
+  background: #ffffff !important;
+  border: 1.5px solid #0f172a !important;
+  color: #0f172a !important;
+  font-weight: 700 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+  transition: all 0.15s ease !important;
+}
+
+[data-theme="contrast"] .neo-btn:hover {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+[data-theme="contrast"] .neo-btn:active {
+  transform: none !important;
+}
+
+[data-theme="contrast"] .neo-btn-on {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #0f172a !important;
+  box-shadow: none !important;
+}
+
+[data-theme="contrast"] .chip {
+  border-radius: 6px !important;
+  background: #f1f5f9 !important;
+  border: 1px solid #0f172a !important;
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+/* Contrast Section Clean & Simple Minimalist Theme */
+[data-theme="contrast"] .neo-section-sky,
+[data-theme="contrast"] .neo-section-rain,
+[data-theme="contrast"] .neo-section-wind,
+[data-theme="contrast"] .neo-section-alerts,
+[data-theme="contrast"] .neo-section-air,
+[data-theme="contrast"] .neo-section-land,
+[data-theme="contrast"] .neo-section-marine,
+[data-theme="contrast"] .neo-section-cyclone,
+[data-theme="contrast"] .neo-section-seismic,
+[data-theme="contrast"] .neo-section-nowcast,
+[data-theme="contrast"] .neo-section-forecast7d {
+  background-color: #ffffff !important;
+  border: 1.5px solid #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+}
+
+[data-theme="contrast"] .neo-section-alerts {
+  border-left: 4px solid #b45309 !important;
+}
+
+[data-theme="contrast"] .neo-section-cyclone {
+  border-left: 4px solid #dc2626 !important;
+}
+
+[data-theme="contrast"] .neo-section-seismic {
+  border-left: 4px solid #ea580c !important;
+}
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   5. MIDNIGHT THEME: (Untouched & Preserved Deep Neon Sci-Fi)
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="midnight"] {
+  font-family: "Outfit", "Manrope", sans-serif;
 }
 
 [data-theme="midnight"] .neo {
@@ -114,24 +688,67 @@
   background: #0e1218;
 }
 
-[data-theme="contrast"] {
-  --bg: #ffffff;
-  --card: #ffffff;
-  --text: #0a0a0a;
-  --muted: #333333;
-  --accent: #0050c8;
-  --accent2: #a14000;
-  --warn: #8a5a00;
-  --danger: #9f1239;
-  --flood: #1e3a8a;
-  --rain: #1d4ed8;
-  --gold: #a16207;
-  --indigo: #3730a3;
-  --line: #111111;
-  --glow1: transparent;
-  --glow2: transparent;
-  color-scheme: light;
+/* Midnight Section Colors */
+[data-theme="midnight"] .neo-section-sky {
+  background-color: #0e1a26 !important;
+  border: 1px solid #0369a1 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(2, 132, 199, 0.12);
 }
+[data-theme="midnight"] .neo-section-rain {
+  background-color: #0d172e !important;
+  border: 1px solid #1d4ed8 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(37, 99, 235, 0.12);
+}
+[data-theme="midnight"] .neo-section-wind {
+  background-color: #0a211e !important;
+  border: 1px solid #0f766e !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(13, 148, 136, 0.12);
+}
+[data-theme="midnight"] .neo-section-alerts {
+  background-color: #261a0d !important;
+  border: 1px solid #b45309 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(245, 158, 11, 0.14);
+}
+[data-theme="midnight"] .neo-section-air {
+  background-color: #1a1e23 !important;
+  border: 1px solid #334155 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(148, 163, 184, 0.1);
+}
+[data-theme="midnight"] .neo-section-land {
+  background-color: #0d2114 !important;
+  border: 1px solid #15803d !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(16, 185, 129, 0.12);
+}
+[data-theme="midnight"] .neo-section-marine {
+  background-color: #081d2c !important;
+  border: 1px solid #0284c7 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(2, 132, 199, 0.12);
+}
+[data-theme="midnight"] .neo-section-cyclone {
+  background-color: #2a0c16 !important;
+  border: 1px solid #be123c !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(225, 29, 72, 0.15);
+}
+[data-theme="midnight"] .neo-section-seismic {
+  background-color: #24150b !important;
+  border: 1px solid #9a3412 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(217, 119, 6, 0.12);
+}
+[data-theme="midnight"] .neo-section-nowcast {
+  background-color: #14122d !important;
+  border: 1px solid #4338ca !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(99, 102, 241, 0.14);
+}
+[data-theme="midnight"] .neo-section-forecast7d {
+  background-color: #211b0b !important;
+  border: 1px solid #854d0e !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(202, 138, 4, 0.12);
+}
+
+
+/* ==========================================================================
+   GLOBAL APP STYLES & INTERFACES
+   ========================================================================== */
 
 html,
 body {
@@ -140,32 +757,21 @@ body {
   color: var(--text);
 }
 
-body {
-  background-image:
-    radial-gradient(900px 520px at 6% -14%, var(--glow1), transparent 55%),
-    radial-gradient(720px 420px at 100% 0%, var(--glow2), transparent 52%);
-  background-attachment: fixed;
-}
-
 [data-density="compact"] .neo {
-  border-radius: 1rem;
+  border-radius: 0.75rem;
 }
 [data-density="compact"] .neo-btn {
   padding: 0.35rem 0.6rem;
   font-size: 0.8rem;
 }
-[data-motion="off"] .rise,
-[data-motion="off"] .live-dot,
-[data-motion="off"] .sky-sun,
-[data-motion="off"] .sky-drops line,
-[data-motion="off"] .assistant-bob {
+[data-motion="off"] * {
   animation: none !important;
+  transition: none !important;
 }
 
 .leaflet-container {
   background: var(--bg);
-  font-family: Manrope, sans-serif;
-  border-radius: 20px;
+  border-radius: 16px;
 }
 
 .leaflet-control-attribution {
@@ -174,26 +780,22 @@ body {
 
 .neo {
   @apply rounded-organ;
-  background: color-mix(in srgb, var(--card) 72%, transparent);
-  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  box-shadow: 0 8px 32px color-mix(in srgb, var(--text) 8%, transparent), inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
-  backdrop-filter: blur(18px) saturate(1.25);
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .neo-in {
   @apply rounded-organ;
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
   border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
-  box-shadow: inset 0 1px 8px color-mix(in srgb, var(--text) 6%, transparent);
-  backdrop-filter: blur(10px);
 }
 
 .neo-btn {
-  @apply rounded-2xl px-3 py-2 text-sm font-semibold transition hover:-translate-y-0.5;
-  background: color-mix(in srgb, var(--card) 80%, transparent);
+  @apply rounded-2xl px-3 py-2 text-sm font-semibold transition;
+  background: color-mix(in srgb, var(--card) 85%, transparent);
   border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   color: var(--text);
-  backdrop-filter: blur(12px);
 }
 
 .neo-btn-on {
@@ -202,7 +804,7 @@ body {
 }
 
 .chip {
-  @apply rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-wide shadow-neo-in-sm;
+  @apply rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-wide;
   background: var(--bg);
   color: var(--muted);
 }
@@ -338,19 +940,14 @@ select.neo-in {
   }
 }
 
-/* ── Mobile bottom tab bar ── */
+/* Mobile bottom bar */
 .mobile-bottom-bar {
-  background: color-mix(in srgb, var(--card) 85%, transparent);
-  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
-  box-shadow: 0 -4px 20px color-mix(in srgb, var(--text) 6%, transparent);
-}
-
-[data-theme="midnight"] .mobile-bottom-bar {
   background: color-mix(in srgb, var(--card) 90%, transparent);
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  box-shadow: 0 -4px 20px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
-/* Safe area for mobile body to not hide behind bottom bar */
+/* Safe area for mobile body */
 @media (max-width: 1023px) {
   body {
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -563,143 +1160,6 @@ select.neo-in {
   transform-origin: center;
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Domain-Tailored Color Themes for Dashboard Sections
-   (Distinct Non-White Colored Backgrounds, Clean Uniform Borders, No Left Border)
-   ───────────────────────────────────────────────────────────── */
-
-/* 1. Sky & Atmosphere: Atmospheric Sky Blue */
-.neo-section-sky {
-  background-color: #eaf4fb !important;
-  border: 1px solid #bae6fd !important;
-  box-shadow: 0 4px 20px rgba(2, 132, 199, 0.06);
-}
-[data-theme="midnight"] .neo-section-sky {
-  background-color: #0e1a26 !important;
-  border: 1px solid #0369a1 !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(2, 132, 199, 0.12);
-}
-
-/* 2. Rainfall: Hydrology & Precipitation Blue */
-.neo-section-rain {
-  background-color: #ebf3fe !important;
-  border: 1px solid #bfdbfe !important;
-  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.06);
-}
-[data-theme="midnight"] .neo-section-rain {
-  background-color: #0d172e !important;
-  border: 1px solid #1d4ed8 !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(37, 99, 235, 0.12);
-}
-
-/* 3. Wind & Aerodynamics: Fresh Sea-Breeze Mint / Teal */
-.neo-section-wind {
-  background-color: #e8f7f4 !important;
-  border: 1px solid #99f6e4 !important;
-  box-shadow: 0 4px 20px rgba(13, 148, 136, 0.06);
-}
-[data-theme="midnight"] .neo-section-wind {
-  background-color: #0a211e !important;
-  border: 1px solid #0f766e !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(13, 148, 136, 0.12);
-}
-
-/* 4. Emergency Alerts & Risk Sentinel: Amber Hazard Parchment */
-.neo-section-alerts {
-  background-color: #fdf6ea !important;
-  border: 1px solid #fed7aa !important;
-  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.07);
-}
-[data-theme="midnight"] .neo-section-alerts {
-  background-color: #261a0d !important;
-  border: 1px solid #b45309 !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(245, 158, 11, 0.14);
-}
-
-/* 5. Air Quality & Pollen: Distinct Light Greyish */
-.neo-section-air {
-  background-color: #e3e7ec !important;
-  border: 1px solid #cbd5e1 !important;
-  box-shadow: 0 4px 20px rgba(71, 85, 105, 0.08);
-}
-[data-theme="midnight"] .neo-section-air {
-  background-color: #1a1e23 !important;
-  border: 1px solid #334155 !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(148, 163, 184, 0.1);
-}
-
-/* 6. Land Weather & Soil Moisture: Botanical Earth Meadow / Sage */
-.neo-section-land {
-  background-color: #edf7f0 !important;
-  border: 1px solid #bbf7d0 !important;
-  box-shadow: 0 4px 20px rgba(5, 150, 105, 0.06);
-}
-[data-theme="midnight"] .neo-section-land {
-  background-color: #0d2114 !important;
-  border: 1px solid #15803d !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(16, 185, 129, 0.12);
-}
-
-/* 7. Marine Sea-State & Ocean: Coastal Aquamarine / Ocean Waters */
-.neo-section-marine {
-  background-color: #e8f6f9 !important;
-  border: 1px solid #a5f3fc !important;
-  box-shadow: 0 4px 20px rgba(2, 132, 199, 0.06);
-}
-[data-theme="midnight"] .neo-section-marine {
-  background-color: #081d2c !important;
-  border: 1px solid #0284c7 !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(2, 132, 199, 0.12);
-}
-
-/* 8. Tropical Cyclone: Storm Warning Rose Blush */
-.neo-section-cyclone {
-  background-color: #fff0f2 !important;
-  border: 1px solid #fecdd3 !important;
-  box-shadow: 0 4px 20px rgba(225, 29, 72, 0.07);
-}
-[data-theme="midnight"] .neo-section-cyclone {
-  background-color: #2a0c16 !important;
-  border: 1px solid #be123c !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(225, 29, 72, 0.15);
-}
-
-/* 9. Earthquake & Tsunami: Tectonic Clay / Terracotta */
-.neo-section-seismic {
-  background-color: #fbf3ec !important;
-  border: 1px solid #fed7aa !important;
-  box-shadow: 0 4px 20px rgba(217, 119, 6, 0.06);
-}
-[data-theme="midnight"] .neo-section-seismic {
-  background-color: #24150b !important;
-  border: 1px solid #9a3412 !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(217, 119, 6, 0.12);
-}
-
-/* 10. Nowcast 6-Hour AI: Cyber Neural Lavender */
-.neo-section-nowcast {
-  background-color: #f2f1fe !important;
-  border: 1px solid #c7d2fe !important;
-  box-shadow: 0 4px 20px rgba(79, 70, 229, 0.06);
-}
-[data-theme="midnight"] .neo-section-nowcast {
-  background-color: #14122d !important;
-  border: 1px solid #4338ca !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(99, 102, 241, 0.14);
-}
-
-/* 11. 7-Day Forecast: Sunlit Golden Horizon Wheat */
-.neo-section-forecast7d {
-  background-color: #fcf7e8 !important;
-  border: 1px solid #fef08a !important;
-  box-shadow: 0 4px 20px rgba(202, 138, 4, 0.06);
-}
-[data-theme="midnight"] .neo-section-forecast7d {
-  background-color: #211b0b !important;
-  border: 1px solid #854d0e !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(202, 138, 4, 0.12);
-}
-
 /* Frosted glass inner pods across colored sections for perfect depth and contrast */
 .neo-section-sky .neo-in,
 .neo-section-rain .neo-in,
@@ -712,9 +1172,6 @@ select.neo-in {
 .neo-section-seismic .neo-in,
 .neo-section-nowcast .neo-in,
 .neo-section-forecast7d .neo-in {
-  background-color: color-mix(in srgb, var(--card) 65%, transparent);
-  border: 1px solid color-mix(in srgb, var(--line) 40%, transparent);
+  background-color: color-mix(in srgb, var(--card) 75%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
 }
-
-
-

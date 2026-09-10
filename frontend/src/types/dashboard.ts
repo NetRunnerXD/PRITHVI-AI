@@ -206,6 +206,7 @@ export type OutlookDay = {
 export type DashboardSnapshot = {
   location: Location;
   generated_at: string;
+  enriching?: boolean;
   sources: string[];
   descriptive: {
     current: {
@@ -542,6 +543,12 @@ export type ChatMsg = {
   citations?: { tool?: string; field?: string; value?: unknown }[];
   ui?: UiAction[];
   translation?: ChatTranslation;
+  insight?: {
+    sentiment?: string;
+    tone?: string;
+    bands?: { key?: string; category?: string; band?: string; meaning?: string; scale?: string }[];
+    packet_id?: string;
+  } | null;
 };
 
 export type TabId = "home" | "analytics" | "data" | "map" | "model" | "chat" | "settings";

@@ -4,7 +4,7 @@ Rituchakra is an India-first weather and farm-advice client. It talks only to yo
 
 **Location.** If you grant GPS, the app sends latitude and longitude to `/api/geo/reverse` so the dashboard can pin an Indian district. Location is not sold. You can search a place by name instead.
 
-**Chat.** Advisor messages go to the API, which may call a local Ollama model. Do not send secrets.
+**Chat.** Advisor messages go to the API. Local default is Ollama. When insight chat is enabled and `XAI_API_KEY` is set, in-scope weather/AQI questions may be narrated by SpaceXAI (xAI grok-4.5) on the server. Do not send secrets. Client apps never embed LLM keys.
 
 **Data sources.** Forecasts and hazards come from Open-Meteo, IMD CAP, NASA, CPCB / data.gov.in, USGS, INCOIS, and similar public feeds. See the product README for attribution.
 

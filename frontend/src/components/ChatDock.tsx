@@ -61,6 +61,7 @@ export function ChatDock({
   const [listening, setListening] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [speechErr, setSpeechErr] = useState("");
+  const [notice, setNotice] = useState("");
   const stopListen = useRef<(() => void) | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [support, setSupport] = useState(() => speechSupported());
@@ -78,6 +79,10 @@ export function ChatDock({
     setText(pendingAsk);
     setPendingAsk(null);
   }, [pendingAsk, setPendingAsk]);
+
+  useEffect(() => {
+    setAnswerFor("");
+  }, [location?.id, location?.lat, location?.lon]);
 
   useEffect(() => {
     const el = scroller.current;
@@ -100,6 +105,7 @@ export function ChatDock({
       addChat({ id: `u-${Date.now()}`, role: "user", content: message, locale });
     }
     setStreaming(true);
+    setNotice("");
     try {
       const final = await streamChat(
         message,
@@ -107,6 +113,9 @@ export function ChatDock({
         locale,
         history,
         (ev) => {
+          if (ev.type === "notice" && typeof ev.message === "string") {
+            setNotice(ev.message);
+          }
           if (ev.type === "meta" && typeof ev.question_en === "string") {
             patchLastUser({ content_en: ev.question_en });
           }
@@ -128,6 +137,14 @@ export function ChatDock({
         if (opts?.regenerate) replaceLastAssistant(final);
         else addChat(final);
         if (final.ui?.length) applyUi(final.ui);
+      } else {
+        const empty: ChatMsg = {
+          id: `e-${Date.now()}`,
+          role: "assistant",
+          content: "No reply came back. Try again — if the advisor model is offline, answers still use live station data after a short wait.",
+        };
+        if (opts?.regenerate) replaceLastAssistant(empty);
+        else addChat(empty);
       }
     } catch (e) {
       const err: ChatMsg = { id: `e-${Date.now()}`, role: "assistant", content: `Chat failed: ${e}` };
@@ -206,12 +223,12 @@ export function ChatDock({
       query: t.chatStarterGeneralQuery || "What is today's weather outlook and conditions for travel and outdoor activities?",
     },
     {
-      label: locale === "hi" ? "पवन एवं वायु गुणवत्ता" : locale === "bn" ? "বাতাস ও বায়ুর মান" : "Wind & Air Quality",
-      query: locale === "hi"
-        ? "वर्तमान वायु गुणवत्ता (AQI) और हवा की गति क्या है?"
+      label: t.chatStarterAqiLabel || (locale === "hi" ? "पवन एवं वायु गुणवत्ता" : locale === "bn" ? "বাতাস ও বায়ুর মান" : "Air quality for health"),
+      query: t.chatStarterAqiQuery || (locale === "hi"
+        ? "क्या हवा बच्चों के लिए खराब है और हमें क्या करना चाहिए?"
         : locale === "bn"
-        ? "বর্তমান বায়ুর মান (AQI) এবং বাতাসের গতি কেমন?"
-        : "What are the current air quality (AQI) index and wind conditions?",
+        ? "বাচ্চাদের জন্য বাতাস কি খারাপ, এবং আমাদের কী করা উচিত?"
+        : "Is the air bad for my kids right now, and what should we do?"),
     },
   ];
 
@@ -235,7 +252,7 @@ export function ChatDock({
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             </div>
             <p className="text-[10px] text-neo-muted truncate font-medium" data-testid="chat-locus">
-              {answerFor || location?.label ? `${t.answeringFor} ${answerFor || location?.label}` : t.assistant}
+              {location?.label ? `${t.answeringFor} ${answerFor && answerFor !== location.label ? answerFor : location.label}` : t.assistant}
             </p>
           </div>
         </div>
@@ -345,6 +362,20 @@ export function ChatDock({
             )}
 
             {/* Assistant suggestions */}
+            {m.role === "assistant" && m.insight?.bands?.length ? (
+              <div className="mt-2 flex flex-wrap gap-1" data-testid="chat-insight-bands">
+                {m.insight.bands.slice(0, 6).map((b, i) => (
+                  <span
+                    key={`${b.key || "b"}-${i}`}
+                    className="rounded-md border border-[var(--line)] bg-[var(--card)] px-1.5 py-0.5 text-[9px] font-bold text-neo-muted"
+                    title={b.meaning || ""}
+                  >
+                    {(b.category || b.band || b.key) as string}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
             {m.role === "assistant" && m.suggestions && m.suggestions.length ? (
               <div className="mt-2 flex flex-wrap gap-1">
                 {m.suggestions.map((s: ChatSuggestion) => (
@@ -393,7 +424,9 @@ export function ChatDock({
             <span className="h-1.5 w-1.5 rounded-full bg-neo-accent animate-bounce" style={{ animationDelay: "0ms" }} />
             <span className="h-1.5 w-1.5 rounded-full bg-neo-accent animate-bounce" style={{ animationDelay: "150ms" }} />
             <span className="h-1.5 w-1.5 rounded-full bg-neo-accent animate-bounce" style={{ animationDelay: "300ms" }} />
-            <span className="text-[10px] font-bold ml-1">Analyzing meteorological radar...</span>
+            <span className="text-[10px] font-bold ml-1">
+              {notice || "Calling local advisor model..."}
+            </span>
           </div>
         ) : null}
       </div>
