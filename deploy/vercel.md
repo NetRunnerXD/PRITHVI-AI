@@ -21,4 +21,4 @@ CORS on the API Blueprint is `*`. After you have the Vercel URL, you can set Ren
 
 Redeploy if you added `NEXT_PUBLIC_API_BASE` after the first build (Settings → Environment Variables → Redeploy).
 
-Advisor and snapshot calls hit Render; a sleeping Free API can take up to a minute on the first request.
+Advisor and snapshot calls hit Render; a sleeping Free API can take up to a minute on the first request. The dashboard pings `/api/ready` every 10 minutes while a tab is open. For idle hours, add an external 10-minute ping to that URL.

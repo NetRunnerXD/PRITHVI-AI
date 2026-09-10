@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import Any
 
 from app import cache
-from app.config import ROOT
+from app.config import ROOT, get_settings
 from app.providers.http import client
 
 FORECAST = "https://api.open-meteo.com/v1/forecast"
@@ -88,6 +89,64 @@ _FC_DAILY = (
 )
 
 
+def _pin(lat: float, lon: float) -> tuple[float, float]:
+    return round(float(lat), 3), round(float(lon), 3)
+
+
+def _om_key(kind: str, lat: float, lon: float) -> str:
+    la, lo = _pin(lat, lon)
+    return f"om:{kind}:{la}:{lo}"
+
+
+def client_seeded(lat: float, lon: float) -> bool:
+    return bool(cache.get(_om_key("client", lat, lon)))
+
+
+def seed_from_client(
+    lat: float,
+    lon: float,
+    om: dict[str, Any] | None,
+    fetched_at: float | str | None = None,
+) -> bool:
+    """Cache browser Open-Meteo JSON so Render does not spend the shared quota."""
+    if not isinstance(om, dict):
+        return False
+    max_age = float(get_settings().om_client_max_age_s or 900)
+    age_ok = True
+    if fetched_at is not None:
+        try:
+            ts = float(fetched_at) if not isinstance(fetched_at, str) else None
+            if ts is None and isinstance(fetched_at, str) and fetched_at.strip():
+                from datetime import datetime
+
+                raw = fetched_at.strip().replace("Z", "+00:00")
+                ts = datetime.fromisoformat(raw).timestamp()
+            if ts is not None and (time.time() - ts) > max_age:
+                age_ok = False
+        except (TypeError, ValueError, OSError):
+            age_ok = True
+    if not age_ok:
+        return False
+    fc = om.get("forecast")
+    if not isinstance(fc, dict):
+        fc = om if (om.get("current") or om.get("hourly") or om.get("daily")) else None
+    if not isinstance(fc, dict) or not (fc.get("current") or fc.get("hourly") or fc.get("daily")):
+        return False
+    ttl, swr = 90.0, 600.0
+    cache.set(_om_key("fc4", lat, lon), fc, ttl, swr)
+    air = om.get("air")
+    if isinstance(air, dict) and (air.get("current") or air.get("hourly")):
+        cache.set(_om_key("aq2", lat, lon), air, 120.0, 600.0)
+    flood = om.get("flood")
+    if isinstance(flood, dict):
+        cache.set(_om_key("fl2", lat, lon), flood, 180.0, 900.0)
+    marine = om.get("marine")
+    if isinstance(marine, dict):
+        cache.set(_om_key("mr2", lat, lon), marine, 180.0, 900.0)
+    cache.set(_om_key("client", lat, lon), True, max_age, 0)
+    return True
+
+
 def _merge_om(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     out = dict(base)
     for block in ("hourly", "daily", "current"):
@@ -161,6 +220,10 @@ async def forecast_models(lat: float, lon: float) -> dict[str, Any]:
 
     if not missing and cached:
         return cached
+    if client_seeded(lat, lon):
+        base_fc = cache.get(_om_key("fc4", lat, lon))
+        if isinstance(base_fc, dict) and base_fc.get("daily"):
+            return {"best_match": base_fc}
 
     unique_models = sorted(set(m for _, m in BLEND_MODELS))
     daily_vars = (
@@ -569,6 +632,8 @@ async def era5_context(lat: float, lon: float) -> dict[str, Any]:
     hit = cache.get(key)
     if isinstance(hit, dict):
         return hit
+    if client_seeded(lat, lon):
+        return {}
     today = date.today()
     start = (today - timedelta(days=16)).isoformat()
     end = (today - timedelta(days=1)).isoformat()

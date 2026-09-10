@@ -1,7 +1,28 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from app.schemas.location import Location
 from app.schemas.risk import Prescription, RiskCard, TimePoint
+
+
+class OmClientPack(BaseModel):
+    forecast: dict[str, Any] | None = None
+    air: dict[str, Any] | None = None
+    flood: dict[str, Any] | None = None
+    marine: dict[str, Any] | None = None
+
+
+class DashboardPost(BaseModel):
+    location: Location | None = None
+    district: str | None = None
+    place: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    locale: str = "en"
+    disable: str | None = None
+    om: OmClientPack | dict[str, Any] | None = None
+    fetched_at: float | str | None = None
 
 
 class EarlyWarning(BaseModel):
@@ -145,6 +166,7 @@ class DashboardSnapshot(BaseModel):
     live: LiveWatch = Field(default_factory=LiveWatch)
     science: dict = {}
     quality: dict = {}
+    enriching: bool = False
 
     @property
     def warnings(self) -> list[EarlyWarning]:

@@ -19,7 +19,7 @@ import { SquareMap } from "@/components/SquareMap";
 import { ThemeBoot } from "@/components/ThemeBoot";
 import { Collapse, SourcesBox } from "@/components/ui";
 import { COPY } from "@/i18n/copy";
-import { fetchCompare, searchPlaces } from "@/lib/api";
+import { fetchCompare, pingReady, searchPlaces } from "@/lib/api";
 import { rain } from "@/lib/units";
 import { useApp } from "@/lib/store";
 import { ChatFloat } from "@/components/ChatFloat";
@@ -34,7 +34,9 @@ export default function Page() {
     tab,
     setTab,
     dashboard,
+    location,
     status,
+    syncStatus,
     error,
     refresh,
     quietRefresh,
@@ -62,6 +64,21 @@ export default function Page() {
     refresh();
     void loadAccount();
   }, [refresh, loadAccount]);
+
+  useEffect(() => {
+    pingReady();
+    const tick = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      pingReady();
+    };
+    const id = window.setInterval(tick, 10 * 60 * 1000);
+    const onFocus = () => pingReady();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -120,7 +137,7 @@ export default function Page() {
       <Sidebar />
       <AuthModal />
       <div className="min-w-0 flex-1 space-y-3">
-        <header className="neo relative z-50 flex flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
+        <header className="neo relative z-50 flex items-center gap-2 px-2.5 py-2 sm:px-4">
           <div className="flex items-center gap-2 lg:hidden shrink-0">
             <img
               src="/logo.png"
@@ -131,18 +148,30 @@ export default function Page() {
             />
           </div>
           <DistrictSearch locale={locale} onPick={(l) => setLocation(l)} />
-          {dashboard ? (
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="live-dot" aria-hidden />
-              <span className="truncate text-sm font-semibold">{dashboard.location.label}</span>
+          {dashboard && status === "ready" ? (
+            <div className="hidden lg:flex min-w-0 flex-wrap items-center gap-2">
+              <span className={`live-dot ${syncStatus === "syncing" ? "animate-pulse !bg-amber-400" : ""}`} aria-hidden />
+              <span className="truncate text-sm font-semibold">{location?.label || dashboard.location.label}</span>
+              {syncStatus === "syncing" ? (
+                <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
+                  Syncing AI models...
+                </span>
+              ) : syncStatus === "direct" ? (
+                <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">
+                  ⚡ Edge Weather Active
+                </span>
+              ) : null}
               {liveAt ? (
                 <span className="text-[11px] text-neo-muted">
                   {new Date(liveAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })}
                 </span>
               ) : null}
-              <button className="neo-btn text-xs" onClick={() => toggleFavorite(dashboard.location)}>
-                {pinned ? "★" : "☆"}
-              </button>
+              {dashboard ? (
+                <button className="neo-btn text-xs" onClick={() => toggleFavorite(dashboard.location)}>
+                  {pinned ? "★" : "☆"}
+                </button>
+              ) : null}
               {settings.showHints ? (
                 <span className="hidden text-[11px] text-neo-muted md:inline">{t.keyboardHint}</span>
               ) : null}
@@ -150,7 +179,7 @@ export default function Page() {
           ) : null}
 
           {/* Compact View Mode toggle for Mobile screens (<lg) where Desktop Sidebar is hidden */}
-          <div className="ml-auto flex items-center lg:hidden">
+          <div className="ml-auto flex items-center shrink-0 lg:hidden">
             <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
               <button
                 type="button"
@@ -197,8 +226,50 @@ export default function Page() {
           </div>
         ) : null}
 
-        {!dashboard && tab !== "settings" ? (
-          <p className="text-neo-muted">{status === "loading" ? t.loading : "…"}</p>
+        {(!dashboard || status === "loading") && tab !== "settings" ? (
+          <div className="space-y-4 py-6" role="status" aria-label={t.loading}>
+            {/* Top Hero Skeleton Card */}
+            <div className="neo p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden bg-[var(--card)]">
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[color-mix(in_srgb,var(--accent)_8%,transparent)] to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
+              <div className="space-y-3 w-full md:w-2/3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] animate-pulse" />
+                  <div className="h-6 w-48 rounded-lg bg-[color-mix(in_srgb,var(--text)_12%,transparent)] animate-pulse" />
+                </div>
+                <div className="h-10 w-3/4 rounded-xl bg-[color-mix(in_srgb,var(--text)_8%,transparent)] animate-pulse" />
+                <div className="h-4 w-1/2 rounded-md bg-[color-mix(in_srgb,var(--text)_6%,transparent)] animate-pulse" />
+              </div>
+              <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] border border-[color-mix(in_srgb,var(--accent)_15%,transparent)] w-full md:w-48 shrink-0">
+                <div className="w-12 h-12 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin mb-3" />
+                <p className="text-xs font-bold uppercase tracking-wider text-neo-accent animate-pulse text-center">
+                  {status === "loading" ? t.loading : status === "error" ? "Connection Issue" : "Initializing…"}
+                </p>
+                {status === "error" ? (
+                  <button
+                    onClick={() => refresh()}
+                    className="mt-3 px-3 py-1 rounded-lg text-xs font-bold bg-[var(--accent)] text-white hover:opacity-90 transition shadow-sm"
+                  >
+                    Retry Now
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Sub-grid Skeleton Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="neo p-4 space-y-3 relative overflow-hidden bg-[var(--card)]">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[color-mix(in_srgb,var(--accent)_6%,transparent)] to-transparent -translate-x-full animate-[shimmer_2s_infinite]" style={{ animationDelay: `${i * 0.25}s` }} />
+                  <div className="flex items-center justify-between">
+                    <div className="h-3 w-20 rounded bg-[color-mix(in_srgb,var(--text)_10%,transparent)] animate-pulse" />
+                    <div className="w-5 h-5 rounded-full bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] animate-pulse" />
+                  </div>
+                  <div className="h-8 w-28 rounded-lg bg-[color-mix(in_srgb,var(--text)_12%,transparent)] animate-pulse" />
+                  <div className="h-2 w-full rounded bg-[color-mix(in_srgb,var(--text)_6%,transparent)] animate-pulse" />
+                </div>
+              ))}
+            </div>
+          </div>
         ) : (
           <>
             {tab === "home" && dashboard ? (
@@ -333,7 +404,7 @@ export default function Page() {
                     { id: "hydrology", label: "Hydrology" },
                     { id: "seismology", label: "Seismology" },
                     { id: "agriculture", label: "Agriculture" },
-                    { id: "risks", label: "Risk" },
+                    ...((settings.devDisabledProviders || []).includes("risks") ? [] : [{ id: "risks", label: "Risk" }]),
                   ].map((sub) => (
                     <button
                       key={sub.id}
@@ -361,18 +432,27 @@ export default function Page() {
 
                 {dataSubTab === "risks" && (
                   <div className="space-y-3">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {[...(dashboard.risks || [])]
-                        .sort((a, b) => (b.score_pct ?? 0) - (a.score_pct ?? 0))
-                        .map((r) => (
-                          <RiskCard
-                            key={r.id}
-                            risk={r}
-                            locale={locale}
-                            highlight={Boolean(highlight && (highlight === r.id || highlight.includes(r.id)))}
-                          />
-                        ))}
-                    </div>
+                    {(settings.devDisabledProviders || []).includes("risks") ? (
+                      <div className="neo p-6 text-center space-y-2">
+                        <p className="text-sm font-bold text-neo-muted">Risk Engine Disabled</p>
+                        <p className="text-xs text-neo-muted">
+                          The Multi-Hazard Risk Engine has been turned off in Developer Settings. Enable it under Settings → Developer Telemetry &amp; Process Controls.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {[...(dashboard.risks || [])]
+                          .sort((a, b) => (b.score_pct ?? 0) - (a.score_pct ?? 0))
+                          .map((r) => (
+                            <RiskCard
+                              key={r.id}
+                              risk={r}
+                              locale={locale}
+                              highlight={Boolean(highlight && (highlight === r.id || highlight.includes(r.id)))}
+                            />
+                          ))}
+                      </div>
+                    )}
                   </div>
                 )}
 

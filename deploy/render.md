@@ -29,6 +29,10 @@ Also set `GROQ_API_KEY` (Advisor when the home Ollama worker is offline) and `LL
 
 Pushes to `main` / `master` that change `backend/` redeploy. Free instances sleep after ~15 minutes idle; the first request can take up to a minute.
 
+Keep-warm: the web app pings `GET /api/ready` every 10 minutes while a tab is visible. For zero-user hours, point UptimeRobot or cron-job.org at `https://<service>.onrender.com/api/ready` every 10 minutes — **not** `/api/dashboard` (that would spend Open-Meteo quota).
+
+`OM_SERVER_REFRESH` defaults off so Render does not rebuild snapshots from its shared IP. Browsers POST their Open-Meteo JSON to `/api/dashboard`.
+
 ## Clients
 
 ```

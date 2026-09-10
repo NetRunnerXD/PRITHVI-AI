@@ -4,11 +4,13 @@ from fastapi.responses import Response
 router = APIRouter()
 
 from app.api.deps import loc_from_query
+from app.providers import open_meteo
+from app.schemas.dashboard import DashboardPost
 from app.schemas.location import Location
 from app.services.compare import compare
-from app.services.location_svc import list_districts, list_states
+from app.services.location_svc import list_districts, list_states, resolve_location
 from app.services.scan import rank_districts
-from app.services.snapshot import build_snapshot
+from app.services.snapshot import build_snapshot, peek_snapshot
 from app.tools import build_registry
 
 
@@ -28,8 +30,40 @@ async def imd_asia_jpeg():
 
 
 @router.get("/dashboard")
-async def dashboard(loc: Location = Depends(loc_from_query), locale: str = "en"):
-    snap = await build_snapshot(loc, locale)
+async def dashboard(
+    loc: Location = Depends(loc_from_query),
+    locale: str = "en",
+    disable: str | None = Query(default=None, description="Comma-separated provider/process IDs to bypass"),
+):
+    disabled_set = {d.strip().lower() for d in disable.split(",")} if disable else None
+    snap = await build_snapshot(loc, locale, full=True, disabled=disabled_set)
+    return snap.model_dump()
+
+
+@router.post("/dashboard")
+async def dashboard_post(body: DashboardPost):
+    loc = body.location
+    if loc is None:
+        loc = resolve_location(q=body.place or body.district, lat=body.lat, lon=body.lon)
+        if body.lat is not None and body.lon is not None:
+            loc = loc.model_copy(update={"lat": body.lat, "lon": body.lon})
+    om = body.om
+    pack = om.model_dump() if hasattr(om, "model_dump") else om
+    if isinstance(pack, dict):
+        open_meteo.seed_from_client(loc.lat, loc.lon, pack, body.fetched_at)
+    disabled_set = {d.strip().lower() for d in (body.disable or "").split(",") if d.strip()} or None
+    snap = await build_snapshot(loc, body.locale or "en", full=True, disabled=disabled_set)
+    return snap.model_dump()
+
+
+@router.get("/dashboard/enrich")
+async def dashboard_enrich(
+    loc: Location = Depends(loc_from_query),
+    locale: str = "en",
+    disable: str | None = Query(default=None, description="Comma-separated provider/process IDs to bypass"),
+):
+    disabled_set = {d.strip().lower() for d in disable.split(",")} if disable else None
+    snap = await build_snapshot(loc, locale, full=True, disabled=disabled_set)
     return snap.model_dump()
 
 
@@ -231,14 +265,14 @@ def _nowcast_live_body(snap) -> dict:
 @router.get("/nowcast/live")
 @router.get("/nowcast-live")
 async def nowcast_live_api(loc: Location = Depends(loc_from_query)):
-    snap = await build_snapshot(loc)
+    snap = peek_snapshot(loc) or await build_snapshot(loc)
     return _nowcast_live_body(snap)
 
 
 @router.get("/live-nowcast")
 async def nowcast_live_alias(loc: Location = Depends(loc_from_query)):
     """Alias so older proxies that drop a nested /live segment still work."""
-    snap = await build_snapshot(loc)
+    snap = peek_snapshot(loc) or await build_snapshot(loc)
     return _nowcast_live_body(snap)
 
 
@@ -253,7 +287,7 @@ async def nowcast_sat_api(
     from app.science import sat_kalman
     from app.science.sat_phys import hydrate
 
-    snap = await build_snapshot(loc)
+    snap = peek_snapshot(loc) or await build_snapshot(loc)
     nc = (snap.science or {}).get("nowcast") or {}
     src_info = sat_obs.available_source()
     knots = sat_obs.knots_from_nowcast(nc)
@@ -286,11 +320,20 @@ async def nowcast_sat_api(
 @router.get("/insights")
 async def insights(loc: Location = Depends(loc_from_query)):
     snap = await build_snapshot(loc)
+    packet = None
+    try:
+        from app.agents.insight_compiler import compile_insight, snapshot_to_collected
+
+        collected = snapshot_to_collected(snap)
+        packet = compile_insight(loc, collected, snap=snap, generated_at=snap.generated_at).model_dump()
+    except Exception:
+        packet = None
     return {
         "warnings": [w.model_dump() for w in snap.prescriptive.warnings],
         "actions": [a.model_dump() for a in snap.prescriptive.actions],
         "diagnostic": snap.diagnostic.model_dump(),
         "vegetation": snap.vegetation,
+        "packet": packet,
     }
 
 

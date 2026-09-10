@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     llm_worker_timeout_s: float = 120.0
     snapshot_ttl_s: float = 600.0
     snapshot_swr_s: float = 3600.0
+    # Rebuild pins from the server IP (burns Open-Meteo quota). Off by default.
+    om_server_refresh: bool = False
+    om_client_max_age_s: float = 900.0
 
     # Hosted OpenAI-compat narrators. Keys stay on the server.
     llm_provider: str = "ollama"
@@ -100,6 +103,10 @@ class Settings(BaseSettings):
     vexyl_stt_url: str = ""
     vexyl_tts_url: str = ""
     vexyl_api_key: str = ""
+
+    # Insight chat canary. Both flag and percent required. Default off.
+    insight_chat: bool = False
+    insight_chat_percent: int = 0
 
     @property
     def cors_origin_list(self) -> list[str]:

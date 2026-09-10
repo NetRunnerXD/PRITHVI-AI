@@ -27,7 +27,12 @@ async def _snapshot_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    skip_loop = bool(os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("RITUCHAKRA_NO_SNAP_LOOP"))
+    s = get_settings()
+    skip_loop = bool(
+        os.environ.get("PYTEST_CURRENT_TEST")
+        or os.environ.get("RITUCHAKRA_NO_SNAP_LOOP")
+        or not s.om_server_refresh
+    )
     from app.auth.db import close as auth_close
     from app.auth.db import connect as auth_connect
     from app.auth.alerts_job import loop as sms_loop

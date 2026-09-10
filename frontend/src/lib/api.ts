@@ -1,5 +1,6 @@
 import type { ChatMsg, DashboardSnapshot, Location } from "@/types/dashboard";
 import { apiUrl } from "./config";
+import { getLastOmPack } from "./openMeteoClient";
 
 export { apiUrl, API_BASE } from "./config";
 
@@ -10,16 +11,13 @@ export async function fetchNowcastLive(loc?: Location): Promise<Record<string, u
   if (loc?.lat != null) q.set("lat", String(loc.lat));
   if (loc?.lon != null) q.set("lon", String(loc.lon));
   const qs = q.toString();
-  const paths = ["/nowcast/live", "/nowcast-live", "/live-nowcast", "/nowcast"];
-  for (const path of paths) {
-    try {
-      const r = await fetch(`${apiUrl(path)}?${qs}`);
-      if (!r.ok) continue;
-      const data = (await r.json()) as Record<string, unknown>;
-      if (data.gap || data.hours || data.knots || data.nowcast) return data;
-    } catch {
-      continue;
-    }
+  try {
+    const r = await fetch(`${apiUrl("/nowcast/live")}?${qs}`);
+    if (!r.ok) return null;
+    const data = (await r.json()) as Record<string, unknown>;
+    if (data.gap || data.hours || data.knots || data.nowcast) return data;
+  } catch {
+    return null;
   }
   return null;
 }
@@ -35,33 +33,63 @@ export async function fetchNowcastSat(
   if (loc?.lon != null) q.set("lon", String(loc.lon));
   q.set("stride", String(stride));
   const qs = q.toString();
-  const paths = ["/nowcast/sat", "/nowcast-sat"];
-  for (const path of paths) {
-    try {
-      const r = await fetch(`${apiUrl(path)}?${qs}`);
-      if (!r.ok) continue;
-      const data = (await r.json()) as Record<string, unknown>;
-      if (data.sat || data.formula || data.engine === "sat_kalman") return data;
-    } catch {
-      continue;
-    }
+  try {
+    const r = await fetch(`${apiUrl("/nowcast/sat")}?${qs}`);
+    if (!r.ok) return null;
+    const data = (await r.json()) as Record<string, unknown>;
+    if (data.sat || data.formula || data.engine === "sat_kalman") return data;
+  } catch {
+    return null;
   }
   return null;
 }
 
-export async function fetchDashboard(loc?: Location): Promise<DashboardSnapshot> {
+export async function fetchDashboard(
+  loc?: Location,
+  signal?: AbortSignal,
+  disabled?: string[],
+  om?: { forecast?: Record<string, unknown>; air?: Record<string, unknown> | null; fetched_at?: number }
+): Promise<DashboardSnapshot> {
   const q = new URLSearchParams();
   if (loc?.district) q.set("district", loc.district);
   if (loc?.place_name) q.set("place", loc.place_name);
   if (loc?.lat != null) q.set("lat", String(loc.lat));
   if (loc?.lon != null) q.set("lon", String(loc.lon));
-  const r = await fetch(`${apiUrl("/dashboard")}?${q.toString()}`);
+  if (disabled && disabled.length > 0) q.set("disable", disabled.join(","));
+
+  if (om?.forecast) {
+    const r = await fetch(apiUrl("/dashboard"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: loc || undefined,
+        district: loc?.district,
+        place: loc?.place_name,
+        lat: loc?.lat,
+        lon: loc?.lon,
+        disable: disabled?.join(",") || undefined,
+        om: { forecast: om.forecast, air: om.air || undefined },
+        fetched_at: om.fetched_at,
+      }),
+      signal,
+    });
+    if (!r.ok) throw new Error(`dashboard ${r.status}`);
+    return await r.json();
+  }
+
+  const r = await fetch(`${apiUrl("/dashboard")}?${q.toString()}`, { signal });
   if (!r.ok) throw new Error(`dashboard ${r.status}`);
-  return r.json();
+  return await r.json();
 }
 
-export async function searchPlaces(q: string): Promise<Location[]> {
-  const r = await fetch(`${apiUrl("/geo/search")}?q=${encodeURIComponent(q)}`);
+export function pingReady(): void {
+  void fetch(apiUrl("/ready"), { method: "GET", cache: "no-store" }).catch(() => undefined);
+}
+
+export async function searchPlaces(q: string, signal?: AbortSignal, local = false): Promise<Location[]> {
+  const qs = new URLSearchParams({ q });
+  if (local) qs.set("local", "true");
+  const r = await fetch(`${apiUrl("/geo/search")}?${qs.toString()}`, { signal });
   if (!r.ok) return [];
   const data = await r.json();
   return data.results || [];
@@ -275,44 +303,55 @@ export async function streamChat(
   llm?: string,
   showEvidence?: boolean
 ): Promise<ChatMsg | null> {
-  const r = await fetch(apiUrl("/chat"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify({
-      message,
-      locale_hint: locale,
-      output_locale: outputLocale || "auto",
-      location,
-      history: history.slice(-6),
-      regenerate: Boolean(regenerate),
-      conversation_id: conversationId || undefined,
-      llm: llm || undefined,
-      show_evidence: Boolean(showEvidence),
-    }),
-  });
-  if (!r.ok) throw new Error(`chat ${r.status}`);
-  if (!r.body) throw new Error("no stream");
-  const reader = r.body.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  let final: ChatMsg | null = null;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    const parts = buf.split("\n\n");
-    buf = parts.pop() || "";
-    for (const part of parts) {
-      const line = part.split("\n").find((l) => l.startsWith("data: "));
-      if (!line) continue;
-      try {
-        const ev = JSON.parse(line.slice(6));
-        onEvent(ev);
-        if (ev.type === "final") final = ev.message as ChatMsg;
-      } catch {
-        /* ignore partial */
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 180000);
+  try {
+    const r = await fetch(apiUrl("/chat"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({
+        message,
+        locale_hint: locale,
+        output_locale: outputLocale || "auto",
+        location,
+        history: history.slice(-6),
+        regenerate: Boolean(regenerate),
+        conversation_id: conversationId || undefined,
+        llm: llm || undefined,
+        show_evidence: Boolean(showEvidence),
+        om: getLastOmPack()
+          ? { forecast: getLastOmPack()!.forecast, air: getLastOmPack()!.air }
+          : undefined,
+        fetched_at: getLastOmPack()?.fetched_at,
+      }),
+      signal: ac.signal,
+    });
+    if (!r.ok) throw new Error(`chat ${r.status}`);
+    if (!r.body) throw new Error("no stream");
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let final: ChatMsg | null = null;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split("\n\n");
+      buf = parts.pop() || "";
+      for (const part of parts) {
+        const line = part.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+        try {
+          const ev = JSON.parse(line.slice(6));
+          onEvent(ev);
+          if (ev.type === "final") final = ev.message as ChatMsg;
+        } catch {
+          /* ignore partial */
+        }
       }
     }
+    return final;
+  } finally {
+    clearTimeout(timer);
   }
-  return final;
 }

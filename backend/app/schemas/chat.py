@@ -19,6 +19,7 @@ class ChatMessage(BaseModel):
     citations: list[dict] = []
     ui: list[dict] = []
     translation: dict | None = None
+    insight: dict | None = None
 
     @model_validator(mode="after")
     def _id(self):
@@ -41,6 +42,8 @@ class ChatRequest(BaseModel):
     stream: bool = True
     llm: str | None = None
     show_evidence: bool = False
+    om: dict | None = None
+    fetched_at: float | str | None = None
 
     @model_validator(mode="before")
     @classmethod

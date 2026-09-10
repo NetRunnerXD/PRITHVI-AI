@@ -6,11 +6,23 @@ import type { Locale } from "@/i18n/copy";
 export type ReplyLocale = Locale | "auto";
 import { fetchDashboard, reverseGeocode } from "./api";
 import { fetchMe, logoutAccount, type AuthUser } from "./auth";
+import { buildOptimisticSnapshot, fetchClientOmPack, type OmClientPack } from "./openMeteoClient";
+
+async function loadOmPack(loc: Location | null | undefined, disabled: string[]): Promise<OmClientPack | undefined> {
+  if (!loc || disabled.includes("open-meteo")) return undefined;
+  try {
+    const pack = await fetchClientOmPack(loc.lat, loc.lon, !disabled.includes("open-meteo-air"));
+    return pack || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 const FAV_KEY = "prithvi.favs";
 const REC_KEY = "prithvi.recent";
 const SET_KEY = "prithvi.settings";
 const LOC_KEY = "prithvi.loc";
+const SNAP_KEY = "prithvi.last_snap";
 
 export type AppSettings = {
   theme: ThemeId;
@@ -25,6 +37,8 @@ export type AppSettings = {
   llmProvider?: string;
   showEvidence?: boolean;
   displayNullValues?: boolean;
+  showAdvancedTabs?: boolean;
+  devDisabledProviders?: string[];
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -37,9 +51,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultTab: "home",
   showHints: false,
   locale: "en",
-  llmProvider: "ollama",
+  llmProvider: "local",
   showEvidence: false,
   displayNullValues: false,
+  showAdvancedTabs: false,
+  devDisabledProviders: [],
 };
 
 export function readSettings(): AppSettings {
@@ -94,6 +110,31 @@ function writeSavedLoc(loc: Location) {
   window.localStorage.setItem(LOC_KEY, JSON.stringify(loc));
 }
 
+function readCachedSnapshot(locId?: string): DashboardSnapshot | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const key = locId ? `${SNAP_KEY}.${locId}` : SNAP_KEY;
+    const raw = window.localStorage.getItem(key) || window.localStorage.getItem(SNAP_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as DashboardSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedSnapshot(snap: DashboardSnapshot) {
+  if (typeof window === "undefined") return;
+  try {
+    const serialized = JSON.stringify(snap);
+    window.localStorage.setItem(SNAP_KEY, serialized);
+    if (snap.location?.id) {
+      window.localStorage.setItem(`${SNAP_KEY}.${snap.location.id}`, serialized);
+    }
+  } catch {
+    // LocalStorage quota safety
+  }
+}
+
 function askGps(): Promise<Location | null> {
   if (typeof navigator === "undefined" || !navigator.geolocation) return Promise.resolve(null);
   return new Promise((resolve) => {
@@ -115,6 +156,7 @@ type State = {
   location: Location | null;
   dashboard: DashboardSnapshot | null;
   status: "idle" | "loading" | "ready" | "error";
+  syncStatus: "synced" | "syncing" | "direct" | "offline";
   error?: string;
   chat: ChatMsg[];
   streaming: boolean;
@@ -161,6 +203,10 @@ type State = {
     tab?: string;
     window?: Record<string, unknown>;
     location?: Location;
+    district?: string;
+    place?: string;
+    lat?: number;
+    lon?: number;
     center?: number[];
     zoom?: number;
   }) => void;
@@ -173,6 +219,8 @@ function newConversationId(): string {
 }
 
 const TABS = new Set<TabId>(["home", "analytics", "data", "map", "model", "chat", "settings"]);
+
+let dashAbort: AbortController | null = null;
 
 export const useApp = create<State>((set, get) => ({
   locale: "en",
@@ -193,6 +241,7 @@ export const useApp = create<State>((set, get) => ({
   location: null,
   dashboard: null,
   status: "idle",
+  syncStatus: "synced",
   chat: [],
   streaming: false,
   conversationId: newConversationId(),
@@ -237,8 +286,10 @@ export const useApp = create<State>((set, get) => ({
   },
   setOutputLocale: (outputLocale) => set({ outputLocale }),
   setTab: (tab) => set({ tab }),
-  applySnapshot: (dashboard) =>
-    set({ dashboard, location: dashboard.location, status: "ready" }),
+  applySnapshot: (dashboard) => {
+    writeCachedSnapshot(dashboard);
+    set({ dashboard, location: dashboard.location, status: "ready", syncStatus: "synced" });
+  },
   toggleFavorite: (loc) => {
     const favs = get().favorites.length ? get().favorites : readList(FAV_KEY);
     const next = favs.some((f) => f.id === loc.id) ? favs.filter((f) => f.id !== loc.id) : [loc, ...favs];
@@ -247,47 +298,135 @@ export const useApp = create<State>((set, get) => ({
   },
   setLocation: async (location) => {
     writeSavedLoc(location);
-    set({ location, status: "loading" });
+    const rec = [location, ...readList(REC_KEY).filter((r) => r.id !== location.id && r.label !== location.label)];
+    writeList(REC_KEY, rec);
+    const ac = new AbortController();
+    const prev = dashAbort;
+    dashAbort = ac;
+    prev?.abort();
+
+    // 1. Check local storage cache for instant 0ms render
+    const cached = readCachedSnapshot(location.id);
+    if (cached) {
+      set({
+        location,
+        dashboard: cached,
+        status: "ready",
+        syncStatus: "syncing",
+        recent: rec,
+        error: undefined,
+      });
+    } else {
+      // Immediately wire new location to dashboard with a responsive optimistic shell
+      const initialSnap = buildOptimisticSnapshot(location, {});
+      set({
+        location,
+        dashboard: initialSnap,
+        status: "ready",
+        syncStatus: "syncing",
+        recent: rec,
+        error: undefined,
+      });
+
+    }
+
+    // 3. Deep Hydration from Backend (POST client Open-Meteo so Render skips quota)
     try {
-      const dashboard = await fetchDashboard(location);
-      const rec = [dashboard.location, ...readList(REC_KEY).filter((r) => r.id !== dashboard.location.id)];
-      writeList(REC_KEY, rec);
+      const disabled = get().settings.devDisabledProviders || [];
+      const omPack = await loadOmPack(location, disabled);
+      if (dashAbort !== ac) return;
+      if (omPack && get().syncStatus !== "synced") {
+        const optSnap = buildOptimisticSnapshot(location, omPack.forecast, omPack.air);
+        set({ dashboard: optSnap, location, status: "ready", syncStatus: "direct" });
+      }
+      const dashboard = await fetchDashboard(location, ac.signal, disabled, omPack);
+      if (dashAbort !== ac) return;
+      writeSavedLoc(dashboard.location);
+      writeCachedSnapshot(dashboard);
       set({
         dashboard,
         location: dashboard.location,
         status: "ready",
-        recent: rec,
+        syncStatus: "synced",
+        error: undefined,
         favorites: get().favorites.length ? get().favorites : readList(FAV_KEY),
       });
     } catch (e) {
-      set({ status: "error", error: String(e) });
+      if (ac.signal.aborted || dashAbort !== ac) return;
+      if (get().dashboard && get().dashboard?.location?.id === location.id) {
+        set({ syncStatus: "direct", error: undefined });
+      } else {
+        set({ status: "error", syncStatus: "offline", error: e instanceof Error ? e.message : String(e) });
+      }
     }
   },
   refresh: async () => {
-    set({ status: "loading" });
+    const ac = new AbortController();
+    const prev = dashAbort;
+    dashAbort = ac;
+    prev?.abort();
+
+    let loc = get().location || readSavedLoc();
+    if (!loc) loc = await askGps();
+    if (loc) writeSavedLoc(loc);
+
+    // If we have an existing or cached dashboard, display it immediately without blanking
+    const cached = loc ? readCachedSnapshot(loc.id) : readCachedSnapshot();
+    const existing = (get().dashboard && (!loc || get().dashboard?.location?.id === loc.id))
+      ? get().dashboard
+      : cached;
+    if (existing) {
+      set({ dashboard: existing, location: loc || existing.location, status: "ready", syncStatus: "syncing" });
+    } else if (loc) {
+      const initialSnap = buildOptimisticSnapshot(loc, {});
+      set({ dashboard: initialSnap, location: loc, status: "ready", syncStatus: "syncing" });
+    } else {
+      set({ status: "loading", syncStatus: "syncing" });
+    }
+
     try {
-      let loc = get().location || readSavedLoc();
-      if (!loc) loc = await askGps();
-      if (loc) writeSavedLoc(loc);
-      const dashboard = await fetchDashboard(loc || undefined);
+      const disabled = get().settings.devDisabledProviders || [];
+      const omPack = loc ? await loadOmPack(loc, disabled) : undefined;
+      if (dashAbort !== ac) return;
+      if (omPack && loc && get().syncStatus !== "synced") {
+        const optSnap = buildOptimisticSnapshot(loc, omPack.forecast, omPack.air);
+        set({ dashboard: optSnap, location: loc, status: "ready", syncStatus: "direct" });
+      }
+      const dashboard = await fetchDashboard(loc || undefined, ac.signal, disabled, omPack);
+      if (dashAbort !== ac) return;
       writeSavedLoc(dashboard.location);
+      writeCachedSnapshot(dashboard);
       set({
         dashboard,
         location: dashboard.location,
         status: "ready",
+        syncStatus: "synced",
         favorites: get().favorites.length ? get().favorites : readList(FAV_KEY),
         recent: get().recent.length ? get().recent : readList(REC_KEY),
       });
     } catch (e) {
-      set({ status: "error", error: String(e) });
+      if (ac.signal.aborted || dashAbort !== ac) return;
+      if (get().dashboard) {
+        set({ syncStatus: "direct" });
+      } else {
+        set({ status: "error", syncStatus: "offline", error: String(e) });
+      }
     }
   },
   quietRefresh: async () => {
+    const loc = get().location || readSavedLoc() || undefined;
+    const locId = loc?.id;
     try {
-      const dashboard = await fetchDashboard(get().location || readSavedLoc() || undefined);
-      set({ dashboard, location: dashboard.location, status: "ready" });
-    } catch (e) {
-      if (!get().dashboard) set({ status: "error", error: String(e) });
+      const disabled = get().settings.devDisabledProviders || [];
+      const omPack = loc ? await loadOmPack(loc, disabled) : undefined;
+      const dashboard = await fetchDashboard(loc, undefined, disabled, omPack);
+      const cur = get().location;
+      if (locId && cur && cur.id !== locId) return;
+      if (loc && cur && (Math.abs(cur.lat - loc.lat) > 1e-3 || Math.abs(cur.lon - loc.lon) > 1e-3)) return;
+      writeCachedSnapshot(dashboard);
+      set({ dashboard, location: dashboard.location, status: "ready", syncStatus: "synced" });
+    } catch {
+      // Quiet background refresh failure shouldn't disrupt UI
     }
   },
   addChat: (m) => set({ chat: [...get().chat, m] }),
