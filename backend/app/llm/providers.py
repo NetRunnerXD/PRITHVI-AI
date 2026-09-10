@@ -11,7 +11,8 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 XAI_URL = "https://api.x.ai/v1"
 GITHUB_URL = "https://models.inference.ai.azure.com"
-IDS = ("ollama", "groq", "gemini", "github", "openrouter", "xai")
+IDS = ("local", "worker", "ollama", "groq", "gemini", "github", "openrouter", "xai")
+SETTINGS_IDS = ("local", "worker", "groq", "gemini")
 
 
 @dataclass(frozen=True)
@@ -30,13 +31,22 @@ def _key(raw: str | None) -> str:
 def spec(pid: str, s: Settings | None = None) -> Provider | None:
     s = s or get_settings()
     name = (pid or "").strip().lower()
-    if name == "ollama":
+    if name in ("ollama", "local"):
         return Provider(
-            id="ollama",
+            id=name,
             model=s.ollama_model,
             base_url=s.ollama_base_url,
             api_key=s.ollama_api_key or "ollama",
             keyed=True,
+        )
+    if name == "worker":
+        token = (s.llm_worker_token or "").strip()
+        return Provider(
+            id="worker",
+            model=s.ollama_model,
+            base_url=s.ollama_base_url,
+            api_key=s.ollama_api_key or "ollama",
+            keyed=bool(token),
         )
     if name == "groq":
         k = _key(s.groq_api_key)
@@ -79,6 +89,20 @@ def resolve(requested: str | None = None, s: Settings | None = None) -> Provider
     ollama = spec("ollama", s)
     assert ollama is not None
     return ollama
+
+
+def select_narrator(payload, settings: Settings | None = None, *, insight_turn: bool) -> str | None:
+    """Return provider id to use_provider, or None to keep resolve() default.
+
+    Never treats providers.available() as liveness. Does not switch all chat.
+    """
+    s = settings or get_settings()
+    want = (getattr(payload, "llm", None) or "").strip().lower()
+    if want:
+        return want
+    if insight_turn and _key(s.xai_api_key):
+        return "xai"
+    return None
 
 
 def fallback_ids(s: Settings | None = None) -> list[str]:

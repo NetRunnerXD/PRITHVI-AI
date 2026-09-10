@@ -1,5 +1,7 @@
 """Provider registry: keys, resolve, request override. No live HTTP."""
 
+import pytest
+
 from app.config import get_settings
 from app.llm import providers as registry
 from app.schemas.chat import ChatRequest
@@ -17,6 +19,18 @@ def test_default_is_ollama():
     p = registry.resolve(None)
     assert p.id == "ollama"
     assert p.keyed
+
+
+def test_local_and_worker_specs():
+    s = _s(llm_worker_token="tok")
+    loc = registry.spec("local", s)
+    assert loc is not None and loc.keyed and loc.id == "local"
+    w = registry.spec("worker", s)
+    assert w is not None and w.keyed
+    s2 = _s(llm_worker_token="")
+    w2 = registry.spec("worker", s2)
+    assert w2 is not None and not w2.keyed
+    assert registry.resolve("local", s).id == "local"
 
 
 def test_gemini_without_key_is_not_available(monkeypatch):
@@ -72,14 +86,263 @@ def test_chat_request_aliases_and_loose_location():
     assert c.history[0].content == "yo"
 
 
+def test_select_narrator_insight_xai():
+    s = _s(xai_api_key="x", llm_provider="ollama")
+    req = ChatRequest(message="AQI?")
+    assert registry.select_narrator(req, s, insight_turn=True) == "xai"
+    assert registry.select_narrator(req, s, insight_turn=False) is None
+    req2 = ChatRequest(message="AQI?", llm="groq")
+    assert registry.select_narrator(req2, s, insight_turn=True) == "groq"
+    s2 = _s(xai_api_key="", llm_provider="ollama")
+    assert registry.select_narrator(req, s2, insight_turn=True) is None
+
+
 def test_fallback_skips_empty_keys():
     s = _s(llm_fallback="groq,gemini", groq_api_key=None, gemini_api_key="k")
     assert registry.fallback_ids(s) == ["gemini"]
 
 
+@pytest.mark.asyncio
+async def test_chat_uses_local_ollama_even_with_worker_token_and_groq(monkeypatch):
+    """Cloud worker token + Groq key must not skip a live local Ollama GPU."""
+    from app.llm import ollama_client
+
+    called = {"n": 0}
+
+    class _Msg:
+        content = "local GPU"
+        tool_calls = None
+
+    class _Choice:
+        message = _Msg()
+
+    class _Resp:
+        choices = [_Choice()]
+
+    class _Completions:
+        async def create(self, **kwargs):
+            called["n"] += 1
+            return _Resp()
+
+    class _Chat:
+        completions = _Completions()
+
+    class _Client:
+        chat = _Chat()
+
+    monkeypatch.setattr(ollama_client, "client", lambda: _Client())
+    s = _s(groq_api_key="gsk", llm_worker_token="secret", llm_provider="ollama")
+    monkeypatch.setattr("app.llm.ollama_client.get_settings", lambda: s)
+    monkeypatch.setattr("app.llm.providers.get_settings", lambda: s)
+    out = await ollama_client.chat([{"role": "user", "content": "rain?"}])
+    assert called["n"] >= 1
+    assert out.get("provider") == "ollama"
+    assert "GPU" in out["content"]
+
+
+@pytest.mark.asyncio
+async def test_chat_uses_local_ollama_even_if_groq_keyed(monkeypatch):
+    """A Groq key must not skip the local GPU when no home-worker token is set."""
+    from app.llm import ollama_client
+
+    called = {"n": 0}
+
+    class _Msg:
+        content = "GPU reply about rain."
+        tool_calls = None
+
+    class _Choice:
+        message = _Msg()
+
+    class _Resp:
+        choices = [_Choice()]
+
+    class _Completions:
+        async def create(self, **kwargs):
+            called["n"] += 1
+            return _Resp()
+
+    class _Chat:
+        completions = _Completions()
+
+    class _Client:
+        chat = _Chat()
+
+    monkeypatch.setattr(ollama_client, "client", lambda: _Client())
+    monkeypatch.setattr(
+        "app.llm.ollama_client.get_settings",
+        lambda: _s(groq_api_key="gsk", llm_worker_token="", llm_provider="ollama"),
+    )
+    monkeypatch.setattr(
+        "app.llm.providers.get_settings",
+        lambda: _s(groq_api_key="gsk", llm_worker_token="", llm_provider="ollama"),
+    )
+    out = await ollama_client.chat([{"role": "user", "content": "rain?"}])
+    assert called["n"] == 1
+    assert "GPU reply" in out["content"]
+    assert out.get("provider") == "ollama"
+
+
 def test_fallback_auto_appends_groq_when_keyed():
     s = _s(llm_fallback="", groq_api_key="gsk")
     assert registry.fallback_ids(s) == ["groq"]
+
+
+class _ToolUseFailed(Exception):
+    status_code = 400
+    body: dict | None = None
+
+    def __init__(self, generation: str | None = None):
+        self.body = None
+        if generation:
+            self.body = {
+                "error": {
+                    "message": "Failed to call a function. Please adjust your prompt.",
+                    "code": "tool_use_failed",
+                    "failed_generation": generation,
+                }
+            }
+
+    def __str__(self) -> str:
+        return "Error code: 400 - Failed to call a function. tool_use_failed"
+
+
+class _Schema400(Exception):
+    status_code = 400
+
+    def __str__(self) -> str:
+        return "invalid_request_error: JSON schema validation failed"
+
+
+@pytest.mark.asyncio
+async def test_groq_tool_use_failed_retries_with_tools(monkeypatch):
+    from app.llm import ollama_client
+    from app.agents.data_tool import SCHEMA
+
+    n = {"i": 0}
+
+    class _Fn:
+        name = "data"
+        arguments = '{"need":"forecast"}'
+
+    class _Call:
+        id = "c1"
+        function = _Fn()
+
+    class _Msg:
+        content = ""
+        tool_calls = [_Call()]
+
+    class _Choice:
+        message = _Msg()
+
+    class _Resp:
+        choices = [_Choice()]
+
+    class _Completions:
+        async def create(self, **kwargs):
+            n["i"] += 1
+            if n["i"] == 1:
+                raise _ToolUseFailed()
+            assert kwargs.get("tools")
+            return _Resp()
+
+    class _Chat:
+        completions = _Completions()
+
+    class _Client:
+        chat = _Chat()
+
+    s = _s(groq_api_key="gsk", llm_provider="groq", llm_fallback="")
+    monkeypatch.setattr(ollama_client, "client", lambda: _Client())
+    monkeypatch.setattr("app.llm.ollama_client.get_settings", lambda: s)
+    monkeypatch.setattr("app.llm.providers.get_settings", lambda: s)
+    tok = ollama_client.use_provider("groq")
+    try:
+        out = await ollama_client.chat([{"role": "user", "content": "rain?"}], tools=[SCHEMA])
+    finally:
+        ollama_client.reset_provider(tok)
+    assert n["i"] == 2
+    assert out.get("tools_stripped") is False
+    assert out.get("provider") == "groq"
+    assert out["tool_calls"][0]["name"] == "data"
+
+
+@pytest.mark.asyncio
+async def test_groq_salvages_xml_failed_generation(monkeypatch):
+    from app.llm import ollama_client
+    from app.agents.data_tool import SCHEMA, parse_xml_tool_calls
+
+    xml = '<function=data{"need": "forecast", "place": "Haldia"}>'
+    assert parse_xml_tool_calls(xml)[0]["name"] == "data"
+
+    class _Completions:
+        async def create(self, **kwargs):
+            raise _ToolUseFailed(xml)
+
+    class _Chat:
+        completions = _Completions()
+
+    class _Client:
+        chat = _Chat()
+
+    s = _s(groq_api_key="gsk", llm_provider="groq", llm_fallback="")
+    monkeypatch.setattr(ollama_client, "client", lambda: _Client())
+    monkeypatch.setattr("app.llm.ollama_client.get_settings", lambda: s)
+    monkeypatch.setattr("app.llm.providers.get_settings", lambda: s)
+    tok = ollama_client.use_provider("groq")
+    try:
+        out = await ollama_client.chat([{"role": "user", "content": "rain?"}], tools=[SCHEMA])
+    finally:
+        ollama_client.reset_provider(tok)
+    assert out.get("tools_stripped") is False
+    assert out.get("via") == "failed-generation"
+    assert out["tool_calls"][0]["name"] == "data"
+    assert "forecast" in out["tool_calls"][0]["arguments"]
+
+
+@pytest.mark.asyncio
+async def test_groq_schema_error_strips_tools(monkeypatch):
+    from app.llm import ollama_client
+    from app.agents.data_tool import SCHEMA
+
+    n = {"i": 0}
+
+    class _Msg:
+        content = "data(need=forecast, place=Haldia)"
+        tool_calls = None
+
+    class _Choice:
+        message = _Msg()
+
+    class _Resp:
+        choices = [_Choice()]
+
+    class _Completions:
+        async def create(self, **kwargs):
+            n["i"] += 1
+            if kwargs.get("tools"):
+                raise _Schema400()
+            return _Resp()
+
+    class _Chat:
+        completions = _Completions()
+
+    class _Client:
+        chat = _Chat()
+
+    s = _s(groq_api_key="gsk", llm_provider="groq", llm_fallback="")
+    monkeypatch.setattr(ollama_client, "client", lambda: _Client())
+    monkeypatch.setattr("app.llm.ollama_client.get_settings", lambda: s)
+    monkeypatch.setattr("app.llm.providers.get_settings", lambda: s)
+    tok = ollama_client.use_provider("groq")
+    try:
+        out = await ollama_client.chat([{"role": "user", "content": "rain?"}], tools=[SCHEMA])
+    finally:
+        ollama_client.reset_provider(tok)
+    assert out.get("tools_stripped") is True
+    assert out.get("provider") == "groq"
+    assert out.get("error")
 
 
 def _s(**over):

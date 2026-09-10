@@ -11,7 +11,15 @@ import type { Density, TabId, ThemeId, UnitSys } from "@/types/dashboard";
 const THEMES: ThemeId[] = ["sand", "monsoon", "midnight", "ocean", "contrast"];
 const TABS: TabId[] = ["home", "analytics", "data", "map", "model", "chat"];
 
-type LlmRow = { id: string; model: string; ok?: boolean };
+type LlmRow = { id: string; model: string; ok?: boolean; reason?: string };
+
+const LLM_LABELS: Record<string, string> = {
+  local: "Local Ollama",
+  worker: "Ollama worker (home PC)",
+  groq: "Groq",
+  gemini: "Gemini",
+  ollama: "Ollama",
+};
 
 export function SettingsPanel() {
   const { locale, setLocale, outputLocale, setOutputLocale, settings, setSettings, resetSettings, account, setAccount, setAuthModal, setLocation } =
@@ -24,7 +32,9 @@ export function SettingsPanel() {
       .then((r) => r.json())
       .then((body) => {
         if (stop) return;
-        const rows = (body?.llm?.available || []) as LlmRow[];
+        const rows = ((body?.llm?.settings || body?.llm?.available || []) as LlmRow[]).filter(
+          (r) => ["local", "worker", "groq", "gemini", "ollama"].includes(r.id)
+        );
         if (rows.length) setLlms(rows);
       })
       .catch(() => undefined);
@@ -188,12 +198,13 @@ export function SettingsPanel() {
           {t.advisorModel}
           <select
             className="neo-in mt-1 w-full px-3 py-2"
-            value={settings.llmProvider || "ollama"}
+            value={settings.llmProvider === "ollama" ? "local" : settings.llmProvider || "local"}
             onChange={(e) => setSettings({ llmProvider: e.target.value })}
           >
             {llms.map((row) => (
-              <option key={row.id} value={row.id}>
-                {row.id} ({row.model})
+              <option key={row.id} value={row.id} disabled={row.ok === false}>
+                {LLM_LABELS[row.id] || row.id} ({row.model})
+                {row.ok === false && row.reason ? ` — ${row.reason}` : ""}
               </option>
             ))}
           </select>
@@ -274,6 +285,25 @@ export function SettingsPanel() {
           {t.displayNullValues || "Display Null Values"}
         </label>
         <p className="text-xs text-neo-muted">{t.displayNullValuesHint || "Show weather and sensor metrics with empty or null readings."}</p>
+        <label className="flex items-center gap-2 text-sm pt-1">
+          <input
+            type="checkbox"
+            checked={Boolean(settings.showAdvancedTabs)}
+            onChange={(e) => setSettings({ showAdvancedTabs: e.target.checked })}
+          />
+          {locale === "hi"
+            ? "उन्नत वैज्ञानिक टैब (डेटा, मॉडल, विश्लेषण) दिखाएं"
+            : locale === "bn"
+            ? "উন্নত বৈজ্ঞানিক ট্যাব (উপাত্ত, মডেল, বিশ্লেষণ) দেখান"
+            : "Show Advanced Tabs (Data, Model, Analytics)"}
+        </label>
+        <p className="text-xs text-neo-muted">
+          {locale === "hi"
+            ? "साइडबार में मॉडल्स, डेटा एवं एनालिटिक्स टैब को सक्रिय या छुपाएं।"
+            : locale === "bn"
+            ? "সাইডবারে মডেল, উপাত্ত ও বিশ্লেষণ ট্যাব দৃশ্যমান বা লুকান।"
+            : "Display or hide deep-dive Analytics, Raw Data, and ML Model tabs in the sidebar."}
+        </p>
       </section>
 
       <section className="neo space-y-3 p-4">
@@ -287,6 +317,152 @@ export function SettingsPanel() {
         </p>
         <p className="text-xs text-neo-muted">{t.apiEndpoint}</p>
         <p className="break-all font-mono text-[11px] text-neo-muted">{API_BASE || "(same origin /api)"}</p>
+      </section>
+
+      {/* Developer Controls: Individual API & Machine Learning Toggles */}
+      <section className="neo space-y-4 p-4 md:col-span-2 border-t-2 border-neo-accent/30">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold">🛠️ Developer Telemetry &amp; Process Controls</span>
+              <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400">
+                PRO / DEV
+              </span>
+            </div>
+            <p className="text-xs text-neo-muted mt-0.5">
+              Selectively disable or enable upstream data providers and intensive ML pipeline modules to isolate performance bottlenecks or reduce latency.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="neo-btn text-xs px-2.5 py-1"
+              onClick={() => setSettings({ devDisabledProviders: [] })}
+            >
+              Enable All
+            </button>
+            <button
+              type="button"
+              className="neo-btn text-xs px-2.5 py-1 text-amber-600"
+              onClick={() =>
+                setSettings({
+                  devDisabledProviders: [
+                    "nasa-power-clim",
+                    "data.gov.in-mandi",
+                    "data.gov.in-aqi",
+                    "open-meteo-models",
+                    "openaq-hist",
+                    "science",
+                    "anomalies",
+                  ],
+                })
+              }
+            >
+              Turbo Mode (Fastest)
+            </button>
+          </div>
+        </div>
+
+        {/* Upstream APIs */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-neo-muted">External Telemetry APIs</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {[
+              { id: "open-meteo", name: "Open-Meteo Forecast", latency: "~300ms", desc: "Core weather & 7-day outlook" },
+              { id: "open-meteo-models", name: "Open-Meteo 8-Model Blend", latency: "~2.2s", desc: "ECMWF, GFS, ICON ensemble" },
+              { id: "open-meteo-flood", name: "GloFAS Flood API", latency: "~500ms", desc: "River discharge rates" },
+              { id: "open-meteo-air", name: "CAMS Air Quality API", latency: "~400ms", desc: "PM2.5, PM10, gases" },
+              { id: "open-meteo-marine", name: "Marine Waves & SST", latency: "~600ms", desc: "Coastal wave height & swell" },
+              { id: "data.gov.in-aqi", name: "Data.gov.in CPCB AQI", latency: "~1.8s", desc: "National ground sensors" },
+              { id: "data.gov.in-mandi", name: "Data.gov.in Mandi Prices", latency: "~2.4s", desc: "Agmarknet crop arrivals" },
+              { id: "imd-cap", name: "IMD CAP Bulletins", latency: "~900ms", desc: "National early warning XML" },
+              { id: "imd-rest", name: "IMD Official Station REST", latency: "~1.2s", desc: "Local synoptic weather" },
+              { id: "sachet", name: "Sachet NDMA Feeds", latency: "~800ms", desc: "State disaster alerts" },
+              { id: "nasa-power", name: "NASA POWER Daily", latency: "~1.5s", desc: "16-day surface solar & rain" },
+              { id: "nasa-power-clim", name: "NASA POWER 8-Yr Climate", latency: "~2.8s", desc: "Historical matrix for anomalies" },
+              { id: "usgs-seismic", name: "USGS Seismic Feed", latency: "~350ms", desc: "Earthquake events geo-radius" },
+              { id: "incois-tsunami", name: "INCOIS Tsunami Bulletins", latency: "~700ms", desc: "ITEWS Indian Ocean threat" },
+              { id: "openaq-hist", name: "OpenAQ Historical Archive", latency: "~1.1s", desc: "48h pollutant trend records" },
+              { id: "waqi", name: "WAQI Realtime Station", latency: "~300ms", desc: "Alternative IoT AQI sensor" },
+              { id: "mosdac", name: "ISRO MOSDAC Satellite", latency: "~900ms", desc: "INSAT-3D HDF5/thermal feed" },
+              { id: "gdacs", name: "GDACS Disaster Events", latency: "~300ms", desc: "UN/EU global disaster RSS" },
+            ].map((api) => {
+              const disabledList = settings.devDisabledProviders || [];
+              const isOff = disabledList.includes(api.id);
+              return (
+                <div
+                  key={api.id}
+                  onClick={() => {
+                    const next = isOff ? disabledList.filter((x) => x !== api.id) : [...disabledList, api.id];
+                    setSettings({ devDisabledProviders: next });
+                  }}
+                  className={`cursor-pointer rounded-xl border p-2.5 transition-all select-none ${
+                    isOff
+                      ? "bg-red-500/10 border-red-500/30 opacity-70"
+                      : "bg-[var(--card)] border-[var(--line)] hover:border-neo-accent shadow-xs"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold truncate">{api.name}</span>
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        isOff ? "bg-red-500" : "bg-emerald-500 animate-pulse"
+                      }`}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] mt-1 text-neo-muted">
+                    <span className="truncate">{api.desc}</span>
+                    <span className="font-mono shrink-0 ml-1">{api.latency}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Backend Machine Learning & Decision Science Processes */}
+        <div className="space-y-2 pt-2 border-t border-[var(--line)]">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-neo-muted">
+            Backend ML &amp; Decision Science Engines
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {[
+              { id: "science", name: "Decision-Science Pipeline", desc: "Hysteresis, phenology & livelihood" },
+              { id: "anomalies", name: "Climatological Anomaly Engine", desc: "Z-score tail anomaly detection" },
+              { id: "risks", name: "Multi-Hazard Risk Engine", desc: "10-factor weighted linear scores" },
+              { id: "regret", name: "Regret-Theory Irrigation Advice", desc: "Minimax regret water evaluation" },
+              { id: "sat_live", name: "INSAT Computer Vision / Optical Flow", desc: "Live satellite cloud motion" },
+              { id: "vera", name: "VERA-MoE Neural Architecture", desc: "Mixture-of-Experts neural blend" },
+            ].map((proc) => {
+              const disabledList = settings.devDisabledProviders || [];
+              const isOff = disabledList.includes(proc.id);
+              return (
+                <div
+                  key={proc.id}
+                  onClick={() => {
+                    const next = isOff ? disabledList.filter((x) => x !== proc.id) : [...disabledList, proc.id];
+                    setSettings({ devDisabledProviders: next });
+                  }}
+                  className={`cursor-pointer rounded-xl border p-2.5 transition-all select-none ${
+                    isOff
+                      ? "bg-red-500/10 border-red-500/30 opacity-70"
+                      : "bg-[var(--card)] border-[var(--line)] hover:border-neo-accent shadow-xs"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold truncate">{proc.name}</span>
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        isOff ? "bg-red-500" : "bg-emerald-500 animate-pulse"
+                      }`}
+                    />
+                  </div>
+                  <div className="text-[10px] mt-1 text-neo-muted truncate">{proc.desc}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </section>
     </div>
   );
