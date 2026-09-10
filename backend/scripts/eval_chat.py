@@ -37,7 +37,12 @@ async def gold_for(case: dict) -> dict:
 
 async def run_one(case: dict) -> dict:
     loc = resolve_location(q=case.get("focus") or case.get("place") or "Haldia")
-    payload = ChatRequest(message=case["q"], location=loc)
+    payload = ChatRequest(
+        message=case["q"],
+        location=loc,
+        conversation_id=case.get("conversation_id") or f"eval-{case.get('id')}",
+        show_evidence=bool(case.get("insight")),
+    )
     final = None
     fetched: list[str] = []
     async for ev in run_agent(payload):

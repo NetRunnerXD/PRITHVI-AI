@@ -242,10 +242,22 @@ def quote_facts(collected: dict[str, Any], window: dict[str, str] | None = None)
             known = [float(r["precip_mm"]) for r in days if r.get("precip_mm") is not None]
             total = sum(known) if known else None
             clock = (window or {}).get("hour")
-            clock_bit = f" (asked hour {clock}:00 IST; model is daily, not a {clock}:00 gauge)" if clock not in (None, "") else ""
-            lines.append(
-                f"{name} {wstart}: {_fmt(total)} mm (Open-Meteo daily, not a gauge).{clock_bit}"
-            )
+            slot = (collected.get("forecast") or {}).get("hourly_slot") if isinstance(collected.get("forecast"), dict) else None
+            if isinstance(slot, dict) and clock not in (None, ""):
+                lines.append(
+                    f"{name} {wstart} {clock}:00 IST hourly (Open-Meteo model, not a gauge): "
+                    f"temp {_fmt(slot.get('temp_c'))}°C, rain {_fmt(slot.get('precip_mm'))} mm"
+                    + (f" ({slot.get('precip_prob_pct')}%)" if slot.get("precip_prob_pct") is not None else "")
+                    + (f", wind {_fmt(slot.get('wind_kmh'))} km/h" if slot.get("wind_kmh") is not None else "")
+                    + (f", {slot.get('sky_label')}" if slot.get("sky_label") else "")
+                    + "."
+                )
+                lines.append(f"{name} {wstart} daily total {_fmt(total)} mm (Open-Meteo daily).")
+            else:
+                clock_bit = f" (asked hour {clock}:00 IST)" if clock not in (None, "") else ""
+                lines.append(
+                    f"{name} {wstart}: {_fmt(total)} mm (Open-Meteo daily, not a gauge).{clock_bit}"
+                )
         else:
             total = win.get("total_mm")
             lines.append(
@@ -299,6 +311,18 @@ def quote_facts(collected: dict[str, Any], window: dict[str, str] | None = None)
             now_bits.append(f"this hour {_fmt(fc['precip_1h_mm'])} mm")
         if now_bits:
             lines.append(f"{place} now: " + ", ".join(now_bits) + " (Open-Meteo).")
+        slot = fc.get("hourly_slot") if isinstance(fc, dict) else None
+        clock = (window or {}).get("hour")
+        if isinstance(slot, dict) and not (isinstance(win, dict) and (win.get("days") or win.get("total_mm") is not None)):
+            hh = clock if clock not in (None, "") else fc.get("hour_ist")
+            lines.append(
+                f"{place} {hh}:00 IST hourly: temp {_fmt(slot.get('temp_c'))}°C, "
+                f"rain {_fmt(slot.get('precip_mm'))} mm"
+                + (f" ({slot.get('precip_prob_pct')}%)" if slot.get("precip_prob_pct") is not None else "")
+                + (f", wind {_fmt(slot.get('wind_kmh'))} km/h" if slot.get("wind_kmh") is not None else "")
+                + (f", {slot.get('sky_label')}" if slot.get("sky_label") else "")
+                + " (Open-Meteo hourly)."
+            )
         if not single_day and not (isinstance(win, dict) and win.get("days")) and fc.get("precip_next_3d_mm") is not None:
             lines.append(
                 f"{place} next 3 days {_fmt(fc.get('precip_next_3d_mm'))} mm, "
@@ -391,14 +415,23 @@ def quote_facts(collected: dict[str, Any], window: dict[str, str] | None = None)
     if cards:
         for c in cards:
             if isinstance(c, dict) and c.get("score_pct") is not None:
-                lines.append(f"{c.get('label') or c.get('id')} {c.get('score_pct')}% ({c.get('severity')}).")
+                bit = f"{c.get('label') or c.get('id')} {c.get('score_pct')}% ({c.get('severity')})"
+                if c.get("meaning"):
+                    bit += f" — {c.get('meaning')}"
+                lines.append(bit + ".")
     warns = collected.get("warnings")
     wrows = warns.get("warnings") if isinstance(warns, dict) else None
     if wrows:
-        titles = [str(w.get("title")) for w in wrows[:3] if isinstance(w, dict) and w.get("title")]
-        if titles:
-            lines.append("Watches: " + "; ".join(titles) + ".")
-        else:
+        for w in wrows[:6]:
+            if not isinstance(w, dict) or not w.get("title"):
+                continue
+            sev = w.get("severity") or w.get("hazard") or "watch"
+            meaning = (w.get("meaning") or w.get("body") or "")[:180]
+            line = f"Warning ({sev}): {w.get('title')}"
+            if meaning and meaning != w.get("title"):
+                line += f" — {meaning}"
+            lines.append(line)
+        if not any(isinstance(w, dict) and w.get("title") for w in wrows):
             lines.append("No district CAP titles in the current Rituchakra watch list.")
     cap = collected.get("capability") or {}
     if isinstance(cap, dict) and cap.get("available") is False and cap.get("reason"):
@@ -572,6 +605,40 @@ def format_card_overview(
         if not target_row and wdays and isinstance(wdays[0], dict):
             target_row = wdays[0]
 
+    slot = fc.get("hourly_slot") if isinstance(fc, dict) else None
+    if isinstance(slot, dict) and clock not in (None, ""):
+        if not place_name and isinstance(fc, dict):
+            place_name = str(fc.get("place") or fc.get("label") or "").split(",")[0].strip()
+        place = place_name or "This area"
+        time_tag = f"at {clock}:00 IST"
+        if single_day and wstart:
+            time_tag = f"on {wstart} at {clock}:00 IST"
+        sky = slot.get("sky_label") or "fair"
+        parts = [f"{place} {time_tag} is {str(sky).lower()}"]
+        if slot.get("temp_c") is not None:
+            parts.append(f"about {_fmt(slot.get('temp_c'))}°C")
+        if slot.get("precip_mm") is not None:
+            prob = f" ({slot.get('precip_prob_pct')}%)" if slot.get("precip_prob_pct") is not None else ""
+            parts.append(f"rain {_fmt(slot.get('precip_mm'))} mm{prob}")
+        if slot.get("wind_kmh") is not None:
+            parts.append(f"wind {_fmt(slot.get('wind_kmh'))} km/h")
+        lines.append(parts[0] + (" with " + ", ".join(parts[1:]) if len(parts) > 1 else "") + " (Open-Meteo hourly).")
+        lines.append(
+            generate_actionable_advice(
+                domain,
+                {
+                    "precip_mm": slot.get("precip_mm"),
+                    "precip_prob_pct": slot.get("precip_prob_pct"),
+                    "temp_c": slot.get("temp_c"),
+                    "wind_kmh": slot.get("wind_kmh"),
+                    "sky_label": sky,
+                },
+                condition=str(sky),
+                activity=activity,
+            )
+        )
+        return " ".join(lines).strip()
+
     if target_row or (isinstance(fc, dict) and fc):
         place = place_name or "This area"
         cur_temp = fc.get("temp_c") if isinstance(fc, dict) else None
@@ -652,12 +719,44 @@ def format_card_overview(
             lines.append(generate_actionable_advice(domain, {"aqi": val}, activity=activity))
             return " ".join(lines).strip()
 
-    # 5. Warnings overview
+    # 5. Warnings / risks overview
+    risk_pack = collected.get("risks") if isinstance(collected.get("risks"), dict) else None
+    risk_rows = (risk_pack or {}).get("risks") if risk_pack else None
     if isinstance(warns, dict) and warns.get("warnings"):
-        wlist = warns.get("warnings") or []
-        lines.append(f"Active alerts: {len(wlist)} weather warning(s) currently issued for this sector.")
-        lines.append(generate_actionable_advice(domain, {"precip_mm": 20.0}, condition="thunderstorm", activity=activity))
+        wlist = [w for w in (warns.get("warnings") or []) if isinstance(w, dict)]
+        place = str(warns.get("place") or "This pin")
+        if domain == "disaster":
+            bits = [f"SITUATION: {place} has {len(wlist)} live warning(s)."]
+            for w in wlist[:5]:
+                bits.append(f"HAZARD: {w.get('title')} ({w.get('severity') or w.get('hazard') or 'watch'}).")
+            if risk_rows:
+                for c in risk_rows[:4]:
+                    if isinstance(c, dict) and c.get("score_pct") is not None:
+                        bits.append(f"RISK: {c.get('label')} {c.get('score_pct')}% {c.get('severity')}.")
+            bits.append(
+                generate_actionable_advice(domain, {"precip_mm": 20.0, "flood_score": 50}, condition="thunderstorm", activity=activity)
+            )
+            return " ".join(bits).strip()
+        titles = [str(w.get("title")) for w in wlist[:4] if w.get("title")]
+        lines.append(f"Active alerts at {place}: " + "; ".join(titles) + ".")
+        if risk_rows:
+            hot = [
+                f"{c.get('label')} {c.get('score_pct')}%"
+                for c in risk_rows
+                if isinstance(c, dict) and c.get("score_pct") is not None
+            ][:4]
+            if hot:
+                lines.append("Risk scores: " + ", ".join(hot) + ".")
+        lines.append(generate_actionable_advice(domain, {"precip_mm": 8.0}, condition="watch", activity=activity))
         return " ".join(lines).strip()
+    if risk_rows:
+        place = str((risk_pack or {}).get("place") or "This pin")
+        bits = [f"{place} risk cards:"]
+        for c in risk_rows[:6]:
+            if isinstance(c, dict) and c.get("score_pct") is not None:
+                bits.append(f"{c.get('label')} {c.get('score_pct')}% ({c.get('severity')}).")
+        bits.append(generate_actionable_advice(domain, {"flood_score": 40}, activity=activity))
+        return " ".join(bits).strip()
 
     return ""
 

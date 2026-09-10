@@ -37,13 +37,13 @@ _EDGES: dict[str, tuple[str, ...]] = {
 
 _SEEDS = {
     "nowcast": ("pump", "next hour", "next 2", "onset", "field access", "nowcast"),
-    "forecast": ("outlook", "7 day", "temperature", "weather", "rain"),
+    "forecast": ("outlook", "7 day", "temperature", "weather", "rain", "at 3", "tomorrow at"),
     "rain_window": ("from ", " to ", "between ", "mm on", "august", "september"),
     "aqi": ("aqi", "air quality", "pollution", "pm2"),
     "quality": ("pollen", "uv index", "dew point", "all metrics", "every parameter"),
     "mandi": ("mandi", "quintal", "modal"),
-    "warnings": ("warning", "alert", "tsunami", "earthquake", "imd"),
-    "risks": ("flood risk", "drought", "heat risk"),
+    "warnings": ("warning", "alert", "tsunami", "earthquake", "imd", "hazard", "watch"),
+    "risks": ("flood risk", "drought", "heat risk", "risks", "risk at"),
     "rank": ("rank", "which district", "worst flood"),
     "states_weather": ("all india", "states"),
     "compare": (" vs ", "versus", "compare"),

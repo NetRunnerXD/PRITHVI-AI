@@ -18,9 +18,10 @@ from app.services.location_svc import resolve_named_place
 
 _RAIN = ("rain", "precip", "shower", "monsoon", "rainfall", "downpour", "mm ")
 _NOW = ("nowcast", "next 2", "next two", "hour", "hours", "tonight", "pump", "onset", "should i irrigat", "irrigate now")
-_AQI = ("aqi", "air quality", "pollution", "pm2", "smog")
+_AQI = ("aqi", "air quality", "pollution", "pm2", "smog", "the air", "air bad")
 _MANDI = ("mandi", "agmark", "quintal", "modal price")
-_WARN = ("warning", "imd cap", "alert", "tsunami", "earthquake", "quake")
+_WARN = ("warning", "imd cap", "alert", "tsunami", "earthquake", "quake", "watch", "hazard")
+_RISK = ("risk", "risks", "flood risk", "heat risk", "drought risk")
 _FORE = ("7 day", "seven day", "outlook", "next 3 day", "next three", "week ahead")
 _RANK = ("rank", "ranking", "which district", "worst", "most flood", "prone")
 _VISIT = ("visit", "tourist", "tourism", "holiday", "vacation", "trip", "best place", "best places")
@@ -219,6 +220,8 @@ def _looks_like_name(span: str | None) -> bool:
     if any(w.lower() in _QWORDS for w in words):
         return False
     if any(w.lower() in {"much", "many", "about", "it", "them", "there"} for w in words):
+        return False
+    if all(is_closed_token(w) for w in words):
         return False
     if len(words) == 1 and words[0].lower().endswith("ing") and words[0].lower() not in {"darjeeling", "pelling"}:
         return False
@@ -458,6 +461,8 @@ def interpret(text: str) -> Plan:
     if win and win.get("hour") is not None:
         from app.agents.dates import today_ist
 
+        if "forecast" not in needs:
+            needs.append("forecast")
         start = win.get("start")
         if start == today_ist() and "nowcast" not in needs:
             needs.append("nowcast")
@@ -473,6 +478,13 @@ def interpret(text: str) -> Plan:
         needs.append("mandi")
     if any(w in t for w in _WARN) and not rain:
         needs.append("warnings")
+        if "risks" not in needs:
+            needs.append("risks")
+    if any(w in t for w in _RISK):
+        if "risks" not in needs:
+            needs.append("risks")
+        if "warnings" not in needs:
+            needs.append("warnings")
     if any(w in t for w in ("driest", "drought", "dry spell")) and (states or "which" in t or any(w in t for w in _RANK)):
         needs.append("rank")
     if "flood" in t and (any(w in t for w in _RANK) or "which" in t or states):

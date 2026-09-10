@@ -50,8 +50,10 @@ SCHEMA = {
                 "state": {"type": "string", "description": "Indian state for rank"},
                 "metric": {"type": "string", "description": "rank metric: flood|rain|drought|heat|irrigation"},
                 "question": {"type": "string"},
+                "hour": {"type": "integer", "description": "IST clock hour 0–23 for an intra-day slot"},
             },
             "required": ["need"],
+            "additionalProperties": False,
         },
     },
 }
@@ -64,6 +66,40 @@ HOLES = {
     "imd_rest": "api.imd.gov.in returns 401. Official warnings are IMD CAP RSS.",
     "gauge": "Open-Meteo daily/hourly is a model, not a rain-gauge.",
 }
+
+
+_XML_BLOCK = re.compile(
+    r"<function\s*=\s*([A-Za-z0-9_]+)\s*>(.*?)</function>",
+    re.I | re.S,
+)
+_XML_INLINE = re.compile(
+    r"<function\s*=\s*([A-Za-z0-9_]+)\s*(\{.*?\})",
+    re.I | re.S,
+)
+
+
+def parse_xml_tool_calls(text: str) -> list[dict[str, Any]]:
+    """Groq/Llama XML tool calls: <function=data{\"need\":\"forecast\"}>."""
+    blob = text or ""
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _add(name: str, raw: str) -> None:
+        nm = (name or "").strip()
+        args = (raw or "").strip()
+        if not args.startswith("{"):
+            args = "{}"
+        key = (nm, args)
+        if not nm or key in seen:
+            return
+        seen.add(key)
+        out.append({"id": f"xml-{len(out)}", "name": nm, "arguments": args})
+
+    for m in _XML_BLOCK.finditer(blob):
+        _add(m.group(1), m.group(2) or "")
+    for m in _XML_INLINE.finditer(blob):
+        _add(m.group(1), m.group(2) or "")
+    return out
 
 
 def parse_text_call(text: str) -> dict[str, Any] | None:
@@ -80,7 +116,7 @@ def parse_text_call(text: str) -> dict[str, Any] | None:
             return None
         args: dict[str, Any] = {"need": need}
         rest = m.group("rest") or ""
-        for km in re.finditer(r"\b(place|start|end|other|metric|question)\s*=\s*['\"]?([^,'\"\s)]+)", rest, re.I):
+        for km in re.finditer(r"\b(place|start|end|other|metric|question|hour)\s*=\s*['\"]?([^,'\"\s)]+)", rest, re.I):
             args[km.group(1).lower()] = km.group(2).strip("\"'")
         return args
     m = re.search(r"\bdata\s*:?\s*([a-z_]+)\b(.*)$", raw, re.I | re.M)
@@ -90,7 +126,7 @@ def parse_text_call(text: str) -> dict[str, Any] | None:
     if need not in NEEDS:
         return None
     args = {"need": need}
-    for km in re.finditer(r"\b(place|start|end|other|metric|question)=(\S+)", m.group(2) or ""):
+    for km in re.finditer(r"\b(place|start|end|other|metric|question|hour)=(\S+)", m.group(2) or ""):
         args[km.group(1)] = km.group(2).strip("\"',")
     return args
 
@@ -182,6 +218,15 @@ class DataLib:
             days = list((p.get("outlook_days") or [])[:7])
             a = str(args.get("start") or "")[:10]
             b = str(args.get("end") or "")[:10]
+            hour_raw = args.get("hour")
+            hour_i: int | None = None
+            try:
+                if hour_raw is not None and str(hour_raw).strip() != "":
+                    hour_i = int(float(hour_raw))
+                    if hour_i < 0 or hour_i > 23:
+                        hour_i = None
+            except (TypeError, ValueError):
+                hour_i = None
             if a and b:
                 sliced = [
                     row
@@ -190,6 +235,10 @@ class DataLib:
                 ]
                 if sliced:
                     days = sliced
+            from app.ml.outlook import pick_hourly_slot
+
+            hours = list(p.get("hourly") or [])
+            slot = pick_hourly_slot(hours, a or None, hour_i)
             out = {
                 "need": "forecast",
                 "place": loc.place_name or loc.district,
@@ -199,6 +248,9 @@ class DataLib:
                 "sky_label": cur.sky_label,
                 "outlook_days": days,
             }
+            if slot:
+                out["hourly_slot"] = slot
+                out["hour_ist"] = hour_i
             if not (a and b and a == b):
                 out["precip_next_3d_mm"] = p.get("precip_next_3d_mm")
                 out["precip_7d_mm"] = p.get("precip_7d_mm")
@@ -254,8 +306,17 @@ class DataLib:
             }
         if need == "warnings":
             snap = await self._snap(loc if place else None)
-            warns = [w.model_dump() for w in snap.prescriptive.warnings[:8]]
-            return {"need": "warnings", "warnings": warns, "provider_status": snap.provider_status}
+            warns = []
+            for w in snap.prescriptive.warnings[:8]:
+                row = w.model_dump()
+                row["meaning"] = (row.get("body") or row.get("title") or "")[:280]
+                warns.append(row)
+            return {
+                "need": "warnings",
+                "place": loc.place_name or loc.district,
+                "warnings": warns,
+                "provider_status": snap.provider_status,
+            }
         if need == "compare":
             other = str(args.get("other") or "").strip()
             if not other:
@@ -289,10 +350,28 @@ class DataLib:
             return payload
         if need == "risks":
             snap = await self._snap(loc if place else None)
-            cards = [
-                {"id": r.id, "label": r.label, "score_pct": r.score_pct, "severity": r.severity}
-                for r in snap.risks
-            ]
+            meanings = {
+                "flood": "Waterlogging / river-flood potential from rain and runoff at this pin.",
+                "drought": "Soil-moisture deficit versus evaporative demand.",
+                "heat": "Heat-stress potential for outdoor labour and health.",
+                "irrigation_need": "Whether the plot is likely to need water in the next days.",
+                "aqi": "Air-quality exposure at or near this pin.",
+                "seismic": "Nearby catalogued earthquake exposure (not a shake map).",
+                "tsunami": "ITEWS / ocean-source tsunami watch for this coast.",
+                "marine": "Sea-state / small-craft risk if the pin is coastal.",
+            }
+            cards = []
+            for r in snap.risks:
+                cards.append(
+                    {
+                        "id": r.id,
+                        "label": r.label,
+                        "score_pct": r.score_pct,
+                        "severity": r.severity,
+                        "meaning": meanings.get(r.id, r.label),
+                        "horizon_hours": r.horizon_hours,
+                    }
+                )
             return {"need": "risks", "place": loc.place_name or loc.district, "risks": cards}
         return {"error": f"unhandled {need}"}
 

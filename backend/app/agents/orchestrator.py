@@ -52,10 +52,12 @@ from app.agents.utterance import (
 )
 from app.data.closed_class import is_closed_query
 from app.agents.memory import TurnState, load as mem_load, save as mem_save
-from app.agents.prompts import SYSTEM
+from app.agents.prompts import GEMINI_NATIVE_DELTA, INSIGHT_SYSTEM_DELTA, SYSTEM
 from app.agents.views import strip_forbidden
-from app.i18n.detect import detect_lang, pick_output_locale, script_of
+from app.i18n.detect import detect_lang, has_script, pick_output_locale, script_of
+from app.i18n.gemini_langs import gemini_native
 from app.i18n.mt import inbound as mt_inbound, outbound as mt_outbound
+from app.i18n.mt import MTResult
 from app.i18n.number_lock import NUM
 from app.llm import ollama_client
 from app.schemas.chat import ChatRequest
@@ -178,10 +180,13 @@ def _mt_kept_numbers(en: str, translated: str) -> bool:
     return bool(need & have)
 
 
-async def _localize_validated(content_en: str, out_locale: str):
+async def _localize_validated(content_en: str, out_locale: str, *, native: bool = False):
     """After English validation, translate the whole reply. Never splice templates."""
     if out_locale == "en" or not (content_en or "").strip():
         return content_en, None, "llm-en"
+    if native and has_script(content_en, out_locale):
+        ident = MTResult(text=content_en, src=out_locale, tgt=out_locale, engine="gemini-native", ok=True)
+        return content_en, ident, "gemini-native"
     outbound = await mt_outbound(content_en, out_locale)
     usable = bool(
         outbound.ok
@@ -210,9 +215,23 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
 async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     pin_now: Location = payload.location or resolve_location(None)
     loc: Location = pin_now
+    if payload.om:
+        from app.providers import open_meteo as om_mod
+
+        om_mod.seed_from_client(loc.lat, loc.lon, payload.om, payload.fetched_at)
     original = payload.message or ""
-    incoming = await mt_inbound(original, payload.locale_hint)
-    locale = incoming.src if incoming.src not in {"auto", ""} else detect_lang(original, payload.locale_hint)
+    detected0 = detect_lang(original, payload.locale_hint)
+    llm_id = (payload.llm or "").strip().lower()
+    if not llm_id:
+        from app.llm.providers import resolve as resolve_llm
+
+        llm_id = resolve_llm().id
+    native_gemini = llm_id == "gemini" and gemini_native(detected0)
+    if native_gemini:
+        incoming = MTResult(text=original, src=detected0 or "en", tgt="en", engine="gemini-native", ok=True)
+    else:
+        incoming = await mt_inbound(original, payload.locale_hint)
+    locale = incoming.src if incoming.src not in {"auto", ""} else detected0
     if incoming.ok:
         message_en = incoming.text or original
     elif locale != "en":
@@ -242,6 +261,8 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     )
     domain = layer1_ctx.domain
     activity = layer1_ctx.activity
+    insight_turn = False
+    insight_packet = None
 
     plan = interpret(message_en)
     tri = triage_classify(message_en, plan)
@@ -257,7 +278,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             "gate": "emergency",
         }
         em_en = tri.message
-        em, em_out, em_engine = await _localize_validated(em_en, out_locale)
+        em, em_out, em_engine = await _localize_validated(em_en, out_locale, native=native_gemini)
         yield {
             "type": "final",
             "message": {
@@ -294,6 +315,8 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             plan.refuse = None
         if not plan.needs and layer1_ctx.intent in ("forecast", "activity_feasibility"):
             plan.needs = ["forecast", "rain_window"]
+        if not plan.needs and layer1_ctx.intent == "warnings":
+            plan.needs = ["warnings", "risks"]
     else:
         resolved = None
 
@@ -331,6 +354,12 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             )
         )
     )
+    from app.data.closed_class import is_closed_token
+
+    if place and (is_closed_query(place) or is_closed_token(place)):
+        place = None
+        plan.asked = None
+        plan.needs_geocode = False
     if (
         resolved is None
         and place
@@ -478,6 +507,35 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     if beyond and "rain_window" in needed:
         needed = [n for n in needed if n != "rain_window"]
         gate.needs = list(needed)
+
+    from app.agents.insight_compiler import insight_canary, insight_eligible
+    from app.config import get_settings
+    from app.llm.providers import select_narrator
+
+    _settings = get_settings()
+    insight_ok = insight_eligible(layer1_ctx, gate, tri, plan)
+    insight_turn = insight_ok and insight_canary(
+        payload.conversation_id, _settings.insight_chat_percent, _settings.insight_chat
+    )
+    if insight_turn:
+        extra: list[str] = []
+        intent = layer1_ctx.intent
+        tone = getattr(layer1_ctx, "tone", "") or ""
+        if intent == "aqi" or tone in {"worried", "health"}:
+            extra.append("aqi")
+        elif intent in {"nowcast"} or tone == "rushed":
+            extra.extend(["nowcast", "forecast"])
+        elif intent in {"forecast", "activity_feasibility"}:
+            extra.append("forecast")
+        if "flood" in message_en.lower():
+            extra.append("risks")
+        if any(w in message_en.lower() for w in ("heat", "wbgt", "hot")):
+            extra.append("risks")
+        for n in extra:
+            if n not in needed:
+                needed.append(n)
+        gate.needs = list(needed)
+
     if gate.mode == "refuse" and gate.refuse:
         mem_save(
             payload.conversation_id,
@@ -503,7 +561,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             "translation": {"inbound": incoming.as_dict()},
         }
         refuse_en = gate.refuse
-        refuse, refuse_out, refuse_engine = await _localize_validated(refuse_en, out_locale)
+        refuse, refuse_out, refuse_engine = await _localize_validated(refuse_en, out_locale, native=native_gemini)
         msg_id = uuid.uuid4().hex[:12]
         yield {
             "type": "final",
@@ -567,9 +625,11 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     async def exec_data(args: dict[str, Any]) -> dict[str, Any]:
         args = dict(args)
         need = str(args.get("need") or "")
-        if need == "rain_window" and window_hint:
+        if need in {"rain_window", "forecast"} and window_hint:
             args.setdefault("start", window_hint.get("start"))
             args.setdefault("end", window_hint.get("end"))
+            if window_hint.get("hour") is not None:
+                args.setdefault("hour", window_hint.get("hour"))
         skip_clamp = need in {"rank", "states_weather", "place_search", "capability"}
         if need == "mandi" and "mandi" not in needed:
             return {
@@ -657,15 +717,44 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
 
     english_llm = ""
+    if insight_turn:
+        want = select_narrator(payload, _settings, insight_turn=True)
+        if want:
+            ollama_client.use_provider(want)
     ollama_ok, ollama_msg = await ollama_client.ping()
+    narrator = ollama_client._resolved()
+    yield {
+        "type": "notice",
+        "message": f"Narrator {narrator.id}:{narrator.model}"
+        + ("" if ollama_ok else f" (ping {ollama_msg}; still calling the model)"),
+    }
+    if not ollama_ok:
+        ollama_ok = True
     if ollama_ok:
         try:
-            messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM}]
+            sys_content = SYSTEM + ("\n" + INSIGHT_SYSTEM_DELTA if insight_turn else "")
+            if native_gemini and out_locale != "en":
+                sys_content = sys_content + GEMINI_NATIVE_DELTA.format(lang=out_locale)
+            messages: list[dict[str, Any]] = [{"role": "system", "content": sys_content}]
             messages.extend(history_en)
             hint_bits = [
-                f"STYLE: Keep your answer conversational, short (2 to 4 sentences), and focused on only 1–3 essential metrics. "
-                f"Always provide 1 practical, actionable suggestion tailored to the user's operational domain ({domain})."
+                f"User role / domain: {domain}. Vary wording; do not recycle a canned one-liner. "
+                "Quote only digits that appear in the fact pack below. Do not invent millimetres, AQI, or risk %."
             ]
+            if domain == "disaster":
+                hint_bits.append(
+                    "Format for an operations desk:\n"
+                    "SITUATION — 2–4 sentences on what is happening at this pin.\n"
+                    "HAZARDS — bullet list of active warnings and risk cards (severity + meaning).\n"
+                    "ACTIONS — 2–4 concrete next steps (observe, move, hold, notify). "
+                    "Never certify an all-clear."
+                )
+            else:
+                hint_bits.append(
+                    "Write a natural reply (about a short paragraph, or a few bullets if they asked for a list). "
+                    "Lead with the asked hour or day if one was named. End with one useful action for this user, "
+                    "phrased freshly from the numbers — not a stock irrigation/umbrella line."
+                )
             if window_hint:
                 w_start, w_end = window_hint.get("start"), window_hint.get("end")
                 w_label = f"{w_start} to {w_end}" if w_start != w_end else str(w_start)
@@ -704,43 +793,108 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                 hint_bits.append(f"The user named {place}.")
             if layer1_ctx.tailored_user_hint:
                 hint_bits.append(layer1_ctx.tailored_user_hint)
-            pre_quote = present_answer(collected, window=window_hint, compact=True, domain=domain, query=message_en, activity=activity)
-            if pre_quote:
-                hint_bits.append(
-                    "Already fetched figures (use only what was asked):\n" + pre_quote
+            if insight_turn:
+                from app.agents.insight_compiler import compile_insight
+                from app.services.snapshot import peek_snapshot
+
+                snap = peek_snapshot(loc)
+                insight_packet = compile_insight(
+                    loc, collected, layer1_ctx, snap=snap
                 )
+                for extra_need in list(insight_packet.needs_extra):
+                    if extra_need in collected:
+                        continue
+                    pack = await exec_data(
+                        {
+                            "need": extra_need,
+                            "place": loc.place_name or loc.district,
+                            "question": message_en,
+                        }
+                    )
+                    yield pack["start"]
+                    yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
+                if insight_packet.needs_extra:
+                    insight_packet = compile_insight(loc, collected, layer1_ctx, snap=snap)
+                hint_bits.append(
+                    "Insight packet (band names only; quote raw_cite digits if you must use a number):\n"
+                    + insight_packet.model_dump_json()
+                )
+                pre_quote = ""
+            else:
+                pre_quote = quote_facts(collected, window=window_hint)
+                if pre_quote:
+                    hint_bits.append(
+                        "Verified fact pack (quote these figures; write original prose around them):\n" + pre_quote
+                    )
             messages.append(
                 {
                     "role": "user",
                     "content": (
                         f"Question: {message_en}\n"
                         + ("\n".join(hint_bits) + "\n")
-                        + "Reply as chat. Call data() if you need a Rituchakra number for the named place."
+                        + (
+                            "Reply with the InsightReply JSON object only."
+                            if insight_turn
+                            else "Reply as chat. Call data() if you need a Rituchakra number for the named place."
+                        )
                     ),
                 }
             )
             rounds = 0
             nudged = False
             use_tools = bool(needed) or tri.kind == "data"
-            while rounds < 5:
+            max_rounds = 2 if insight_turn else 5
+            while rounds < max_rounds:
                 resp = await ollama_client.chat(
                     messages,
                     tools=[DATA_SCHEMA] if use_tools else None,
                 )
                 if resp.get("tools_stripped"):
-                    yield {"type": "notice", "message": "Ollama rejected tool schemas; reading a text data: line if present."}
-                    line = parse_text_call(resp.get("content") or "")
-                    if line:
-                        pack = await exec_data(line)
-                        yield pack["start"]
-                        yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
-                        messages.append({"role": "assistant", "content": resp.get("content") or ""})
+                    pid = str(resp.get("provider") or "model")
+                    err = str(resp.get("error") or "").strip()[:120]
+                    extra = f" ({err})" if err else ""
+                    yield {
+                        "type": "notice",
+                        "message": f"{pid} dropped tools{extra}; answering from server-fetched packs.",
+                    }
+                    use_tools = False
+                    xml_calls = []
+                    from app.agents.data_tool import parse_xml_tool_calls
+
+                    xml_calls = parse_xml_tool_calls(resp.get("content") or "")
+                    if xml_calls:
+                        resp = {**resp, "tool_calls": xml_calls, "content": ""}
+                    else:
+                        for need in list(needed):
+                            if need in collected or need == "rank":
+                                continue
+                            args: dict[str, Any] = {
+                                "need": need,
+                                "place": loc.place_name or loc.district,
+                                "question": message_en,
+                            }
+                            if need == "compare":
+                                other = extract_compare_other(message_en, loc.place_name or loc.district)
+                                if not other:
+                                    continue
+                                args["other"] = other
+                            pack = await exec_data(args)
+                            yield pack["start"]
+                            yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
+                        facts = quote_facts(collected, window=window_hint) or json.dumps(
+                            strip_forbidden(collected), ensure_ascii=False
+                        )[:8000]
                         messages.append(
                             {
                                 "role": "user",
-                                "content": f"data result:\n{json.dumps(pack['result'], ensure_ascii=False)[:8000]}\nNow answer the question in ordinary English. No tool names.",
+                                "content": (
+                                    "Function calling is off. Quote only these verified packs. "
+                                    "Ordinary English. No tool names.\n"
+                                    f"{facts}"
+                                ),
                             }
                         )
+                        english_llm = ""
                         rounds += 1
                         continue
                 calls = resp.get("tool_calls") or []
@@ -752,10 +906,18 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                         yield pack["start"]
                         yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
                         messages.append({"role": "assistant", "content": english_llm})
+                        if insight_turn:
+                            from app.agents.insight_compiler import compile_insight
+                            from app.services.snapshot import peek_snapshot
+
+                            insight_packet = compile_insight(loc, collected, layer1_ctx, snap=peek_snapshot(loc))
+                            follow2 = "Updated insight packet:\n" + insight_packet.model_dump_json() + "\nJSON InsightReply only."
+                        else:
+                            follow2 = f"data result:\n{json.dumps(pack['result'], ensure_ascii=False)[:8000]}\nNow answer in ordinary English."
                         messages.append(
                             {
                                 "role": "user",
-                                "content": f"data result:\n{json.dumps(pack['result'], ensure_ascii=False)[:8000]}\nNow answer in ordinary English.",
+                                "content": follow2,
                             }
                         )
                         english_llm = ""
@@ -806,11 +968,19 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                         yield pack["start"]
                         yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
                         tool_out = pack["result"]
+                    if insight_turn:
+                        from app.agents.insight_compiler import compile_insight
+                        from app.services.snapshot import peek_snapshot
+
+                        insight_packet = compile_insight(loc, collected, layer1_ctx, snap=peek_snapshot(loc))
+                        tool_blob = insight_packet.model_dump_json()
+                    else:
+                        tool_blob = json.dumps(tool_out, ensure_ascii=False)[:8000]
                     messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": c.get("id") or "x",
-                            "content": json.dumps(tool_out, ensure_ascii=False)[:8000],
+                            "content": tool_blob,
                         }
                     )
                 rounds += 1
@@ -916,7 +1086,18 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         }
 
     payloads = list(collected.values())
-    content_en, rejected = check_claims(english_llm, payloads, window=window_hint)
+    if insight_turn:
+        from app.agents.insight_compiler import compile_insight, finish_insight_body
+        from app.services.snapshot import peek_snapshot
+
+        if insight_packet is None:
+            insight_packet = compile_insight(loc, collected, layer1_ctx, snap=peek_snapshot(loc))
+        body, _src = finish_insight_body(english_llm, insight_packet, collected, message_en)
+        payloads = list(collected.values()) + [{"cites": insight_packet.cites}]
+        content_en, rejected = check_claims(body, payloads, window=window_hint)
+        english_llm = body
+    else:
+        content_en, rejected = check_claims(english_llm, payloads, window=window_hint)
     asked_name = place or (prior.asked if prior and inherit else None) or loc.place_name or loc.district
     pin_from_client = pin_now.label
     content_en = strip_unasked_pin(content_en, place, pin_from_client)
@@ -946,12 +1127,15 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     raw_ev = quote_facts(collected, window=window_hint)
     show_ev = bool(payload.show_evidence)
     llm_ok = bool(content_en) and not is_dash_soup(content_en) and not rejected
+    if insight_turn:
+        quoted = ""
+        raw_ev = ""
     if quoted and needed:
-        if not llm_ok or not prose_has_payload_number(content_en, collected):
+        if not content_en or is_dash_soup(content_en) or rejected:
             content_en = quoted
         elif show_ev and raw_ev and raw_ev not in content_en:
             content_en = f"{content_en}\n\n---\nEvidence\n{raw_ev}".strip()
-    elif quoted and (not llm_ok or not prose_has_payload_number(content_en, collected) or is_dash_soup(content_en)):
+    elif quoted and (not content_en or is_dash_soup(content_en) or rejected):
         content_en = quoted
     if not content_en:
         if collected:
@@ -963,7 +1147,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             )
     if beyond:
         content_en = f"{content_en}\n\n{BEYOND_SKILL}".strip() if content_en else BEYOND_SKILL
-    if needed:
+    if needed and not insight_turn:
         try:
             from app.rag.store import retrieve as rag_retrieve
 
@@ -987,7 +1171,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     if suggestions:
         yield {"type": "suggestions", "suggestions": suggestions}
 
-    content, outbound, engine = await _localize_validated(content_en, out_locale)
+    content, outbound, engine = await _localize_validated(content_en, out_locale, native=native_gemini)
     if not english_llm and engine == "llm-en":
         engine = "chat-fallback"
     if out_locale != "en" and content_en:
@@ -1037,6 +1221,16 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         "evidence_root": led.get("root"),
         "plan_id": plan_id,
         "triage": tri.kind,
+        "insight": (
+            {
+                "sentiment": insight_packet.sentiment,
+                "tone": insight_packet.tone,
+                "bands": [b.model_dump() for b in insight_packet.bands if not b.missing],
+                "packet_id": insight_packet.pack_fingerprint,
+            }
+            if insight_turn and payload.show_evidence and insight_packet is not None
+            else None
+        ),
         "translation": {
             "engine": engine,
             "src": "en",

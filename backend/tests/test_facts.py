@@ -213,3 +213,65 @@ def test_quote_facts_never_invents_aqi_zero():
     q2 = quote_facts({"aqi": {"need": "aqi", "cpcb": {"value": 0}, "provider_status": "empty", "place": "Puri"}})
     assert "AQI 0" not in q2
     assert quote_facts({}) == ""
+
+
+def test_quote_facts_hourly_slot_for_named_clock():
+    from app.agents.facts import quote_facts
+
+    q = quote_facts(
+        {
+            "forecast": {
+                "place": "Haldia",
+                "hourly_slot": {
+                    "t": "2026-08-19T15:00",
+                    "date": "2026-08-19",
+                    "hour": "15:00",
+                    "temp_c": 31.2,
+                    "precip_mm": 1.4,
+                    "precip_prob_pct": 40,
+                    "wind_kmh": 18.0,
+                    "sky_label": "Light rain",
+                },
+            }
+        },
+        window={"start": "2026-08-19", "end": "2026-08-19", "hour": "15"},
+    )
+    assert "15:00 IST" in q
+    assert "31.2" in q
+    assert "1.4" in q
+    assert "daily, not a" not in q.lower()
+
+
+def test_quote_warnings_and_risks_include_meaning():
+    from app.agents.facts import quote_facts
+
+    q = quote_facts(
+        {
+            "warnings": {
+                "place": "Haldia",
+                "warnings": [
+                    {
+                        "title": "Orange rain warning",
+                        "severity": "warning",
+                        "body": "Heavy rain likely this afternoon.",
+                        "meaning": "Heavy rain likely this afternoon.",
+                    }
+                ],
+            },
+            "risks": {
+                "place": "Haldia",
+                "risks": [
+                    {
+                        "id": "flood",
+                        "label": "Flood",
+                        "score_pct": 62,
+                        "severity": "watch",
+                        "meaning": "Waterlogging potential from rain and runoff.",
+                    }
+                ],
+            },
+        }
+    )
+    assert "Orange rain warning" in q
+    assert "62" in q
+    assert "Waterlogging" in q

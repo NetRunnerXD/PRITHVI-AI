@@ -19,6 +19,9 @@ DEIXIS = {
     "there", "here", "same", "it", "them", "that", "this", "these", "those",
     "and", "also", "more", "then", "the", "a", "an", "my", "our", "please",
     "yes", "yeah", "yep", "ok", "okay", "sure",
+    "area", "areas", "nearby", "around", "locally", "location", "place",
+    "kids", "kid", "children", "child", "travel", "outdoor", "activities",
+    "activity", "alerts", "alert", "right", "us", "we", "me",
 }
 
 PRODUCT = {

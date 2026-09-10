@@ -23,6 +23,11 @@ def test_tomorrow_is_not_a_place():
     assert p2.asked is None or p2.asked.lower() != "tomorrow"
     p3 = interpret("How much rain tomorrow in Haldia?")
     assert p3.asked and p3.asked.lower() == "haldia"
+    hour = interpret("What is the forecast for Haldia tomorrow at 3 pm")
+    assert "forecast" in hour.needs
+    warn = interpret("list the warnings and risks at this location")
+    assert "warnings" in warn.needs
+    assert "risks" in warn.needs
 
 
 def test_extract_spans():

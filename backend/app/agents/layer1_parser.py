@@ -13,7 +13,8 @@ from typing import Any
 
 from app.agents.dates import parse_window, today_ist
 from app.agents.dimensions import detect_domain
-from app.data.india_districts import match_state, match_states, state_representative_district
+from app.data.closed_class import is_closed_query, is_closed_token
+from app.data.india_districts import is_state_name, match_state, match_states, state_representative_district
 from app.schemas.location import Location
 
 _ACTIVITY_WORDS: dict[str, str] = {
@@ -76,8 +77,68 @@ class SemanticContext:
     time_window: dict[str, str] | None = None  # {start, end, hour}
     intent: str = "forecast"  # activity_feasibility | forecast | rain_window | nowcast | aqi | rank | chit_chat
     sentiment: str = "inquisitive"  # operational_safety | casual_planning | inquisitive | emergency
+    tone: str = "curious"  # worried | health | rushed | farming | planning | curious
     tailored_system_prompt: str = ""
     tailored_user_hint: str = ""
+
+
+_TONE_WORRIED = (
+    "scared",
+    "afraid",
+    "safe?",
+    "kids",
+    "child",
+    "baby",
+    "asthma",
+    "डर",
+    "बच्चों",
+    "दमा",
+    "सुरक्षित",
+)
+_TONE_HEALTH = (
+    "aqi",
+    "pollution",
+    "mask",
+    "elderly",
+    "pregnancy",
+    "pm2",
+    "प्रदूषण",
+    "मास्क",
+)
+_TONE_RUSHED = ("now", "leave in", "commute", "wet", "umbrella", "अभी", "भीग")
+_TONE_FARM = ("irrigation", "irrigate", "spray", "harvest", "kharif", "sech", "सेच")
+_TONE_PLAN = ("tomorrow", "picnic", "should i", "weekend")
+
+
+def _has_tone_cue(text: str, cues: tuple[str, ...]) -> bool:
+    t = text or ""
+    low = t.lower()
+    for w in cues:
+        if any("\u0900" <= ch <= "\u097f" for ch in w):
+            if w in t:
+                return True
+            continue
+        token = w.lower().rstrip("?")
+        if " " in token:
+            if token in low:
+                return True
+        elif re.search(rf"\b{re.escape(token)}\b", low):
+            return True
+    return False
+
+
+def detect_tone(text: str, domain: str | None = None) -> str:
+    if _has_tone_cue(text, _TONE_WORRIED):
+        return "worried"
+    if _has_tone_cue(text, _TONE_HEALTH):
+        return "health"
+    if _has_tone_cue(text, _TONE_RUSHED):
+        return "rushed"
+    if domain == "farming" or _has_tone_cue(text, _TONE_FARM):
+        return "farming"
+    if _has_tone_cue(text, _TONE_PLAN):
+        return "planning"
+    return "curious"
 
 
 def _extract_activity(text: str) -> tuple[str | None, str | None]:
@@ -126,7 +187,7 @@ def fast_parse_entities(text: str) -> tuple[str | None, str | None, str | None]:
     )
     if m_loc:
         place_cand = _clean_location_candidate(m_loc.group(1))
-        if place_cand:
+        if place_cand and not is_closed_query(place_cand) and not is_closed_token(place_cand):
             return activity, dom, place_cand
 
     # 2. Check for "for <place>" only if no spatial preposition exists and NOT preceded by "go for"
@@ -140,7 +201,12 @@ def fast_parse_entities(text: str) -> tuple[str | None, str | None, str | None]:
         prefix = raw[:m_for.start()].rstrip().lower()
         if not re.search(r"\b(?:go|going|head|headed|plan|planning|ready)\s*$", prefix):
             cand = _clean_location_candidate(m_for.group(1))
-            if cand and not any(cand.lower() == a for a in _ACTIVITY_WORDS):
+            if (
+                cand
+                and not any(cand.lower() == a for a in _ACTIVITY_WORDS)
+                and not is_closed_query(cand)
+                and not is_closed_token(cand)
+            ):
                 return activity, dom, cand
 
     return activity, dom, None
@@ -170,6 +236,7 @@ async def parse_semantic_context(
 
     # Check if a state is explicitly named in the text
     st_matches = match_states(text)
+    rankish = any(w in text.lower() for w in ("rank", "ranking", "districts", "which state", "worst"))
     if place_cand:
         resolved = resolve_named_place(place_cand)
         if not resolved and match_state(place_cand):
@@ -180,10 +247,10 @@ async def parse_semantic_context(
                 hub_dict = state_representative_district(st_name)
                 if hub_dict:
                     resolved = resolve_named_place(hub_dict.get("label") or hub_dict.get("district"))
-    elif st_matches:
+    elif is_state_name((text or "").strip()) or (st_matches and rankish):
         is_state = True
-        state_name = st_matches[0]
-        hub_dict = state_representative_district(state_name)
+        state_name = st_matches[0] if st_matches else match_state(text)
+        hub_dict = state_representative_district(state_name) if state_name else None
         if hub_dict:
             resolved = resolve_named_place(hub_dict.get("label") or hub_dict.get("district"))
 
@@ -200,6 +267,8 @@ async def parse_semantic_context(
             "start": win["start"].isoformat(),
             "end": win["end"].isoformat(),
         }
+        if win.get("hour") is not None:
+            time_window["hour"] = str(win["hour"])
     elif prior_window:
         time_window = dict(prior_window)
 
@@ -209,6 +278,8 @@ async def parse_semantic_context(
         intent = "activity_feasibility"
     elif any(w in t_low for w in ("rank", "ranking", "worst", "highest", "top")):
         intent = "rank"
+    elif any(w in t_low for w in ("warning", "alert", "watch", "risk", "hazard", "cap")):
+        intent = "warnings"
     elif any(w in t_low for w in ("aqi", "pollution", "air quality", "pm2")):
         intent = "aqi"
     elif any(w in t_low for w in ("nowcast", "next hour", "0-6", "pump")):
@@ -224,6 +295,8 @@ async def parse_semantic_context(
     else:
         sentiment = "inquisitive"
 
+    tone = detect_tone(text, domain)
+
     # 6. Synthesize Layer 2 Tailored Prompt & Hint
     place_label = resolved.label if resolved else (default_loc.label if default_loc else "this location")
     time_label = ""
@@ -232,6 +305,19 @@ async def parse_semantic_context(
             time_label = f"for {time_window.get('start')}"
         else:
             time_label = f"from {time_window.get('start')} to {time_window.get('end')}"
+        if time_window.get("hour") not in (None, ""):
+            time_label += f" at {time_window.get('hour')}:00 IST"
+
+    if domain == "disaster":
+        style_line = (
+            "- Style: operations brief with SITUATION / HAZARDS / ACTIONS. "
+            "List every warning and risk card from the pack. Do not invent scores.\n"
+        )
+    else:
+        style_line = (
+            "- Style: original prose. Vary wording. Quote the asked hour if present. "
+            "One fresh action that follows from the numbers.\n"
+        )
 
     tailored_hint = (
         f"LAYER 1 CONTEXT:\n"
@@ -240,8 +326,8 @@ async def parse_semantic_context(
         + (f"- Activity: {activity.upper()}\n" if activity else "")
         + (f"- Region/State: {state_name} (Representative Hub: {place_label})\n" if is_state else f"- Target Location: {place_label}\n")
         + (f"- Time Horizon: {time_label}\n" if time_label else "")
-        + f"- Brevity Rule: 2 to 4 sentences maximum. Quote 1–3 figures.\n"
-        + f"- Actionable Advice: Provide 1 practical recommendation specifically for {activity or domain}."
+        + style_line
+        + f"- Tone: {tone} (do not change figures)."
     )
 
     return SemanticContext(
@@ -255,5 +341,6 @@ async def parse_semantic_context(
         time_window=time_window,
         intent=intent,
         sentiment=sentiment,
+        tone=tone,
         tailored_user_hint=tailored_hint,
     )
