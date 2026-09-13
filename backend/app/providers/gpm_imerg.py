@@ -49,6 +49,8 @@ def status() -> dict[str, Any]:
 
 
 GESDISC_EULA = "https://urs.earthdata.nasa.gov/approve_app?client_id=e2WVk8Pw6weeLUKZYOxvTQ"
+# Native Hyrax (CMR earthdata.opendap .ascii returns 400 on V07 layout).
+OPENDAP_ROOT = "https://gpm1.gesdisc.eosdis.nasa.gov/opendap/"
 
 
 def _headers() -> dict[str, str]:
@@ -107,23 +109,31 @@ async def _cmr_latest(short_name: str = "GPM_3IMERGHHE") -> dict[str, Any] | Non
     return pack
 
 
+def _opendap_ascii_urls(cmr: dict[str, Any] | None, li: int, lj: int) -> list[str]:
+    """IMERG V07 DDS: precipitation[time=1][lon=3600][lat=1800]."""
+    urls: list[str] = []
+    href = str((cmr or {}).get("href") or "")
+    if "data.gesdisc.earthdata.nasa.gov/data/" in href:
+        urls.append(
+            href.replace("https://data.gesdisc.earthdata.nasa.gov/data/", OPENDAP_ROOT).rstrip("/")
+            + f".ascii?precipitation[0:1:0][{li}:1:{li}][{lj}:1:{lj}]"
+        )
+    base = str((cmr or {}).get("opendap") or "").rstrip("/")
+    if base:
+        urls.append(f"{base}.ascii?precipitation[0:1:0][{li}:1:{li}][{lj}:1:{lj}]")
+    return urls
+
+
 async def _opendap_point(lat: float, lon: float) -> dict[str, Any] | None:
-    """GDS ASCII last precip at the pin. Auth via Bearer when token present."""
+    """GDS ASCII last precip at the pin. Auth via Bearer. Never downloads HDF."""
     from app.providers.http import client
 
-    # 0.1° grid: lon -179.95 + i*0.1, lat -89.95 + j*0.1
     li = int(round((lon + 179.95) / 0.1))
     lj = int(round((lat + 89.95) / 0.1))
     li = max(0, min(3599, li))
     lj = max(0, min(1799, lj))
     cmr = await _cmr_latest()
-    urls = []
-    if cmr and cmr.get("opendap"):
-        base = str(cmr["opendap"]).rstrip("/")
-        urls.append(f"{base}.ascii?precipitationCal[0:0][{lj}:1:{lj}][{li}:1:{li}]")
-        urls.append(f"{base}.ascii?Grid/precipitationCal[0:0][{lj}:1:{lj}][{li}:1:{li}]")
-        urls.append(f"{base}.ascii?Grid/precipitation[0:0][{lj}:1:{lj}][{li}:1:{li}]")
-        urls.append(f"{base}.ascii?precipitation[0:0][{lj}][{li}]")
+    urls = _opendap_ascii_urls(cmr, li, lj)
     last: dict[str, Any] = {"ok": False, "status": "empty"}
     for url in urls:
         try:
@@ -141,9 +151,8 @@ async def _opendap_point(lat: float, lon: float) -> dict[str, Any] | None:
                 "eula": eula,
             }
             continue
-        text = r.text
         nums = []
-        for tok in text.replace(",", " ").split():
+        for tok in (r.text or "").replace(",", " ").split():
             try:
                 nums.append(float(tok))
             except ValueError:
@@ -234,7 +243,7 @@ async def fetch_pin(lat: float, lon: float, *, heavy: bool = False) -> dict[str,
     st = status()
     cmr = None
     ges = None
-    if earthdata_ready() and heavy:
+    if earthdata_ready():
         try:
             cmr = await _cmr_latest()
         except Exception:
@@ -243,9 +252,10 @@ async def fetch_pin(lat: float, lon: float, *, heavy: bool = False) -> dict[str,
             ges = await _opendap_point(lat, lon)
         except Exception as e:
             ges = {"ok": False, "error": str(e)[:160]}
+    # Full HDF5 is ~8 MB and must not land on the 512 MB Atlas cluster.
     if heavy and not (ges or {}).get("ok"):
         try:
-            hdf = await _hdf_point(lat, lon, cmr, download=True)
+            hdf = await _hdf_point(lat, lon, cmr, download=False)
         except Exception as e:
             hdf = {"ok": False, "error": str(e)[:160]}
         if hdf and hdf.get("ok"):

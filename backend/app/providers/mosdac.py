@@ -1,4 +1,11 @@
-"""MOSDAC mdapi client: search + token download. Credentials from env."""
+"""MOSDAC Download API (mdapi) — search + SSO token download.
+
+Wired from the MOSDAC user manual (config.json / mdapi.py):
+https://mosdac.gov.in/downloadapi-manual
+Search needs no login. Download uses username/password → gettoken → Bearer.
+Daily cap 5000 files/user; we hard-stop at 400. Three bad passwords lock 1 h.
+Do not keep HDF5 in Mongo (512 MB Atlas). Sample, write last_hem.json, delete the file.
+"""
 
 from __future__ import annotations
 
@@ -17,8 +24,11 @@ DOWNLOAD_URL = "https://mosdac.gov.in/download_api/download"
 REFRESH_URL = "https://mosdac.gov.in/download_api/refresh-token"
 LOGOUT_URL = "https://mosdac.gov.in/download_api/logout"
 
-# INSAT-3DS / 3D / 3DR imager L1B, then HEM rainfall.
-DATASETS = ("3SIMG_L1B_STD", "3DIMG_L1B_STD", "3RIMG_L1B_STD", "3DIMG_L2B_HEM")
+# INSAT-3DS / 3DR. 3DIMG_* search returns "Data unavailable" (retired).
+DATASETS = ("3SIMG_L2B_HEM", "3SIMG_L2C_FOG", "3SIMG_L1B_STD", "3RIMG_L2B_HEM", "3RIMG_L1B_STD")
+PRIORITY = ("3SIMG_L2B_HEM", "3SIMG_L2C_FOG")
+L1B = {"3SIMG_L1B_STD", "3RIMG_L1B_STD"}
+QUOTA_CAP = 400
 
 
 class NotConfigured(RuntimeError):
@@ -75,6 +85,41 @@ async def _token() -> dict[str, Any]:
     pack = {"access_token": tok, "refresh_token": body.get("refresh_token")}
     cache.set("mosdac:token", pack, 50 * 60)
     return {"ok": True, **pack}
+
+
+async def _refresh(pack: dict[str, Any]) -> dict[str, Any]:
+    rt = pack.get("refresh_token")
+    if not rt:
+        cache.set("mosdac:token", None, 1)
+        return await _token()
+    from app.providers.http import client
+
+    r = await client().post(REFRESH_URL, json={"refresh_token": rt})
+    if r.status_code >= 400:
+        cache.set("mosdac:token", None, 1)
+        return await _token()
+    body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    tok = body.get("access_token")
+    if not tok:
+        cache.set("mosdac:token", None, 1)
+        return await _token()
+    nxt = {"access_token": tok, "refresh_token": body.get("refresh_token") or rt}
+    cache.set("mosdac:token", nxt, 50 * 60)
+    return {"ok": True, **nxt}
+
+
+async def logout() -> None:
+    hit = cache.get("mosdac:token")
+    tok = hit.get("access_token") if isinstance(hit, dict) else None
+    cache.set("mosdac:token", None, 1)
+    if not tok:
+        return
+    from app.providers.http import client
+
+    try:
+        await client().post(LOGOUT_URL, headers={"Authorization": f"Bearer {tok}"})
+    except Exception:
+        pass
 
 
 async def search(dataset_id: str = "3SIMG_L1B_STD", count: int = 3) -> dict[str, Any]:
@@ -152,27 +197,50 @@ async def download_granule(record_id: str, filename: str | None = None) -> dict[
     name = filename or f"{record_id}.h5"
     dest = ARCHIVE / Path(name).name
     if dest.exists() and dest.stat().st_size > 1024:
-        return {"ok": True, "path": str(dest), "bytes": dest.stat().st_size, "cached": True}
+        mm_h = _sample_h5(dest, 22.07, 88.07)
+        nbytes = dest.stat().st_size
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+        return {"ok": True, "bytes": nbytes, "cached": True, "mm_h": mm_h, "kept": False}
+    headers = {"Authorization": f"Bearer {tok['access_token']}"}
     r = await client().get(
         DOWNLOAD_URL,
-        params={"id": record_id},
-        headers={"Authorization": f"Bearer {tok['access_token']}"},
+        params={"id": record_id, "gId": record_id},
+        headers=headers,
         timeout=120.0,
     )
+    if r.status_code in {401, 403}:
+        tok = await _refresh(tok)
+        if not tok.get("ok"):
+            return tok
+        r = await client().get(
+            DOWNLOAD_URL,
+            params={"id": record_id, "gId": record_id},
+            headers={"Authorization": f"Bearer {tok['access_token']}"},
+            timeout=120.0,
+        )
     if r.status_code >= 400:
         return {"ok": False, "status": f"http_{r.status_code}", "error": (r.text or "")[:180]}
     dest.write_bytes(r.content)
+    nbytes = dest.stat().st_size
+    mm_h = None
     if dest.suffix.lower() in {".h5", ".hdf5", ".he5"} or "HEM" in dest.name.upper():
-        v = _sample_h5(dest, 22.07, 88.07)
-        if v is not None:
+        mm_h = _sample_h5(dest, 22.07, 88.07)
+        if mm_h is not None:
             try:
                 (ARCHIVE / "last_hem.json").write_text(
-                    json.dumps({"mm_h": v, "path": str(dest), "t": date.today().isoformat()}),
+                    json.dumps({"mm_h": mm_h, "t": date.today().isoformat(), "granule": name}),
                     encoding="utf-8",
                 )
             except OSError:
                 pass
-    return {"ok": True, "path": str(dest), "bytes": dest.stat().st_size, "cached": False}
+    try:
+        dest.unlink()
+    except OSError:
+        pass
+    return {"ok": True, "bytes": nbytes, "cached": False, "mm_h": mm_h, "kept": False}
 
 
 async def fetch_live() -> dict[str, Any]:
@@ -191,7 +259,107 @@ async def fetch_live() -> dict[str, Any]:
     }
 
 
-async def download_product(product: str = "3SIMG_L1B_STD") -> dict[str, Any]:
+def _ist_day() -> str:
+    from datetime import datetime, timedelta, timezone
+
+    ist = timezone(timedelta(hours=5, minutes=30))
+    return datetime.now(ist).strftime("%Y-%m-%d")
+
+
+def quota_snapshot() -> dict[str, Any]:
+    day = _ist_day()
+    used = 0
+    skipped = 0
+    try:
+        from app.store import sat_mongo
+
+        col = sat_mongo.col("mosdac_quota")
+        if col is not None:
+            doc = col.find_one({"day_ist": day}) or {}
+            used = int(doc.get("used") or 0)
+            skipped = int(doc.get("skipped_cached") or 0)
+    except Exception:
+        pass
+    return {"day_ist": day, "used": used, "skipped_cached": skipped, "cap": QUOTA_CAP}
+
+
+def _quota_inc(*, cached: bool) -> bool:
+    day = _ist_day()
+    try:
+        from app.store import sat_mongo
+
+        col = sat_mongo.col("mosdac_quota")
+        if col is None:
+            return True
+        if cached:
+            col.update_one({"day_ist": day}, {"$inc": {"skipped_cached": 1}, "$setOnInsert": {"used": 0, "cap": QUOTA_CAP}}, upsert=True)
+            return True
+        doc = col.find_one({"day_ist": day}) or {}
+        if int(doc.get("used") or 0) >= QUOTA_CAP:
+            return False
+        col.update_one({"day_ist": day}, {"$inc": {"used": 1}, "$setOnInsert": {"skipped_cached": 0, "cap": QUOTA_CAP}}, upsert=True)
+        return True
+    except Exception:
+        return True
+
+
+async def ingest_latest(*, allow_l1b: bool = False) -> list[dict[str, Any]]:
+    """Download newest granules that are not already in sat_frames. Counts against 400/day."""
+    from app.store.sat_frames import has_granule, put_frame
+
+    products = list(PRIORITY)
+    if allow_l1b:
+        products.extend(p for p in DATASETS if p in L1B)
+    out: list[dict[str, Any]] = []
+    for product in products:
+        pack = await search(product, count=1)
+        granules = pack.get("granules") or []
+        if not granules or not granules[0].get("id"):
+            out.append({"ok": False, "product": product, "status": "no_granule"})
+            continue
+        g = granules[0]
+        gid = str(g["id"])
+        if has_granule(gid):
+            _quota_inc(cached=True)
+            out.append({"ok": True, "product": product, "granule_id": gid, "cached": True, "status": "cached"})
+            continue
+        if product in L1B and not allow_l1b:
+            out.append({"ok": False, "product": product, "status": "l1b_skipped"})
+            continue
+        if not _quota_inc(cached=False):
+            out.append({"ok": False, "product": product, "status": "quota"})
+            break
+        dl = await download_granule(gid, g.get("identifier"))
+        err = str(dl.get("error") or dl.get("status") or "")
+        if "latency" in err.lower() or "3 days" in err.lower():
+            out.append({"ok": False, "product": product, "status": "latency_3d", "error": err[:180]})
+            continue
+        if not dl.get("ok"):
+            out.append({**dl, "product": product, "granule_id": gid})
+            continue
+        put_frame(
+            {
+                "source": "mosdac",
+                "product": product,
+                "granule_id": gid,
+                "filename": g.get("identifier"),
+                "started_at": g.get("date"),
+                "bytes_raw": dl.get("bytes"),
+                "quota_counted": not dl.get("cached"),
+                "grid_kind": "rain_mm_h" if "HEM" in product else "tb_k" if "L1B" in product else "fog_mask",
+                "mm_h": dl.get("mm_h"),
+                "note": "HDF sampled then deleted — not stored in Mongo",
+            }
+        )
+        out.append({**dl, "product": product, "granule_id": gid, "ok": True})
+    try:
+        await logout()
+    except Exception:
+        pass
+    return out
+
+
+async def download_product(product: str = "3SIMG_L2B_HEM") -> dict[str, Any]:
     pack = await search(product, count=1)
     granules = pack.get("granules") or []
     if not granules or not granules[0].get("id"):
@@ -318,6 +486,7 @@ def write_mdapi_config() -> Path:
             "download_path": str(ARCHIVE),
             "organize_by_date": False,
             "skip_user_prompt": True,
+            "skip_user_input": True,
         },
     }
     ARCHIVE.mkdir(parents=True, exist_ok=True)
