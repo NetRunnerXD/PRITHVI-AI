@@ -83,7 +83,7 @@ export function WindParticles({
     pane.appendChild(canvas);
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    type P = { lat: number; lon: number; age: number };
+    type P = { lat: number; lon: number; age: number; maxAge: number; speed: number };
     let parts: P[] = [];
     let raf = 0;
     let dead = false;
@@ -99,33 +99,59 @@ export function WindParticles({
       canvas.style.left = `${nw.x}px`;
       canvas.style.top = `${nw.y}px`;
     }
+
     function spawn(): P {
       const b = map.getBounds();
       return {
         lat: b.getSouth() + Math.random() * (b.getNorth() - b.getSouth()),
         lon: b.getWest() + Math.random() * (b.getEast() - b.getWest()),
-        age: Math.random() * 40,
+        age: Math.floor(Math.random() * 20),
+        maxAge: 40 + Math.floor(Math.random() * 35),
+        speed: 10,
       };
     }
+
+    function getParticleColor(speedKmh: number, ageRatio: number): string {
+      const alpha = Math.sin(Math.max(0, Math.min(1, ageRatio)) * Math.PI) * 0.85;
+      if (speedKmh > 60) return `rgba(235, 77, 75, ${alpha})`;
+      if (speedKmh > 40) return `rgba(240, 147, 43, ${alpha})`;
+      if (speedKmh > 25) return `rgba(249, 202, 36, ${alpha})`;
+      if (speedKmh > 15) return `rgba(106, 218, 180, ${alpha})`;
+      return `rgba(220, 240, 255, ${alpha * 0.8})`;
+    }
+
     function tick() {
       if (dead || !ctx) return;
-      sizeCanvas();
+      const zoom = map.getZoom();
+
       ctx.globalCompositeOperation = "destination-out";
-      ctx.fillStyle = "rgba(0,0,0,0.08)";
+      ctx.fillStyle = zoom >= 9 ? "rgba(0,0,0,0.14)" : "rgba(0,0,0,0.08)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+
       ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = "rgba(240,248,255,0.75)";
-      ctx.lineWidth = 1.4;
-      const n = Math.min(700, Math.floor((canvas.width * canvas.height) / 2200));
-      while (parts.length < n) parts.push(spawn());
+      ctx.lineWidth = Math.min(2.4, Math.max(1.2, zoom * 0.16));
+      ctx.lineCap = "round";
+
+      const targetCount = Math.min(800, Math.max(250, Math.floor((canvas.width * canvas.height) / 2000)));
+      while (parts.length < targetCount) parts.push(spawn());
+      if (parts.length > targetCount) parts.length = targetCount;
+
       const origin = map.getBounds().getNorthWest();
       const originPt = map.latLngToLayerPoint(origin);
-      const zoomScale = Math.max(0.35, map.getZoom() / 5);
-      for (const p of parts) {
+      const b = map.getBounds();
+
+      // At zoom 5 (approx 1000km view) base step is ~0.008 deg/frame.
+      // Scale displacement by 2^(5 - zoom) so screen-pixel velocity stays consistent at high zooms.
+      const zoomFactor = Math.pow(2, Math.max(0, zoom - 5));
+      const baseDt = 0.009 / zoomFactor;
+
+      for (let i = 0; i < parts.length; i++) {
+        const p = parts[i];
         const u = sampleGrid(field, p.lat, p.lon, "wind_u");
         const v = sampleGrid(field, p.lat, p.lon, "wind_v");
         const spd = sampleGrid(field, p.lat, p.lon, "wind_kmh") ?? 0;
         const dir = sampleGrid(field, p.lat, p.lon, "wind_dir_deg");
+
         let ue = u;
         let vn = v;
         if ((ue == null || vn == null || (ue === 0 && vn === 0)) && dir != null) {
@@ -136,29 +162,46 @@ export function WindParticles({
         }
         ue = ue ?? 0;
         vn = vn ?? 0;
-        const pt = map.latLngToLayerPoint([p.lat, p.lon]);
-        const x0 = pt.x - originPt.x;
-        const y0 = pt.y - originPt.y;
-        const dt = 0.012 * zoomScale;
+        p.speed = spd;
+
+        const pt0 = map.latLngToLayerPoint([p.lat, p.lon]);
+        const x0 = pt0.x - originPt.x;
+        const y0 = pt0.y - originPt.y;
+
+        const cosLat = Math.max(0.2, Math.cos((p.lat * Math.PI) / 180));
+        const dt = baseDt * (1 + (spd > 0 ? spd / 70 : 0));
         p.lat += vn * dt;
-        p.lon += ue * dt * 1.15;
+        p.lon += (ue * dt) / cosLat;
         p.age += 1;
-        const pt2 = map.latLngToLayerPoint([p.lat, p.lon]);
+
+        const pt1 = map.latLngToLayerPoint([p.lat, p.lon]);
+        const x1 = pt1.x - originPt.x;
+        const y1 = pt1.y - originPt.y;
+
+        ctx.strokeStyle = getParticleColor(spd, p.age / p.maxAge);
         ctx.beginPath();
         ctx.moveTo(x0, y0);
-        ctx.lineTo(pt2.x - originPt.x, pt2.y - originPt.y);
+        ctx.lineTo(x1, y1);
         ctx.stroke();
-        const b = map.getBounds();
-        if (p.age > 70 || p.lat < b.getSouth() || p.lat > b.getNorth() || p.lon < b.getWest() || p.lon > b.getEast()) {
-          Object.assign(p, spawn());
+
+        if (
+          p.age >= p.maxAge ||
+          p.lat < b.getSouth() ||
+          p.lat > b.getNorth() ||
+          p.lon < b.getWest() ||
+          p.lon > b.getEast()
+        ) {
+          parts[i] = spawn();
         }
       }
       raf = window.requestAnimationFrame(tick);
     }
+
     sizeCanvas();
     parts = Array.from({ length: 360 }, spawn);
     map.on("zoomend moveend resize", sizeCanvas);
     raf = window.requestAnimationFrame(tick);
+
     return () => {
       dead = true;
       window.cancelAnimationFrame(raf);

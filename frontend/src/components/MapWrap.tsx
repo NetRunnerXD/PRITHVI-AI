@@ -23,11 +23,25 @@ export function MapWrap(props: {
   selectedId?: string | null;
   tools?: StormMapTools;
   locale?: Locale;
-  weatherLayer?: WxLayer;
+  weatherLayer?: WxLayer | null;
   weatherGrid?: WeatherGrid | null;
   particles?: boolean;
   radarUrl?: string | null;
+  hazardEvents?: {
+    id: string;
+    kind: string;
+    lat: number;
+    lon: number;
+    place?: string;
+    phase?: string;
+    title?: string;
+    n?: number;
+    frp_mw?: number;
+    window_start?: string | null;
+    window_end?: string | null;
+  }[];
   onPick: (l: Location) => void;
+  onSelectIncident?: (inc: any) => void;
 }) {
   return <MapView {...props} />;
 }
