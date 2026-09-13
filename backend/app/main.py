@@ -28,10 +28,12 @@ async def _snapshot_loop() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     s = get_settings()
+    role = (s.app_role or "api").strip().lower()
     skip_loop = bool(
         os.environ.get("PYTEST_CURRENT_TEST")
         or os.environ.get("RITUCHAKRA_NO_SNAP_LOOP")
         or not s.om_server_refresh
+        or role == "ingest"
     )
     from app.auth.db import close as auth_close
     from app.auth.db import connect as auth_connect
@@ -40,11 +42,20 @@ async def lifespan(_: FastAPI):
 
     await auth_connect()
     task = None if skip_loop else asyncio.create_task(_snapshot_loop())
-    sms_task = None if not sms_should_start() else asyncio.create_task(sms_loop())
+    sms_task = None if not sms_should_start() or role == "ingest" else asyncio.create_task(sms_loop())
+    ingest_task = None
+    if role == "ingest" and not os.environ.get("PYTEST_CURRENT_TEST"):
+        from app.ingest.worker import ingest_loop
+
+        if s.sat_wipe_confirm:
+            from app.store.sat_mongo import wipe_user_databases
+
+            wipe_user_databases()
+        ingest_task = asyncio.create_task(ingest_loop())
     try:
         yield
     finally:
-        for t in (task, sms_task):
+        for t in (task, sms_task, ingest_task):
             if t is not None:
                 t.cancel()
                 try:

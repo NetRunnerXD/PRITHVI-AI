@@ -94,6 +94,12 @@ class Settings(BaseSettings):
     # Optional accounts (MongoDB Atlas M0). Empty URI = in-process store.
     mongodb_uri: str = ""
     mongodb_db: str = "rituchakra"
+    # Satellite / hazard events cluster. Empty = fall back to mongodb_uri, then disk.
+    mongodb_sat_uri: str = ""
+    mongodb_sat_db: str = "rituchakra_sat"
+    sat_wipe_confirm: bool = False
+    app_role: str = "api"
+    mosdac_allow_l1b: bool = False
     jwt_secret: str = ""
     fast2sms_api_key: str = ""
     sms_dry_run: bool = True

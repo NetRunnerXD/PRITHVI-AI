@@ -33,6 +33,31 @@ Keep-warm: the web app pings `GET /api/ready` every 10 minutes while a tab is vi
 
 `OM_SERVER_REFRESH` defaults off so Render does not rebuild snapshots from its shared IP. Browsers POST their Open-Meteo JSON to `/api/dashboard`.
 
+A second service `prithvi-ai-ingest` (`APP_ROLE=ingest`) runs the satellite cycle. Both services are on the **Free** plan (no credit card needed).
+
+### Setting up without a Credit Card (Manual Web Service):
+If Render asks for a credit card when applying a multi-service Blueprint, create the service manually:
+1. Go to **Dashboard → New + → Web Service**.
+2. Select repository `NetRunnerXD/Rituchakra` (branch `main`).
+3. Settings:
+   - **Name**: `prithvi-ai-ingest`
+   - **Root Directory**: `backend`
+   - **Runtime**: `Python 3`
+   - **Build Command**: `python -m pip install -r requirements.txt`
+   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 75`
+   - **Instance Type**: `Free`
+   - **Health Check Path**: `/api/ready`
+4. Add Environment Variables:
+   - `APP_ROLE` = `ingest`
+   - `MONGODB_URI` = `<your-mongodb-uri>`
+   - `MONGODB_DB` = `rituchakra`
+   - `MONGODB_SAT_URI` = `<your-mongodb-sat-uri>`
+   - `MONGODB_SAT_DB` = `rituchakra_sat`
+   - `OM_SERVER_REFRESH` = `false`
+   - `CACHE_DIR` = `/tmp/rituchakra-cache`
+   - *(Optional)* `MOSDAC_USER`, `MOSDAC_PASS`, `NASA_EARTHDATA_API`
+5. Keep-warm: Ping `https://<prithvi-ai-ingest>.onrender.com/api/ready` every 10 minutes (via UptimeRobot or cron-job.org) so the Free tier does not sleep.
+
 ## Clients
 
 ```
