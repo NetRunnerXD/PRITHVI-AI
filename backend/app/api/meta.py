@@ -115,7 +115,14 @@ async def health():
 
 @router.get("/ready", summary="Readiness")
 async def ready():
-    return JSONResponse({"ok": True, "service": "rituchakra-api", "version": settings.api_version})
+    body = {"ok": True, "service": "rituchakra-api", "version": settings.api_version, "role": settings.app_role}
+    try:
+        from app.store import ingest_status
+
+        body["ingest"] = ingest_status.snapshot()
+    except Exception:
+        pass
+    return JSONResponse(body)
 
 
 @router.get("/bootstrap", summary="Client boot pack")

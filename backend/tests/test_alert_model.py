@@ -17,6 +17,68 @@ def _nadia() -> Location:
     )
 
 
+def test_scan_hits_prefers_thunder_over_drought_flood():
+    from app.services.alert_scan import _hits
+
+    rows = [
+        {
+            "state": "West Bengal",
+            "name": "Kolkata",
+            "lat": 22.5,
+            "lon": 88.3,
+            "flood_score": 10,
+            "drought_score": 90,
+            "precip_3d_mm": 1,
+            "temp_max_c": 32,
+            "thunder_code": 95,
+        }
+    ]
+    hits = _hits(rows)
+    kinds = [h["kind"] for h in hits]
+    assert "thunderstorm" in kinds
+    assert kinds.index("thunderstorm") < kinds.index("drought")
+
+
+def test_convective_lightning_thunder_cloudburst():
+    conv = {
+        "lightning": {"level": "watch", "score_pct": 52, "n_strokes": 4, "nearest_km": 12},
+        "cloudburst": {"level": "watch", "score_pct": 48},
+        "downburst": {"level": "quiet", "score_pct": 12},
+    }
+    out = _warnings(
+        _nadia(),
+        [],
+        10,
+        {"weather_code": 95, "hourly_weather_code": [95, 3]},
+        [],
+        [],
+        None,
+        convective=conv,
+    )
+    kinds = {w.kind for w in out}
+    assert "lightning" in kinds
+    assert "extreme_rain" in kinds
+    assert "cloudburst" not in kinds
+    assert "thunderstorm" in kinds
+
+
+def test_cloudburst_conditions_only_when_qualified():
+    conv = {
+        "cloudburst": {
+            "level": "watch",
+            "score_pct": 82,
+            "label": "cloudburst_conditions",
+            "qualifies": True,
+            "eta_min": 20,
+        }
+    }
+    out = _warnings(_nadia(), [], 10, {"weather_code": 1}, [], [], None, convective=conv)
+    hits = [w for w in out if w.kind == "cloudburst"]
+    assert hits
+    assert "conditions" in hits[0].title.lower()
+    assert "100" in hits[0].body or "watch" in hits[0].body.lower()
+
+
 def test_drought_heat_vera_at_pin():
     risks = [
         SimpleNamespace(id="drought", score_pct=80),
@@ -44,6 +106,31 @@ def test_scan_assam_flood_on_howrah_pin():
     ]
     out = _warnings(home, [], 10, {"weather_code": 1}, [], [], None, scan_hits=hits)
     assert any(w.scope == "india" and w.kind == "flood" and "Assam" in w.title for w in out)
+
+
+def test_segment_halo_is_cloud_layer():
+    from app.science.sat_cv import segment
+
+    g = [[255] * 16 for _ in range(16)]
+    for y in range(4, 10):
+        for x in range(4, 10):
+            g[y][x] = 244
+    cells = segment(g, bounds=(86.0, 90.0, 21.0, 24.0))
+    assert cells
+    assert any(c.get("layer") == "anvil" or c.get("kind") == "cloud" for c in cells)
+
+
+def test_ir_only_lightning_does_not_alert():
+    conv = {
+        "lightning": {
+            "level": "watch",
+            "score_pct": 52,
+            "n_strokes": 0,
+            "gate": {"ok": False, "status": "unverified"},
+        }
+    }
+    out = _warnings(_nadia(), [], 10, {"weather_code": 1}, [], [], None, convective=conv)
+    assert "lightning" not in {w.kind for w in out}
 
 
 def test_official_odisha_rain_suppresses_model_duplicate():

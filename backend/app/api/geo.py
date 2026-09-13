@@ -81,12 +81,16 @@ async def map_weather_grid(hour: int = Query(default=0, ge=0, le=23)):
 @router.get("/map/radar")
 async def map_radar():
     """RainViewer frame list (public). Tiles are loaded in the browser."""
-    from app.providers.http import client
+    empty = {"ok": False, "host": "https://tilecache.rainviewer.com", "radar": [], "satellite": []}
+    try:
+        from app.providers.http import client
 
-    r = await client().get("https://api.rainviewer.com/public/weather-maps.json")
-    if r.status_code >= 400:
-        return {"ok": False, "radar": [], "satellite": []}
-    body = r.json()
+        r = await client().get("https://api.rainviewer.com/public/weather-maps.json", timeout=12.0)
+        if r.status_code >= 400:
+            return empty
+        body = r.json()
+    except Exception:
+        return empty
     host = str(body.get("host") or "https://tilecache.rainviewer.com")
     radar = body.get("radar") or {}
     sat = body.get("satellite") or {}

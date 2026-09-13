@@ -372,10 +372,25 @@ async def compare_api(a: str = Query(min_length=2), b: str = Query(min_length=2)
 
 @router.get("/nowcast/storm-map")
 @router.get("/nowcast-storm-map")
-async def storm_map_api(state: str = Query(min_length=2)):
+async def storm_map_api(
+    state: str = Query(min_length=2),
+    past_h: int = Query(default=6),
+):
+    from app.store.time import clamp_horizon
     from app.science.storm_map import build as build_storm_map
 
-    return await build_storm_map(state)
+    horizon = clamp_horizon(past_h)
+    pack = await build_storm_map(state, past_h=horizon)
+    try:
+        from app.store import ingest_status
+
+        proc = ingest_status.snapshot()
+        if proc:
+            pack = {**pack, "processing": {**(pack.get("processing") or {}), **proc}}
+    except Exception:
+        pass
+    pack["past_h"] = horizon
+    return pack
 
 
 @router.get("/states")

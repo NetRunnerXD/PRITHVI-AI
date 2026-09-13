@@ -369,6 +369,21 @@ async def gather_observations(
     mosdac_live = mosdac_st
     dg_ok = {status.get("data.gov.in-aqi"), status.get("data.gov.in-mandi")}
     status["data.gov.in"] = "ok" if "ok" in dg_ok else (status.get("data.gov.in-aqi") or "error")
+    firms_fires: list = []
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        status["nasa-firms"] = "test-skip"
+    else:
+        try:
+            from app.providers import firms as firms_prov
+
+            fp = await asyncio.wait_for(firms_prov.fetch_india(), timeout=2.5)
+            if isinstance(fp, dict):
+                firms_fires = list(fp.get("fires") or [])
+                status["nasa-firms"] = "ok" if fp.get("ok") else (fp.get("status") or "empty")
+            else:
+                status["nasa-firms"] = "empty"
+        except Exception:
+            status["nasa-firms"] = "error"
     return {
         "om": om,
         "flood": fl,
@@ -393,6 +408,7 @@ async def gather_observations(
         "era5": era5 if isinstance(era5, dict) else {},
         "imerg": imerg_live if isinstance(imerg_live, dict) else {},
         "mosdac": (mosdac_live if isinstance(mosdac_live, dict) and mosdac_live else mosdac_st) or {},
+        "firms_fires": firms_fires,
         "status": status,
     }
 
@@ -847,6 +863,7 @@ async def _assemble_snapshot(
     f["imerg"] = obs.get("imerg") or {}
     if isinstance(live_sat, dict):
         f["lightning"] = (live_sat.get("lightning") or live_sat.get("convective") or {}).get("n_strokes") or live_sat.get("n_strokes")
+        f["insat_channels"] = live_sat.get("channels")
     if isinstance(live_sat, dict) and obs.get("imerg"):
         live_sat = {**live_sat, "imerg": obs.get("imerg")}
     vera = (
@@ -864,7 +881,8 @@ async def _assemble_snapshot(
         except Exception:
             scan_hits = []
     conv = ((science.get("nowcast") or {}).get("convective") or {})
-    cloudburst = conv.get("cloudburst") if isinstance(conv.get("cloudburst"), dict) else conv
+    if not isinstance(conv, dict):
+        conv = {}
     warnings = _warnings(
         loc,
         obs["caps"],
@@ -879,9 +897,11 @@ async def _assemble_snapshot(
         risks=risks,
         vera=vera,
         nowcast=nc,
-        convective=cloudburst if isinstance(cloudburst, dict) else {},
+        convective=conv,
         scan_hits=scan_hits,
+        fires=obs.get("firms_fires") or f.get("firms_fires") or [],
     )
+    risks_india: list[dict] = []
     for a in warnings:
         if a.source in {"imd-cap", "IMD CAP"} or "imd" in (a.source or "").lower():
             act = next((x for x in actions if x.template_id and str(x.template_id).startswith("nowcast_")), None)
@@ -1051,6 +1071,7 @@ async def _assemble_snapshot(
         ),
         prescriptive=Prescriptive(warnings=warnings, actions=actions),
         risks=risks,
+        risks_india=risks_india,
         map=MapState(
             center=[loc.lat, loc.lon],
             zoom=8,

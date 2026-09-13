@@ -42,6 +42,9 @@ class EarlyWarning(BaseModel):
     url: str | None = None
     href_kind: str | None = None
     expires_at: str | None = None
+    eta_min: float | None = None
+    window_start: str | None = None
+    window_end: str | None = None
     states: list[str] = []
     kind: str | None = None
     lat: float | None = None
@@ -158,6 +161,7 @@ class DashboardSnapshot(BaseModel):
     predictive: Predictive
     prescriptive: Prescriptive
     risks: list[RiskCard]
+    risks_india: list[dict] = Field(default_factory=list)
     map: MapState
     vegetation: dict = {}
     provider_status: dict[str, str] = {}

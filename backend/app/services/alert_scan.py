@@ -86,6 +86,19 @@ def _hits(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         name = r.get("name") or st
         lat, lon = r.get("lat"), r.get("lon")
         loc_str = f"{name} ({st})" if (name and st and name != st) else (name or st or "India")
+        code = int(r.get("thunder_code") or r.get("weather_code") or 0)
+        if code in {95, 96, 99}:
+            out.append(
+                {
+                    "kind": "thunderstorm",
+                    "state": st,
+                    "district": name,
+                    "title": f"{loc_str} — Thunderstorm Watch",
+                    "body": f"Convective weather code {code}.",
+                    "lat": lat,
+                    "lon": lon,
+                }
+            )
         if int(r.get("flood_score") or 0) >= 75:
             out.append(
                 {
@@ -134,9 +147,10 @@ def _hits(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "lon": lon,
                 }
             )
+    storm = [h for h in out if h["kind"] == "thunderstorm"]
     floodish = [h for h in out if h["kind"] in {"flood", "rainfall", "heatwave", "cloudburst"}]
     dry = [h for h in out if h["kind"] == "drought"]
-    return (floodish + dry)[:10]
+    return (storm + floodish + dry)[:10]
 
 
 async def capital_warning_hits() -> list[dict[str, Any]]:
