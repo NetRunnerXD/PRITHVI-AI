@@ -214,7 +214,7 @@ async def fetch_ir(lat: float, lon: float) -> dict[str, Any]:
         "tb_k": None,
         "grid": None,
     }
-    cache.set(ck, fail, 90)
+    cache.set(ck, fail, 45)
     return fail
 
 
@@ -241,7 +241,7 @@ async def fetch_sector() -> dict[str, Any]:
             return out
         last = "decode"
     fail = {"ok": False, "source": "imd-insat-ir1", "status": last, "grid": None, "bounds": ASIA_BOUNDS}
-    cache.set(ck, fail, 90)
+    cache.set(ck, fail, 45)
     return fail
 
 

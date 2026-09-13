@@ -82,6 +82,10 @@ def test_cloudburst_and_downburst_from_live_cell():
     assert pack["lightning"]["level"] in {"watch", "alert"}
     assert pack["cloudburst"]["score_pct"] >= 45
     assert pack["cloudburst"]["rain_sat_mm_h"] > 0
+    assert pack["cloudburst"]["label"] in {"extreme_rain", "cloudburst_conditions", "quiet"}
+    if pack["cloudburst"]["qualifies"]:
+        assert pack["cloudburst"]["label"] == "cloudburst_conditions"
+        assert pack["cloudburst"]["level"] == "watch"
 
 
 def test_downburst_on_collapse():

@@ -35,6 +35,19 @@ from app.science import sat_cv
 
 IST = timezone(timedelta(hours=5, minutes=30))
 WINDOW_PATH = ROOT / ".cache" / "storm_windows.json"
+VERIFY_PATH = ROOT / ".cache" / "lightning_verify.jsonl"
+
+
+def log_verify(row: dict[str, Any]) -> None:
+    """Append one reliability sample. Skill is hidden until independent obs exist."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    try:
+        VERIFY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with VERIFY_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 _T0 = {
     "lightning": 35.0,
@@ -84,7 +97,9 @@ def confidence_of(
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(IST).isoformat(timespec="seconds")
+    from app.store.time import iso_z
+
+    return iso_z(dt)
 
 
 def _ms(dt: datetime) -> int:
@@ -162,12 +177,50 @@ def lifetime_min(cell: dict[str, Any]) -> float:
 
 
 def age_min(cell: dict[str, Any]) -> float:
+    """Tracked age from ForTraCC first-seen; trend is only a fallback."""
+    if cell.get("age_min") is not None:
+        try:
+            return max(0.0, float(cell["age_min"]))
+        except (TypeError, ValueError):
+            pass
     trend = str(cell.get("trend") or "steady")
     if trend == "growing":
         return 8.0
     if trend == "collapsing":
         return 42.0
     return 24.0
+
+
+def agreement_gate(
+    *,
+    kind: str = "lightning",
+    p_lightning: float = 0.0,
+    ot: bool = False,
+    cape: float = 0.0,
+    weather_code: int = 0,
+    agrees: bool | None = None,
+    n_strokes: int = 0,
+    schultz_jump: bool = False,
+) -> dict[str, Any]:
+    """Triple-source gate: IR cell × strokes × NWP thunder.
+
+    Predicted alerts require ≥2 independent sources. IR-only stays unverified.
+    """
+    ir = bool(ot) or float(p_lightning or 0) >= 0.32 or schultz_jump
+    nwp = bool(agrees) or int(weather_code or 0) >= 95 or float(cape or 0) >= 800
+    live = int(n_strokes or 0) >= 1
+    n = int(ir) + int(nwp) + int(live)
+    ok = n >= 2 or live
+    if kind in {"cloudburst", "downburst"} and ir and (nwp or live):
+        ok = True
+    return {
+        "ok": ok,
+        "n_sources": n,
+        "ir": ir,
+        "nwp": nwp,
+        "live_strokes": live,
+        "status": "confirmed" if ok else "unverified",
+    }
 
 
 def remaining_min(cell: dict[str, Any], age: float | None = None) -> float:
@@ -258,33 +311,32 @@ def predicted_strikes(cells: list[dict[str, Any]], now: datetime) -> tuple[list[
     for i, cell in enumerate(cells):
         p0 = float(cell.get("p_lightning") or 0.0)
         kind = str(cell.get("kind") or "storm")
-        if p0 < 0.16 and kind not in {"lightning", "storm", "cloudburst", "downburst"}:
+        if p0 < 0.12 and kind not in {"lightning", "storm", "cloudburst", "downburst", "cloud"}:
             continue
+        if kind == "cloud" and p0 < 0.12:
+            continue
+        nwp_fwd = cell.get("nwp_thunder_fwd")
+        skip_ltn = (
+            nwp_fwd is False
+            and int(cell.get("n_strokes") or 0) < 1
+            and not cell.get("nwp_thunder")
+            and p0 < 0.12
+        )
         u = float(cell.get("u_kmh") or 0.0)
         v = float(cell.get("v_kmh") or 0.0)
         tau = max(18.0, lifetime_min(cell) / 1.1)
         ring0 = cell_ring(cell)
-        live_poly = [pt for pt in ring0 if in_india(pt[0], pt[1])]
-        if len(live_poly) >= 3:
-            if live_poly[0] != live_poly[-1]:
-                live_poly.append(live_poly[0])
-            polys.append(
-                {
-                    "id": f"poly-{cell.get('id') or i}",
-                    "kind": kind,
-                    "lead_min": 0,
-                    "ring": live_poly,
-                    "p_lightning": p0,
-                    "place": cell.get("place"),
-                    "lat": cell["lat"],
-                    "lon": cell["lon"],
-                }
-            )
+        if skip_ltn:
+            continue
         for lead in _LEADS:
             p = p0 * math.exp(-lead / tau)
             if kind == "lightning":
                 p = max(p, p0 * 0.55)
-            if p < 0.16:
+            floor = 0.12
+            rescue = lead <= 15 and p0 >= 0.12
+            if p < floor and rescue:
+                p = max(p, 0.12)
+            if p < floor and not rescue:
                 continue
             plat = round(float(cell["lat"]) + v * (lead / 60.0) / 111.3, 3)
             plon = round(float(cell["lon"]) + u * (lead / 60.0) / 111.3, 3)
@@ -315,6 +367,8 @@ def predicted_strikes(cells: list[dict[str, Any]], now: datetime) -> tuple[list[
                     "lead_min": lead,
                     "p_lightning": round(p, 3),
                     "p_cloudburst": cell.get("p_cloudburst"),
+                    "ot": bool(cell.get("ot")),
+                    "schultz": cell.get("schultz"),
                     "engine": "thunder-predict-v1",
                     "phase": "predicted",
                     "parent": cell.get("id"),
@@ -323,9 +377,9 @@ def predicted_strikes(cells: list[dict[str, Any]], now: datetime) -> tuple[list[
                     **conf,
                 }
             )
-            if kind in {"storm", "cloudburst", "downburst"}:
-                sp = max(p * 0.85, float(cell.get("p_cloudburst") or 0) * math.exp(-lead / tau))
-                if sp >= 0.14:
+            if kind in {"storm", "cloudburst", "downburst", "cloud"}:
+                sp = max(p * 0.85, float(cell.get("p_cloudburst") or 0) * math.exp(-lead / tau), p0 * 0.5)
+                if sp >= 0.12 or (lead <= 15 and p0 >= 0.12):
                     sconf = confidence_of(
                         sp,
                         lead_min=lead,
@@ -360,16 +414,28 @@ def predicted_strikes(cells: list[dict[str, Any]], now: datetime) -> tuple[list[
                 if len(moved) >= 3:
                     if moved[0] != moved[-1]:
                         moved.append(moved[0])
+                    poly_kind = kind if kind in {"storm", "cloudburst", "downburst", "cloud"} else "storm"
+                    place = cell.get("place")
+                    if not place:
+                        continue
+                    lats = [pt[0] for pt in moved]
+                    lons = [pt[1] for pt in moved]
+                    if max(lats) - min(lats) > 4.5 or max(lons) - min(lons) > 5.5:
+                        continue
+                    if max(lats) - min(lats) < 0.02 and max(lons) - min(lons) < 0.02:
+                        continue
                     polys.append(
                         {
                             "id": f"poly-{cell.get('id') or i}-30",
-                            "kind": kind if kind in {"storm", "cloudburst", "downburst"} else "lightning",
+                            "kind": poly_kind,
                             "lead_min": 30,
                             "ring": moved,
                             "p_lightning": round(p, 3),
-                            "place": cell.get("place"),
+                            "place": place,
                             "lat": plat,
                             "lon": plon,
+                            "label": f"Predicted {poly_kind} area",
+                            "phase": "predicted",
                             **conf,
                         }
                     )
@@ -377,7 +443,10 @@ def predicted_strikes(cells: list[dict[str, Any]], now: datetime) -> tuple[list[
 
 
 def om_predicted(hub: dict[str, Any], pack: dict[str, Any], now: datetime) -> list[dict[str, Any]]:
-    """Open-Meteo hourly thunder at a hub → predicted windows (no extra HTTP)."""
+    """Open-Meteo hourly thunder at a hub → live/predicted windows (no extra HTTP).
+
+    Past hours (lead_h < 0) belong in past_strikes, not the predicted list.
+    """
     out: list[dict[str, Any]] = []
     lat, lon = float(hub["lat"]), float(hub["lon"])
     if not in_india(lat, lon):
@@ -386,6 +455,8 @@ def om_predicted(hub: dict[str, Any], pack: dict[str, Any], now: datetime) -> li
     hours = pack.get("hours") or []
     for row in hours:
         lead_h = int(row.get("lead_h") or 0)
+        if lead_h < 0:
+            continue
         if not row.get("thunder"):
             continue
         cape = float(row.get("cape") or 0.0)

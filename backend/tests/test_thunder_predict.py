@@ -81,6 +81,140 @@ def test_live_windows_stay_open_and_differ():
     assert a["closes_ms"] != b["closes_ms"]
 
 
+def test_predicted_strikes_include_weaker_cloud():
+    now = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
+    cells = [
+        {
+            "id": "c9",
+            "kind": "cloud",
+            "lat": 22.57,
+            "lon": 88.36,
+            "place": "Kolkata, West Bengal",
+            "area_km2": 80,
+            "min_tb_k": 244,
+            "p_lightning": 0.24,
+            "p_cloudburst": 0.08,
+            "u_kmh": 10,
+            "v_kmh": 0,
+            "trend": "steady",
+            "ring": [[22.7, 88.2], [22.7, 88.5], [22.4, 88.5], [22.4, 88.2], [22.7, 88.2]],
+        }
+    ]
+    hits, _ = predicted_strikes(cells, now)
+    assert hits
+    assert all(h["phase"] == "predicted" for h in hits)
+    assert any(h["kind"] == "lightning" for h in hits)
+    assert any(h["kind"] == "cloud" for h in hits)
+
+
+def test_area_polygons_are_storm_not_lightning():
+    now = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
+    hits, polys = predicted_strikes(
+        [
+            {
+                "id": "c1",
+                "kind": "lightning",
+                "lat": 22.57,
+                "lon": 88.36,
+                "p_lightning": 0.5,
+                "place": "Kolkata, West Bengal",
+                "area_km2": 80,
+                "min_tb_k": 220,
+                "u_kmh": 12,
+                "v_kmh": 4,
+                "ring": [[22.7, 88.2], [22.7, 88.5], [22.4, 88.5], [22.4, 88.2], [22.7, 88.2]],
+            }
+        ],
+        now,
+    )
+    assert hits
+    assert polys
+    assert all(p["kind"] != "lightning" for p in polys)
+    assert all(p.get("label") for p in polys)
+
+
+def test_live_poly_drops_unmapped_ring():
+    now = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
+    _, polys = predicted_strikes(
+        [
+            {
+                "id": "out",
+                "kind": "storm",
+                "lat": 22.57,
+                "lon": 88.36,
+                "p_lightning": 0.5,
+                "ring": [[2.0, 2.0], [2.0, 8.0], [8.0, 8.0], [8.0, 2.0], [2.0, 2.0]],
+            }
+        ],
+        now,
+    )
+    assert polys == []
+
+
+def test_predicted_strikes_skip_without_nwp():
+    now = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
+    cells = [
+        {
+            "id": "ir-only-weak",
+            "kind": "lightning",
+            "lat": 22.57,
+            "lon": 88.36,
+            "p_lightning": 0.08,
+            "nwp_thunder": False,
+            "nwp_thunder_fwd": False,
+            "n_strokes": 0,
+            "u_kmh": 10,
+            "v_kmh": 0,
+            "area_km2": 80,
+            "min_tb_k": 220,
+        }
+    ]
+    hits, _ = predicted_strikes(cells, now)
+    assert not any(h["kind"] == "lightning" and h["phase"] == "predicted" for h in hits)
+
+
+def test_predicted_strikes_keep_ir_only_above_floor():
+    now = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
+    cells = [
+        {
+            "id": "ir-only",
+            "kind": "lightning",
+            "lat": 22.57,
+            "lon": 88.36,
+            "p_lightning": 0.5,
+            "nwp_thunder": False,
+            "nwp_thunder_fwd": False,
+            "n_strokes": 0,
+            "u_kmh": 10,
+            "v_kmh": 0,
+            "area_km2": 80,
+            "min_tb_k": 220,
+        }
+    ]
+    hits, _ = predicted_strikes(cells, now)
+    assert any(h["kind"] == "lightning" and h["phase"] == "predicted" for h in hits)
+
+
+def test_predicted_strikes_skip_weak_floor():
+    now = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
+    cells = [
+        {
+            "id": "weak",
+            "kind": "cloud",
+            "lat": 22.57,
+            "lon": 88.36,
+            "p_lightning": 0.08,
+            "p_cloudburst": 0.05,
+            "u_kmh": 8,
+            "v_kmh": 0,
+            "area_km2": 40,
+            "min_tb_k": 250,
+        }
+    ]
+    hits, _ = predicted_strikes(cells, now)
+    assert hits == []
+
+
 def test_predicted_strikes_are_future_and_in_india():
     now = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
     cells = [
@@ -105,7 +239,8 @@ def test_predicted_strikes_are_future_and_in_india():
     assert all(h["phase"] == "predicted" for h in hits)
     assert all(h["started_ms"] >= int(now.timestamp() * 1000) for h in hits)
     assert all(68.0 < h["lon"] < 97.4 and 6.6 < h["lat"] < 35.8 for h in hits)
-    assert any(p["lead_min"] == 0 for p in polys)
+    assert all(p.get("lead_min") == 30 for p in polys)
+    assert all(p.get("label") and p.get("place") for p in polys)
     assert any(len(p["ring"]) >= 4 for p in polys)
     assert all("confidence" in h and h["confidence_band"] in {"low", "medium", "high"} for h in hits)
     assert any(h["kind"] == "lightning" for h in hits)

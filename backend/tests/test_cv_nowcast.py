@@ -36,6 +36,8 @@ def test_probs_rise_for_ot_and_hills():
     cool = {"d_tb": 2.0, "jump": 3}
     assert lightning_prob(cell, cool, 8) > 0.45
     assert cloudburst_prob(cell, cool, "orographic") > cloudburst_prob(cell, cool, "arid")
+    warm = {**cell, "min_tb_k": 240, "ot": False, "rain_ir_mm_h": 6}
+    assert cloudburst_prob(warm, cool, "plains") <= 0.35
 
 
 def test_lightning_feed_parses_geojson_and_list():
@@ -75,6 +77,36 @@ def test_weatherbit_history_payload_is_past():
     assert pack["strokes"][0]["past_mins"] == 40
 
 
+def test_om_lightning_agrees_needs_thunder_not_rain():
+    from app.providers.om_thunder import agrees
+
+    rain_only = {"ok": True, "weather_code": 61, "precip_mm": 3.2, "thunder": False, "hours": []}
+    assert agrees("lightning", rain_only) is False
+    stormy = {"ok": True, "weather_code": 95, "precip_mm": 0.4, "thunder": True, "hours": []}
+    assert agrees("lightning", stormy) is True
+
+
+def test_om_predicted_skips_past_hours():
+    from datetime import datetime, timezone
+
+    from app.science.thunder_predict import om_predicted
+
+    now = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
+    rows = om_predicted(
+        {"lat": 22.57, "lon": 88.36, "district": "Kolkata"},
+        {
+            "hours": [
+                {"lead_h": -2, "thunder": True, "weather_code": 95, "cape": 1400},
+                {"lead_h": 1, "thunder": True, "weather_code": 95, "cape": 1400},
+            ]
+        },
+        now,
+    )
+    assert len(rows) == 1
+    assert rows[0]["phase"] == "predicted"
+    assert rows[0]["lead_min"] == 60
+
+
 def test_om_past_strikes_only_negative_lead():
     pack = {
         "hours": [
@@ -88,6 +120,40 @@ def test_om_past_strikes_only_negative_lead():
     assert len(rows) == 1
     assert rows[0]["phase"] == "past"
     assert rows[0]["lat"] == 13.08
+
+
+def test_enhance_tags_downburst_and_cloud():
+    from app.science.cv_nowcast import enhance
+
+    down = {
+        "id": "c0",
+        "lat": 22.5,
+        "lon": 88.3,
+        "min_tb_k": 228,
+        "ot": False,
+        "rain_ir_mm_h": 8,
+        "trend": "collapsing",
+        "d_tb_k": 3.2,
+        "speed_kmh": 18,
+        "area_km2": 90,
+    }
+    anvil = {
+        "id": "c1",
+        "lat": 23.0,
+        "lon": 87.5,
+        "min_tb_k": 246,
+        "layer": "anvil",
+        "ot": False,
+        "rain_ir_mm_h": 1,
+        "trend": "steady",
+        "speed_kmh": 25,
+        "area_km2": 200,
+    }
+    g = _grid(255, 16)
+    out, _ = enhance([down, anvil], g, (86.0, 90.0, 21.0, 24.0))
+    kinds = {c["kind"] for c in out}
+    assert "downburst" in kinds
+    assert "cloud" in kinds
 
 
 def test_enhance_tags_cells():

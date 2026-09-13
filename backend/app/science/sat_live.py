@@ -70,33 +70,47 @@ async def fetch(loc: Any) -> dict[str, Any]:
     if hit is not None and isinstance(hit, dict):
         return hit
 
-    async def _safe(coro, default):
+    async def _safe(coro, default, timeout: float = 6.0):
         try:
-            return await asyncio.wait_for(coro, timeout=1.2)
+            return await asyncio.wait_for(coro, timeout=timeout)
         except Exception:
             return default
 
-    insat, ir, imerg, lightning, bands = await asyncio.gather(
-        _safe(imd_insat.fetch_ir(lat, lon), {"ok": False}),
-        _safe(gibs_ir.fetch_ir(lat, lon), {"ok": False}),
-        _safe(gpm_imerg.fetch_pin(lat, lon, heavy=False), {}),
-        _safe(weatherbit_lightning.fetch(lat, lon), {"ok": False, "strokes": []}),
-        _safe(imd_insat.fetch_channels(lat, lon), {"ok": False, "bands": []}),
+    # IR1 + strokes first (must not share a 1.2 s deadline with five extra JPEGs).
+    insat, lightning = await asyncio.gather(
+        _safe(imd_insat.fetch_ir(lat, lon), {"ok": False}, 6.0),
+        _safe(weatherbit_lightning.fetch(lat, lon), {"ok": False, "strokes": []}, 6.0),
+    )
+    ir, imerg, bands = await asyncio.gather(
+        _safe(gibs_ir.fetch_ir(lat, lon), {"ok": False}, 4.0),
+        _safe(gpm_imerg.fetch_pin(lat, lon, heavy=False), {}, 4.0),
+        _safe(imd_insat.fetch_channels(lat, lon), {"ok": False, "bands": []}, 4.0),
     )
     grid, half = _pick_grid(insat, ir)
     try:
         from app.ml.vera.cv_branch import persist_grid
 
         persist_grid(grid, insat.get("url") or ir.get("url"))
+        for b in (bands.get("bands") or []) if isinstance(bands, dict) else []:
+            if isinstance(b, dict) and b.get("grid"):
+                persist_grid(b.get("grid"), b.get("url"))
     except Exception:
         pass
     cells: list[dict[str, Any]] = []
+    bounds = (lon - half, lon + half, lat - half, lat + half)
     if grid:
         cells = sat_cv.segment(grid, lat0=lat, lon0=lon, half_deg=half)
     key = place_key(loc)
     store = _load_tracks()
     prev_pack = store.get(key) or {}
     prev_cells = list(prev_pack.get("cells") or [])
+    if not prev_cells:
+        try:
+            from app.science.cv_memory import last_ir_cells
+
+            prev_cells = last_ir_cells()
+        except Exception:
+            prev_cells = []
     prev_t = prev_pack.get("t")
     dt_min = 10.0
     if prev_t:
@@ -107,6 +121,18 @@ async def fetch(loc: Any) -> dict[str, Any]:
     if prev_cells and cells:
         cells = sat_cv.track(prev_cells, cells, dt_min)
     sat_cv.associate_strokes(cells, list(lightning.get("strokes") or []))
+    try:
+        from app.science import cv_nowcast
+
+        cells, _cv = cv_nowcast.enhance(
+            cells,
+            grid,
+            bounds,
+            strokes=list(lightning.get("strokes") or []),
+            bands=bands if isinstance(bands, dict) else None,
+        )
+    except Exception:
+        pass
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     store[key] = {"t": now, "cells": cells}
     if len(store) > 80:
@@ -126,7 +152,8 @@ async def fetch(loc: Any) -> dict[str, Any]:
         "ok": bool(insat.get("ok") or ir.get("ok") or lightning.get("ok") or imerg.get("ok") or bands.get("ok")),
         "method": "imd-insat 5-band + gibs-ir/imerg + weatherbit",
     }
-    cache.set(sat_key, out, 900, swr_s=3600)
+    sat_ok = bool(insat.get("ok") or ir.get("ok") or bands.get("ok"))
+    cache.set(sat_key, out, 180 if sat_ok else 45)
     return out
 
 

@@ -96,19 +96,32 @@ def build(
     elif env["cape"] >= 800:
         l_score += 5
     l_score = int(_clip(l_score, 0, 95))
+    from app.science.thunder_predict import agreement_gate
+
+    gate = agreement_gate(
+        kind="lightning",
+        p_lightning=l_score / 100.0,
+        ot=bool(cell and cell.get("ot")),
+        cape=env["cape"],
+        weather_code=int((f.get("weather_code") or 0) or 0),
+        agrees=None,
+        n_strokes=n_stroke,
+        schultz_jump=jump,
+    )
     lightning = {
         "level": _level(l_score),
         "score_pct": l_score,
         "n_strokes": n_stroke,
         "nearest_km": nearest,
         "detected": bool(n_stroke),
+        "gate": gate,
         "nowcast": {
             "level": _level(l_score if jump or n_stroke else max(0, l_score - 20)),
             "eta_min": eta,
-            "method": "stroke rate + IR lightning-jump",
+            "method": "stroke rate + Schultz 2σ + LightningCast-lite",
         },
         "source": (live.get("lightning") or {}).get("source") or "none",
-        "method": "weatherbit strokes + cell growth",
+        "method": "weatherbit strokes + cell growth + agreement gate",
     }
 
     # --- cloudburst (extreme rain) ---
@@ -134,16 +147,37 @@ def build(
     if n_stroke >= 3:
         cb += 8
     cb = int(_clip(cb, 0, 95))
+    deep = bool(cell and cell.get("min_tb_k") is not None and float(cell["min_tb_k"]) <= 221)
+    stall = bool(cell and float(cell.get("speed_kmh") or 99) < 18)
+    oro = phys.get("kind") == "orographic"
+    rain_hi = rain_sat >= 18
+    # IMD cloudburst is ~100 mm/h on a small area. IR never measures that.
+    # Only "conditions" when the score is high and stalling-deep or orographic.
+    qualifies = cb >= 70 and rain_hi and (oro or (deep and stall))
+    if qualifies:
+        cb_label = "cloudburst_conditions"
+        cb_level = "watch"
+    elif cb >= 45 and (rain_sat >= 8 or deep):
+        cb_label = "extreme_rain"
+        cb_level = _level(cb)
+    else:
+        cb_label = "quiet"
+        cb_level = "quiet"
     cloudburst = {
-        "level": _level(cb),
+        "level": cb_level,
         "score_pct": cb,
+        "label": cb_label,
+        "qualifies": qualifies,
         "eta_min": eta,
         "rain_ir_mm_h": round(ir_mm, 2),
         "rain_sat_mm_h": round(rain_sat, 2),
         "imerg_mm_h": imerg_mm,
         "cell_id": None if not cell else cell.get("id"),
-        "orographic": phys.get("kind") == "orographic",
-        "method": "IR cell + IMERG + stall + orography",
+        "orographic": oro,
+        "deep_ir": deep,
+        "stall": stall,
+        "method": "IR cell + IMERG + stall + orography (not 100 mm/h confirmed)",
+        "note": "Watch only. Not an IMD cloudburst confirmation.",
     }
 
     # --- downburst / microburst wind ---
@@ -177,11 +211,21 @@ def build(
     }
 
     track = sat_cv.forecast_track(cell) if cell else []
+    from app.science.env_hazards import convective_window
+
+    win = convective_window({"lightning": lightning, "cloudburst": cloudburst, "cell": {**(cell or {}), "remain_min": None}})
+    lightning["window_start"] = win.get("window_start")
+    lightning["window_end"] = win.get("window_end")
+    cloudburst["window_start"] = win.get("window_start")
+    cloudburst["window_end"] = win.get("window_end")
+    downburst["window_start"] = win.get("window_start")
+    downburst["window_end"] = win.get("window_end")
     return {
         "as_of": live.get("as_of"),
         "lightning": lightning,
         "cloudburst": cloudburst,
         "downburst": downburst,
+        "window": win,
         "cell": cell,
         "track": track,
         "n_cells": len(cells),
