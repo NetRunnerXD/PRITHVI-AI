@@ -40,6 +40,8 @@ function kindLabel(kind: string, t: Record<string, string>) {
     downburst: t.kindDownburst || "Downburst",
     storm: t.kindStorm || "Storm",
     cloud: t.kindCloud || "Cold cloud",
+    fire: t.hlFire || "Forest fire",
+    landslide: t.hlLandslide || "Landslide",
   };
   return map[kind] || kind;
 }
@@ -49,11 +51,13 @@ export function StormFeed({
   locale,
   selectedId,
   onSelect,
+  pastHours = 6,
 }: {
   storm: StormMapPack | null;
   locale: Locale;
   selectedId?: string | null;
   onSelect: (inc: StormIncident) => void;
+  pastHours?: number;
 }) {
   const t = COPY[locale];
   const [now, setNow] = useState(() => Date.now());
@@ -66,8 +70,41 @@ export function StormFeed({
   }, []);
 
   const rows = useMemo(() => {
-    const list = storm?.incidents || [];
+    const slides = (storm?.landslides || []).map((s) => ({
+      id: s.id,
+      kind: "landslide",
+      lat: s.lat,
+      lon: s.lon,
+      place: s.place || "Landslide watch",
+      phase: s.phase || "live",
+      started_at: s.window_start || "",
+      closes_at: s.window_end || "",
+      occurred_at: s.occurred_at,
+      occurred_ms: s.occurred_ms,
+      t: s.occurred_at,
+    })) as StormIncident[];
+    const fires = (storm?.fires || []).map((f) => ({
+      id: f.id,
+      kind: "fire",
+      lat: f.lat,
+      lon: f.lon,
+      place: f.place || "Forest fire",
+      phase: f.phase || "live",
+      started_at: "",
+      closes_at: "",
+      occurred_at: (f as { occurred_at?: string }).occurred_at,
+      occurred_ms: (f as { occurred_ms?: number }).occurred_ms,
+      t: (f as { t?: string }).t,
+    })) as StormIncident[];
+    const list = [...(storm?.incidents || []), ...fires, ...slides];
+    const pastMs = Math.max(1, pastHours) * 3600_000;
     return list.filter((inc) => {
+      if (inc.phase === "past" && inc.kind !== "fire" && inc.kind !== "landslide") {
+        const occurred = ts(inc, (inc as { occurred_at?: string }).occurred_at, (inc as { occurred_ms?: number }).occurred_ms);
+        const start = ts(inc, inc.started_at, inc.started_ms);
+        const t = !Number.isNaN(occurred) ? occurred : start;
+        if (Number.isNaN(t) || now - t > pastMs || now - t < 0) return false;
+      }
       // Phase filter
       if (phaseFilter !== "all") {
         const incPhase = inc.phase || "live";
@@ -88,10 +125,10 @@ export function StormFeed({
       if (kindFilter !== "all" && inc.kind !== kindFilter) return false;
       return true;
     });
-  }, [storm, phaseFilter, kindFilter, now]);
+  }, [storm, phaseFilter, kindFilter, now, pastHours]);
 
   const phases = ["all", "live", "predicted", "past"];
-  const kinds = ["all", "lightning", "storm", "cloudburst"];
+  const kinds = ["all", "lightning", "storm", "cloudburst", "downburst", "cloud", "fire", "landslide"];
   const ltn = storm?.sensors?.lightning_status;
 
   return (

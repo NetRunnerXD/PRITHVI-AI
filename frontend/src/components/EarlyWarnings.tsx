@@ -77,6 +77,31 @@ function bulletinLine(w: EarlyWarning) {
   return first.length > 180 ? `${first.slice(0, 177)}…` : first;
 }
 
+function windowLabel(w: EarlyWarning) {
+  const fmt = (iso?: string | null) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+  const a = w.window_start || w.issued_at;
+  const b = w.window_end || w.expires_at;
+  if (a && b) return `Expected ${fmt(a)} – ${fmt(b)} IST`;
+  if (a) return `From ${fmt(a)} IST`;
+  if (b) return `Until ${fmt(b)} IST`;
+  if (w.eta_min != null && Number.isFinite(Number(w.eta_min))) {
+    const m = Math.max(0, Math.round(Number(w.eta_min)));
+    return m <= 5 ? "Expected now" : `Expected in ${m} min`;
+  }
+  return "";
+}
+
 function issuedLabel(iso?: string | null) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -172,6 +197,9 @@ export function EarlyWarnings({
                       )}
                     </p>
                     {line ? <p className="mt-1 text-xs leading-snug text-neo-muted">{line}</p> : null}
+                    {windowLabel(w) ? (
+                      <p className="mt-1 text-[11px] font-mono font-semibold text-neo-accent">{windowLabel(w)}</p>
+                    ) : null}
                     <p className="mt-2 text-[10px] uppercase tracking-wide text-neo-muted">
                       {w.source}
                       {when ? ` · ${when}` : ""}

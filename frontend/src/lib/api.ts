@@ -138,6 +138,9 @@ export type StormMapPack = {
     area_km2?: number;
     started_at?: string;
     closes_at?: string;
+    occurred_at?: string;
+    first_seen?: string;
+    t?: string | null;
   }[];
   cells?: {
     id?: string;
@@ -156,6 +159,35 @@ export type StormMapPack = {
   polygons?: StormPolygon[];
   predicted?: StormIncident[];
   predicted_storms?: StormIncident[];
+  predicted_unverified?: StormIncident[];
+  fires?: {
+    id: string;
+    lat: number;
+    lon: number;
+    place?: string;
+    n?: number;
+    frp_mw?: number;
+    phase?: string;
+    title?: string;
+    occurred_at?: string;
+    occurred_ms?: number;
+    first_seen?: string;
+    t?: string | null;
+  }[];
+  landslides?: {
+    id: string;
+    lat: number;
+    lon: number;
+    place?: string;
+    phase?: string;
+    title?: string;
+    window_start?: string | null;
+    window_end?: string | null;
+    occurred_at?: string;
+    occurred_ms?: number;
+    first_seen?: string;
+    t?: string | null;
+  }[];
   counts?: {
     lightning?: number;
     cloudburst?: number;
@@ -165,11 +197,23 @@ export type StormMapPack = {
     predicted_storm?: number;
     past_lightning?: number;
     past_storm?: number;
+    fire?: number;
+    landslide?: number;
     all?: number;
   };
   sensors?: Record<string, boolean | string>;
   imerg_mm_h?: number | null;
   incidents?: StormIncident[];
+  stale?: boolean;
+  ingest_age_s?: number;
+  need_second_frame?: boolean;
+  past_h?: number;
+  processing?: {
+    ready?: boolean;
+    message?: string;
+    satellites?: { id?: string; name?: string; status?: string; detail?: string }[];
+    age_s?: number | null;
+  };
 };
 
 export type StormStroke = {
@@ -179,12 +223,17 @@ export type StormStroke = {
   t?: string | null;
   timestamp_utc?: string | null;
   past_mins?: number | null;
+  occurred_at?: string;
+  occurred_ms?: number;
+  first_seen?: string;
+  last_seen?: string;
+  saved_at?: string;
+  lead_h?: number;
   place?: string;
   kind?: string;
   phase?: string;
   started_ms?: number;
   engine?: string;
-  lead_h?: number;
 };
 
 export type StormPolygon = {
@@ -198,6 +247,8 @@ export type StormPolygon = {
   lon?: number;
   confidence?: number;
   confidence_band?: string;
+  label?: string;
+  phase?: string;
 };
 
 export type StormIncident = {
@@ -215,6 +266,7 @@ export type StormIncident = {
   trend?: string | null;
   rain_ir_mm_h?: number;
   min_tb_k?: number;
+  area_km2?: number;
   p_lightning?: number;
   p_cloudburst?: number;
   engine?: string;
@@ -224,6 +276,9 @@ export type StormIncident = {
   confidence?: number;
   confidence_band?: string;
   t?: string | null;
+  occurred_at?: string;
+  occurred_ms?: number;
+  first_seen?: string;
   verify?: { weather_code?: number; precip_mm?: number; cape?: number; agrees?: boolean | null; note?: string };
 };
 
@@ -247,24 +302,67 @@ export async function fetchStates(): Promise<string[]> {
 }
 
 export async function fetchWeatherGrid(hour = 0) {
-  const r = await fetch(`${apiUrl("/map/weather-grid")}?hour=${hour}`);
-  if (!r.ok) return null;
-  return r.json();
+  try {
+    const r = await fetch(`${apiUrl("/map/weather-grid")}?hour=${hour}`);
+    if (!r.ok) return null;
+    return r.json();
+  } catch {
+    return null;
+  }
 }
 
-export async function fetchRadarFrames() {
-  const r = await fetch(apiUrl("/map/radar"));
-  if (!r.ok) return null;
-  return r.json() as Promise<{
-    ok: boolean;
-    host: string;
-    radar: { time: number; path: string }[];
-    satellite: { time: number; path: string }[];
-  }>;
+type RadarPack = {
+  ok: boolean;
+  host: string;
+  radar: { time: number; path: string }[];
+  satellite: { time: number; path: string }[];
+};
+
+function rainViewerPack(body: {
+  host?: string;
+  radar?: { past?: { time: number; path: string }[]; nowcast?: { time: number; path: string }[] };
+  satellite?: { infrared?: { time: number; path: string }[] };
+}): RadarPack {
+  const radar = body.radar || {};
+  const sat = body.satellite || {};
+  const past = listOrEmpty(radar.past).slice(-8);
+  const nowcast = listOrEmpty(radar.nowcast).slice(0, 4);
+  const infrared = listOrEmpty(sat.infrared).slice(-4);
+  return {
+    ok: true,
+    host: body.host || "https://tilecache.rainviewer.com",
+    radar: [...past, ...nowcast],
+    satellite: infrared,
+  };
 }
 
-export async function fetchStormMap(state: string): Promise<StormMapPack | null> {
-  const q = `state=${encodeURIComponent(state)}`;
+function listOrEmpty<T>(v: T[] | undefined): T[] {
+  return Array.isArray(v) ? v : [];
+}
+
+export async function fetchRadarFrames(): Promise<RadarPack | null> {
+  try {
+    const r = await fetch(apiUrl("/map/radar"));
+    if (r.ok) {
+      const body = (await r.json()) as RadarPack & { ok?: boolean };
+      if (body?.ok && (body.radar?.length || body.satellite?.length || body.host)) return body;
+    }
+  } catch {
+    /* backend down or CORS — try RainViewer directly */
+  }
+  try {
+    const r = await fetch("https://api.rainviewer.com/public/weather-maps.json");
+    if (!r.ok) return null;
+    return rainViewerPack(await r.json());
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchStormMap(state: string, pastHours?: number): Promise<StormMapPack | null> {
+  const params = new URLSearchParams({ state });
+  if (pastHours != null) params.set("past_h", String(pastHours));
+  const q = params.toString();
   for (const path of ["/nowcast/storm-map", "/nowcast-storm-map"]) {
     try {
       const r = await fetch(`${apiUrl(path)}?${q}`);

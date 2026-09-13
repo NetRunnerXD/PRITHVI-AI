@@ -579,7 +579,7 @@ export function getSoilLaymanSummary(
         tone: "info",
       },
       {
-        label: "VPD Deficit",
+        label: locale === "hi" ? "वाष्प दबाव घाटा" : locale === "bn" ? "বাষ্প চাপ ঘাটতি" : "Vapour Pressure Deficit",
         value: vpd != null ? `${vpd} kPa` : "Normal",
         tone: "info",
       },

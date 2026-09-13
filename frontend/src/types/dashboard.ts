@@ -49,6 +49,9 @@ export type EarlyWarning = {
   url?: string | null;
   href_kind?: string | null;
   expires_at?: string | null;
+  eta_min?: number | null;
+  window_start?: string | null;
+  window_end?: string | null;
   states?: string[];
   kind?: string | null;
   lat?: number | null;
@@ -262,6 +265,16 @@ export type DashboardSnapshot = {
   };
   prescriptive: { warnings: EarlyWarning[]; actions: Prescription[] };
   risks: RiskCard[];
+  risks_india?: {
+    state?: string;
+    hq?: string;
+    lat?: number;
+    lon?: number;
+    flood_score?: number;
+    drought_score?: number;
+    temp_max_c?: number;
+    precip_3d_mm?: number;
+  }[];
   map: { center: number[]; zoom: number; layers: { id: string; visible?: boolean }[] };
   vegetation: { index?: number; label?: string; kind?: string; note?: string };
   provider_status: Record<string, string>;

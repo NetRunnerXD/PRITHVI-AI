@@ -328,7 +328,8 @@ function parseAlertLocation(w: any, currentLoc?: Location | null) {
   if (hazardLabel === "aqi" || hazardLabel === "air") hazardLabel = "Air Quality Warning";
   else if (hazardLabel === "rainfall") hazardLabel = "Heavy Rainfall Advisory";
   else if (hazardLabel === "flood") hazardLabel = "Severe Flood Warning";
-  else if (hazardLabel === "cloudburst") hazardLabel = "Cloudburst Torrent";
+  else if (hazardLabel === "cloudburst") hazardLabel = "Cloudburst conditions (watch)";
+  else if (hazardLabel === "extreme_rain") hazardLabel = "Extreme rain nowcast";
   else if (hazardLabel === "thunderstorm" || hazardLabel === "lightning") hazardLabel = "Thunderstorm & Squall";
   else if (hazardLabel === "cyclone") hazardLabel = "Tropical Cyclone Alert";
   else if (hazardLabel === "heatwave") hazardLabel = "Heatwave Advisory";
@@ -623,6 +624,38 @@ function getGeneralizedAlertGuidance(w: any) {
       action: "Park vehicles clear of large trees and secure loose construction scaffolding.",
     };
   }
+  if (k === "fog" || title.includes("fog")) {
+    return {
+      category: "Dense Fog Advisory",
+      threat: "Low visibility from radiation or advection fog.",
+      guidance: "Road, rail and flight delays; very dense fog is under 50 m visibility.",
+      action: "Slow travel, use fog lamps, and allow extra time for morning commutes.",
+    };
+  }
+  if (k === "uv" || k === "uv_heat" || title.includes("uv") || title.includes("radiation")) {
+    return {
+      category: "High-risk UV / Solar Radiation",
+      threat: "WHO very high or extreme ultraviolet index.",
+      guidance: "Unprotected skin can burn quickly around solar noon, worse with heat.",
+      action: "Seek shade 11:00–15:30 IST, wear sleeves, hat and sunglasses.",
+    };
+  }
+  if (k === "fire" || title.includes("forest fire") || title.includes("wildfire")) {
+    return {
+      category: "Forest Fire / Thermal Anomaly",
+      threat: "Satellite hotspots from NASA FIRMS VIIRS.",
+      guidance: "Smoke, crop-residue burns, or wildfire. Not a burned-area map.",
+      action: "Avoid smoke, keep windows shut, do not light open fires.",
+    };
+  }
+  if (k === "landslide" || title.includes("landslide") || title.includes("mudslide")) {
+    return {
+      category: "Landslide Watch",
+      threat: "Steep slopes after heavy rain may fail.",
+      guidance: "Hill roads, cuts and riverbeds are the first to go.",
+      action: "Stay off steep cuts, avoid night travel on hill roads, move upslope of debris fans.",
+    };
+  }
   return {
     category: "Official Disaster Advisory",
     threat: "Severe meteorological or environmental advisory active.",
@@ -717,7 +750,7 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
       });
     }
 
-    return out.slice(0, 24);
+    return out;
   })();
 
   const viewMode = useApp((s) => s.viewMode);
@@ -949,7 +982,15 @@ const HAZARD_THEMES: Record<
     badgeBg: "rgba(79, 70, 229, 0.12)",
     badgeText: "#4f46e5",
     cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #4f46e5 8%), var(--card))",
-    label: "Cloudburst Torrent",
+    label: "Cloudburst conditions",
+  },
+  extreme_rain: {
+    color: "#4f46e5",
+    borderClass: "border-l-indigo-500 dark:border-l-indigo-400",
+    badgeBg: "rgba(79, 70, 229, 0.12)",
+    badgeText: "#4f46e5",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #4f46e5 8%), var(--card))",
+    label: "Extreme rain nowcast",
   },
   cyclone: {
     color: "#e11d48",
@@ -1015,6 +1056,38 @@ const HAZARD_THEMES: Record<
     cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #06b6d4 8%), var(--card))",
     label: "High Wind Squall",
   },
+  fog: {
+    color: "#64748b",
+    borderClass: "border-l-slate-500 dark:border-l-slate-400",
+    badgeBg: "rgba(100, 116, 139, 0.12)",
+    badgeText: "#64748b",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #64748b 8%), var(--card))",
+    label: "Dense Fog",
+  },
+  uv: {
+    color: "#ca8a04",
+    borderClass: "border-l-yellow-500 dark:border-l-yellow-400",
+    badgeBg: "rgba(202, 138, 4, 0.12)",
+    badgeText: "#ca8a04",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #ca8a04 8%), var(--card))",
+    label: "High-risk UV",
+  },
+  fire: {
+    color: "#ea580c",
+    borderClass: "border-l-orange-600 dark:border-l-orange-500",
+    badgeBg: "rgba(234, 88, 12, 0.14)",
+    badgeText: "#ea580c",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #ea580c 8%), var(--card))",
+    label: "Forest Fire",
+  },
+  landslide: {
+    color: "#92400e",
+    borderClass: "border-l-amber-800 dark:border-l-amber-700",
+    badgeBg: "rgba(146, 64, 14, 0.14)",
+    badgeText: "#92400e",
+    cardBg: "linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, #92400e 8%), var(--card))",
+    label: "Landslide Watch",
+  },
 };
 
 function getHazardTheme(hazardOrKind?: string) {
@@ -1032,7 +1105,58 @@ function getHazardTheme(hazardOrKind?: string) {
   if (k.includes("tsunami")) return HAZARD_THEMES.tsunami;
   if (k.includes("marine") || k.includes("wave")) return HAZARD_THEMES.marine;
   if (k.includes("wind") || k.includes("gale")) return HAZARD_THEMES.wind;
+  if (k.includes("fog") || k.includes("visibility")) return HAZARD_THEMES.fog;
+  if (k.includes("uv") || k.includes("radiation") || k.includes("ultraviolet")) return HAZARD_THEMES.uv;
+  if (k.includes("fire") || k.includes("wildfire")) return HAZARD_THEMES.fire;
+  if (k.includes("landslide") || k.includes("mudslide")) return HAZARD_THEMES.landslide;
   return HAZARD_THEMES.rainfall;
+}
+
+function formatAlertWindow(w: { window_start?: string | null; window_end?: string | null; issued_at?: string | null; expires_at?: string | null; eta_min?: number | null }) {
+  const fmt = (iso?: string | null) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+  const a = w.window_start || w.issued_at;
+  const b = w.window_end || w.expires_at;
+  if (a && b) return `Expected ${fmt(a)} – ${fmt(b)} IST`;
+  if (a) return `From ${fmt(a)} IST`;
+  if (b) return `Until ${fmt(b)} IST`;
+  if (w.eta_min != null && Number.isFinite(Number(w.eta_min))) {
+    const m = Math.max(0, Math.round(Number(w.eta_min)));
+    return m <= 5 ? "Expected now" : `Expected in ${m} min`;
+  }
+  return "";
+}
+
+export function alertTimePhase(w: {
+  window_start?: string | null;
+  window_end?: string | null;
+  issued_at?: string | null;
+  expires_at?: string | null;
+  valid_until?: string | null;
+}): "past" | "active" | "future" {
+  const now = Date.now();
+  const parse = (iso?: string | null) => {
+    if (!iso) return NaN;
+    const t = Date.parse(iso);
+    return Number.isNaN(t) ? NaN : t;
+  };
+  const start = parse(w.window_start);
+  const end = parse(w.window_end || w.expires_at || w.valid_until);
+  const issued = parse(w.issued_at);
+  if (!Number.isNaN(end) && end < now - 15 * 60_000) return "past";
+  if (!Number.isNaN(start) && start > now + 20 * 60_000) return "future";
+  if (Number.isNaN(end) && !Number.isNaN(issued) && now - issued > 48 * 3600_000) return "past";
+  return "active";
 }
 
 // Great-circle Haversine Distance (in km)
@@ -1134,18 +1258,28 @@ function RiskAlertPanel({
   const [selectedCluster, setSelectedCluster] = useState<AlertCluster | null>(null);
   const [mobileExpanded, setMobileExpanded] = useState<boolean>(allAlerts.length > 0);
   const [expandedRiskId, setExpandedRiskId] = useState<string | null>(null);
-
   const devDisabled = useApp((s) => s.settings.devDisabledProviders || []);
   const risksDisabled = devDisabled.includes("risks");
+
+  const mergedAlerts = useMemo(() => allAlerts, [allAlerts]);
 
   const risks = useMemo(() => {
     if (risksDisabled) return [];
     return [...(dash.risks || [])].sort((a, b) => (b.score_pct ?? 0) - (a.score_pct ?? 0));
   }, [dash.risks, risksDisabled]);
 
+  const mesh = useMemo(() => {
+    return (dash.risks_india || []).slice(0, 12);
+  }, [dash.risks_india]);
+
+  const liveAlerts = useMemo(
+    () => mergedAlerts.filter((w) => alertTimePhase(w) !== "past"),
+    [mergedAlerts],
+  );
+
   const clusters = useMemo(() => {
-    return groupAlertsByLocation(allAlerts, dash.location);
-  }, [allAlerts, dash.location]);
+    return groupAlertsByLocation(liveAlerts, dash.location);
+  }, [liveAlerts, dash.location]);
 
   const handleSwitchLocation = (locInfo: {
     city?: string | null;
@@ -1242,7 +1376,7 @@ function RiskAlertPanel({
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="live-dot bg-amber-500 shadow-[0_0_8px_#f59e0b]" aria-hidden />
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400 truncate">
-              {panelTab === "alerts" ? t.alertsPanel || "Alerts" : "Risk Index"}
+              {panelTab === "alerts" ? t.alertsPanel || "Alerts" : "RISKS"}
             </p>
           </div>
 
@@ -1261,9 +1395,9 @@ function RiskAlertPanel({
                   }`}
               >
                 <span>{t.alertsPanel || (locale === "hi" ? "अलर्ट" : locale === "bn" ? "সতর্কতা" : "Alerts")}</span>
-                {allAlerts.length > 0 && (
+                {liveAlerts.length > 0 && (
                   <span className="rounded-full bg-gradient-to-r from-rose-500 to-red-600 text-white px-1.5 py-0.5 text-[8px] font-black leading-none shadow-sm animate-pulse">
-                    {allAlerts.length}
+                    {liveAlerts.length}
                   </span>
                 )}
               </button>
@@ -1280,7 +1414,7 @@ function RiskAlertPanel({
                       : "text-neo-muted hover:text-neo-text"
                     }`}
                 >
-                  {(locale === "hi" ? "जोखिम" : locale === "bn" ? "ঝুঁকি" : "Risks")} ({risks.length})
+                  <span>RISKS</span>
                 </button>
               )}
             </div>
@@ -1318,13 +1452,12 @@ function RiskAlertPanel({
                 <div className="h-8 w-8 rounded-full bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] flex items-center justify-center text-neo-accent mb-2">
                   <IconShieldAlert className="w-4 h-4" />
                 </div>
-                <p className="text-xs font-bold text-neo-text">{t.allClear || (locale === "hi" ? "कोई आपातकालीन बुलेटिन नहीं" : locale === "bn" ? "কোনো জরুরি সতর্কতা নেই" : "No urgent bulletin")}</p>
-                <p className="text-[10px] text-neo-muted mt-0.5 max-w-[220px] leading-relaxed">
-                  {locale === "hi"
+                <p className="text-xs font-bold text-neo-text">
+                  {t.allClear || (locale === "hi" ? "कोई आपातकालीन बुलेटिन नहीं" : locale === "bn" ? "কোনো জরুরি সতর্কতা নেই" : "No urgent bulletin")}
                     ? "पृथ्वी-नेत्र द्वारा बाढ़, वायु, समुद्री व भूकंपीय सुरक्षा स्कैन निरंतर सक्रिय हैं।"
                     : locale === "bn"
                     ? "পৃথিবী-নেত্র দ্বারা বন্যা, বায়ু, সামুদ্রিক ও ভূমিকম্প নজরদারি অবিরাম সক্রিয় রয়েছে।"
-                    : "Prithvi-Netra scans for flood, air, marine, seismic & tsunami quiet watches remain active."}
+                  {t.allClear || (locale === "hi" ? "कोई आपातकालीन बुलेटिन नहीं" : locale === "bn" ? "কোনো জরুরি সতর্কতা নেই" : "No urgent bulletin")}
                 </p>
               </div>
             ) : (
@@ -1372,6 +1505,11 @@ function RiskAlertPanel({
                     <p className="mt-1 line-clamp-1 text-[11px] font-bold text-neo-text">
                       {cluster.compositeTitle}
                     </p>
+                    {formatAlertWindow(cluster.alerts[0] || {}) ? (
+                      <p className="mt-0.5 line-clamp-1 text-[10px] font-mono text-neo-muted">
+                        {formatAlertWindow(cluster.alerts[0])}
+                      </p>
+                    ) : null}
 
                     {/* Directive / Action Line */}
                     <div
@@ -1562,6 +1700,37 @@ function RiskAlertPanel({
                   );
                 })
               )}
+              {mesh.length > 0 ? (
+                <div className="pt-2 mt-1 border-t border-[var(--line)] space-y-1.5">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-neo-muted px-0.5">
+                    {t.indiaHqRisks}
+                  </p>
+                  {mesh.map((row) => {
+                    const score = Number(row.flood_score ?? 0);
+                    return (
+                      <button
+                        key={`${row.state}-${row.hq}`}
+                        type="button"
+                        className="w-full text-left neo-in p-2 rounded-lg flex items-center justify-between gap-2"
+                        onClick={() =>
+                          handleSwitchLocation({
+                            city: row.hq,
+                            state: row.state,
+                            lat: row.lat,
+                            lon: row.lon,
+                          })
+                        }
+                      >
+                        <span className="text-[11px] font-bold truncate">
+                          {row.hq}
+                          {row.state ? `, ${row.state}` : ""}
+                        </span>
+                        <span className="font-mono text-[11px] font-black text-amber-600">{score}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
               <button
                 type="button"
                 onClick={() => onNavigateData?.("risks")}
@@ -1791,6 +1960,9 @@ function AlertDetailModal({
                           {hi.alert.severity || "Warning"}
                         </span>
                       </div>
+                      {formatAlertWindow(hi.alert) ? (
+                        <p className="mt-1 text-[10px] font-mono text-neo-muted">{formatAlertWindow(hi.alert)}</p>
+                      ) : null}
                       <p className="text-neo-text mt-1 text-xs leading-relaxed font-medium">
                         {hi.guidance.threat} {hi.guidance.guidance}
                       </p>
@@ -1832,6 +2004,9 @@ function AlertDetailModal({
                       {locale === "hi" ? "जोखिम आकलन:" : locale === "bn" ? "ঝুঁকি পর্যালোচনা:" : "Threat Assessment:"}
                     </span>
                     <p className="text-neo-text leading-relaxed font-semibold mt-0.5">{currentHazard.guidance.threat}</p>
+                    {formatAlertWindow(activeAlert) ? (
+                      <p className="mt-1 text-[11px] font-mono font-semibold text-neo-accent">{formatAlertWindow(activeAlert)}</p>
+                    ) : null}
                   </div>
                   <div>
                     <span className="font-bold text-neo-muted text-[10px] uppercase tracking-wider block">
@@ -2005,24 +2180,31 @@ function AlertStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function aqiCategory(aqiNum?: unknown) {
+function cpcbCategory(aqiNum?: unknown) {
   if (aqiNum == null || isNaN(Number(aqiNum))) return { label: "No Data", color: "var(--muted)", bg: "transparent" };
   const v = Number(aqiNum);
   if (v <= 50) return { label: "Good", color: "#10b981", bg: "rgba(16,185,129,0.12)" };
-  if (v <= 100) return { label: "Moderate", color: "#eab308", bg: "rgba(234,179,8,0.12)" };
-  if (v <= 150) return { label: "USG", color: "#f97316", bg: "rgba(249,115,22,0.12)" };
-  if (v <= 200) return { label: "Unhealthy", color: "#ef4444", bg: "rgba(239,68,68,0.12)" };
-  if (v <= 300) return { label: "Very Unhealthy", color: "#7f1d1d", bg: "rgba(127,29,29,0.15)" };
-  return { label: "Hazardous", color: "#7f1d1d", bg: "rgba(127,29,29,0.15)" };
+  if (v <= 100) return { label: "Satisfactory", color: "#06b6d4", bg: "rgba(6,182,212,0.12)" };
+  if (v <= 200) return { label: "Moderate", color: "#eab308", bg: "rgba(234,179,8,0.12)" };
+  if (v <= 300) return { label: "Poor", color: "#f97316", bg: "rgba(249,115,22,0.12)" };
+  if (v <= 400) return { label: "Very Poor", color: "#ef4444", bg: "rgba(239,68,68,0.12)" };
+  return { label: "Severe", color: "#7f1d1d", bg: "rgba(127,29,29,0.15)" };
 }
 
-function pinUsAqi(dash: DashboardSnapshot): number | null {
+function pinAqi(dash: DashboardSnapshot): { val: number | null; source: "cpcb" | "open-meteo" } {
+  const air = (dash.quality?.air || {}) as Record<string, unknown>;
+  const cpcb = (air.cpcb || {}) as Record<string, unknown>;
+  const cpcbVal = cpcb.value ?? dash.descriptive.current.aqi;
+  if (cpcbVal != null && !isNaN(Number(cpcbVal))) {
+    return { val: Number(cpcbVal), source: "cpcb" };
+  }
   const series = dash.descriptive.series;
   const hourlyNow = series.aqi_hourly?.[0]?.value;
-  const om = dash.descriptive.current.om_us_aqi ?? (dash.quality?.air as Record<string, unknown> | undefined)?.us_aqi;
-  const n = om ?? hourlyNow;
-  if (n == null || isNaN(Number(n))) return null;
-  return Number(n);
+  const om = dash.descriptive.current.om_us_aqi ?? air.us_aqi ?? hourlyNow;
+  if (om != null && !isNaN(Number(om))) {
+    return { val: Number(om), source: "open-meteo" };
+  }
+  return { val: null, source: "open-meteo" };
 }
 
 function seaState(waveHeightM?: unknown) {
@@ -2088,10 +2270,12 @@ function AirCard({
   const pollen = (air.pollen || {}) as Record<string, unknown>;
   const series = dash.descriptive.series;
 
-  const aqiVal = pinUsAqi(dash);
-  const aqiInfo = aqiCategory(aqiVal);
-  const cpcbVal = cpcb.value != null ? Number(cpcb.value) : null;
-  const cpcbCat = cpcb.category != null ? String(cpcb.category) : null;
+  const aqiObj = pinAqi(dash);
+  const aqiVal = aqiObj.val;
+  const aqiInfo = cpcbCategory(aqiVal);
+  const cpcbVal = cpcb.value != null ? Number(cpcb.value) : (dash.descriptive.current.aqi != null ? Number(dash.descriptive.current.aqi) : null);
+  const cpcbCat = cpcb.category != null ? String(cpcb.category) : (dash.descriptive.current.aqi_category ? String(dash.descriptive.current.aqi_category) : null);
+  const cpcbStation = (cpcb.station || dash.descriptive.current.aqi_station) ? String(cpcb.station || dash.descriptive.current.aqi_station) : "";
 
   const aqi24h = (series.aqi_hourly || []).slice(0, 24).map((p) => ({
     t: hhmm(p.t),
@@ -2175,7 +2359,9 @@ function AirCard({
               <div key="air-live" className="fade-in-scale space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">US AQI (Open-Meteo)</p>
+                    <p className="text-[9px] uppercase tracking-widest text-neo-muted font-bold">
+                      {aqiObj.source === "cpcb" ? "CPCB NAQI (data.gov.in)" : "AQI (Open-Meteo)"}
+                    </p>
                     <div className="flex items-baseline gap-2 mt-0.5">
                       <span className="font-mono text-2xl font-black text-neo-accent leading-none">
                         {aqiVal != null ? String(aqiVal) : "—"}
@@ -2184,16 +2370,14 @@ function AirCard({
                         className="chip text-[9px] font-bold uppercase px-2 py-0.5"
                         style={{ color: aqiInfo.color, backgroundColor: aqiInfo.bg }}
                       >
-                        {aqiInfo.label}
+                        {cpcbCat || aqiInfo.label}
                       </span>
                     </div>
-                    {cpcbVal != null && (
+                    {cpcbStation ? (
                       <p className="text-[9px] text-neo-muted mt-1">
-                        CPCB NAQI {cpcbVal}
-                        {cpcbCat ? ` (${cpcbCat})` : ""}
-                        {cpcb.station ? ` · ${String(cpcb.station)}` : ""} — different scale, not the chart
+                        CPCB Station: {cpcbStation}
                       </p>
-                    )}
+                    ) : null}
                   </div>
                   {(displayNull || air.uv_index != null) && (
                     <div className="text-right">
@@ -2285,7 +2469,9 @@ function AirCard({
               <div key="air-trend" className="fade-in-scale space-y-1">
                 <div className="flex items-center justify-between text-[10px]">
                   <span className="text-neo-muted font-semibold">24-Hour AQI Trend</span>
-                  <span className="font-mono font-bold text-neo-accent">{aqiVal != null ? `Now: ${aqiVal}` : ""}</span>
+                  <span className="font-mono font-bold text-neo-accent">
+                    {aqiVal != null ? `Now: ${aqiVal}${aqiObj.source === "cpcb" ? " (CPCB)" : ""}` : ""}
+                  </span>
                 </div>
                 <div className="h-28">
                   <ResponsiveContainer width="100%" height="100%">
@@ -2330,7 +2516,7 @@ function LandWeatherCard({
 }) {
   const displayNull = useApp((s) => s.settings.displayNullValues);
   const t = COPY[locale];
-  const [tab, setTab] = useState<"soil" | "thermal" | "trend">("soil");
+  const [tab, setTab] = useState<"soil" | "thermal" | "trend">("thermal");
 
   const [localSummary, setLocalSummary] = useState<boolean | null>(null);
   useEffect(() => {
@@ -2376,7 +2562,7 @@ function LandWeatherCard({
         </div>
         {!isSummary && (
           <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-            {(["soil", "thermal", "trend"] as const).map((id) => (
+            {(["thermal", "soil", "trend"] as const).map((id) => (
               <button
                 key={id}
                 type="button"
@@ -2387,7 +2573,7 @@ function LandWeatherCard({
                 className={`rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all ${tab === id ? "bg-neo-accent text-white shadow-sm" : "text-neo-muted hover:text-neo-text"
                   }`}
               >
-                {id === "soil" ? "Soil Moisture" : id === "thermal" ? "Thermal & ET" : "24h"}
+                {id === "thermal" ? "Thermal & ET" : id === "soil" ? "Soil Moisture" : "24h"}
               </button>
             ))}
           </div>
@@ -2456,7 +2642,7 @@ function LandWeatherCard({
                   )}
                   {(displayNull || climate.vpd_now != null) && (
                     <div className="neo-in p-1.5 rounded-xl text-center">
-                      <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block">VPD Deficit</span>
+                      <span className="text-[8px] uppercase tracking-wider text-neo-muted font-bold block truncate" title="Vapour Pressure Deficit">Vapour Pressure Deficit</span>
                       <span className="font-mono text-xs font-bold text-neo-text">
                         {climate.vpd_now != null ? `${climate.vpd_now} kPa` : "—"}
                       </span>
