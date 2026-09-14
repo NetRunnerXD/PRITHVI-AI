@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Circle,
   CircleMarker,
@@ -84,6 +84,7 @@ function IndiaCountryBoundary() {
     <GeoJSON
       key="india-country-boundary"
       data={geoData}
+      interactive={false}
       style={{
         color: "#38bdf8",
         weight: 2.2,
@@ -91,9 +92,6 @@ function IndiaCountryBoundary() {
         fillColor: "#0284c7",
         fillOpacity: 0.02,
         dashArray: "5 4",
-      }}
-      onEachFeature={(_f, layer) => {
-        layer.bindTooltip("India (Official Boundary · PoK & CoK included)", { sticky: true, opacity: 0.9 });
       }}
     />
   );
@@ -193,30 +191,147 @@ const predStormIcon = L.divIcon({
   iconAnchor: [8, 8],
 });
 
-function Recenter({ lat, lon, zoom }: { lat: number; lon: number; zoom: number }) {
+function SmoothCenter({
+  lat,
+  lon,
+  zoom,
+  focusPin,
+}: {
+  lat: number;
+  lon: number;
+  zoom: number;
+  focusPin?: { lat: number; lon: number; zoom?: number } | null;
+}) {
   const map = useMap();
+  const lastTargetRef = useRef<string>("");
+
   useEffect(() => {
-    map.setView([lat, lon], zoom);
-  }, [map, lat, lon, zoom]);
+    const rawLat = focusPin?.lat ?? lat;
+    const rawLon = focusPin?.lon ?? lon;
+    if (
+      rawLat == null ||
+      rawLon == null ||
+      !Number.isFinite(Number(rawLat)) ||
+      !Number.isFinite(Number(rawLon))
+    ) {
+      return;
+    }
+    const targetLat = Number(rawLat);
+    const targetLon = Number(rawLon);
+    const rawZoom = focusPin?.zoom ?? zoom;
+    let currentZoom = 7;
+    try {
+      if (typeof map.getZoom === "function") currentZoom = map.getZoom();
+    } catch {
+      currentZoom = 7;
+    }
+    const targetZoom =
+      rawZoom != null && Number.isFinite(Number(rawZoom))
+        ? Number(rawZoom)
+        : Number.isFinite(currentZoom)
+          ? currentZoom
+          : 7;
+
+    const key = `${targetLat.toFixed(4)},${targetLon.toFixed(4)},${targetZoom}`;
+
+    if (lastTargetRef.current !== key) {
+      lastTargetRef.current = key;
+
+      let size: { x: number; y: number } | null = null;
+      let curCenter: { lat: number; lng: number } | null = null;
+      try {
+        size = map.getSize();
+        curCenter = map.getCenter();
+      } catch {
+        size = null;
+        curCenter = null;
+      }
+
+      const hasValidSize = Boolean(size && size.x > 0 && size.y > 0);
+      const validCur =
+        curCenter &&
+        Number.isFinite(curCenter.lat) &&
+        Number.isFinite(curCenter.lng)
+          ? curCenter
+          : null;
+      const dist = validCur
+        ? Math.hypot(validCur.lat - targetLat, validCur.lng - targetLon)
+        : 999;
+
+      try {
+        if (hasValidSize && validCur && dist > 0.0001 && dist < 25) {
+          map.flyTo([targetLat, targetLon], targetZoom, { duration: 0.9 });
+        } else {
+          map.setView([targetLat, targetLon], targetZoom);
+        }
+      } catch {
+        try {
+          map.setView([targetLat, targetLon], targetZoom);
+        } catch {
+          // Leaflet canvas unmounted or not ready
+        }
+      }
+    }
+  }, [map, lat, lon, zoom, focusPin]);
+
   return null;
 }
 
-function FitFrame({
+function FitStateFrame({
+  state,
   frame,
 }: {
+  state?: string | null;
   frame?: { south: number; west: number; north: number; east: number } | null;
 }) {
   const map = useMap();
+  const lastStateRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!frame) return;
-    map.fitBounds(
-      [
-        [frame.south, frame.west],
-        [frame.north, frame.east],
-      ],
-      { padding: [28, 28], maxZoom: frame.north - frame.south > 20 ? 5 : 9 }
-    );
-  }, [map, frame?.south, frame?.west, frame?.north, frame?.east]);
+    if (!state || state === "India" || state === "All India" || !frame) {
+      lastStateRef.current = state || null;
+      return;
+    }
+    if (
+      !Number.isFinite(frame.south) ||
+      !Number.isFinite(frame.west) ||
+      !Number.isFinite(frame.north) ||
+      !Number.isFinite(frame.east)
+    ) {
+      return;
+    }
+    if (lastStateRef.current !== state) {
+      lastStateRef.current = state;
+      try {
+        map.fitBounds(
+          [
+            [frame.south, frame.west],
+            [frame.north, frame.east],
+          ],
+          { padding: [28, 28], maxZoom: 8 }
+        );
+      } catch {
+        // Map size not initialized yet
+      }
+    }
+  }, [map, state, frame]);
+
+  return null;
+}
+
+function MapResizer({ isVisible }: { isVisible?: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    if (isVisible !== false) {
+      map.invalidateSize();
+      const t1 = setTimeout(() => map.invalidateSize(), 80);
+      const t2 = setTimeout(() => map.invalidateSize(), 300);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }
+  }, [map, isVisible]);
   return null;
 }
 
@@ -529,6 +644,7 @@ export function MapView({
   particles,
   radarUrl,
   hazardEvents,
+  isVisible,
   onPick,
   onSelectIncident,
 }: {
@@ -550,6 +666,7 @@ export function MapView({
   weatherGrid?: WeatherGrid | null;
   particles?: boolean;
   radarUrl?: string | null;
+  isVisible?: boolean;
   hazardEvents?: {
     id: string;
     kind: string;
@@ -595,14 +712,65 @@ export function MapView({
     return out;
   }, [storm, now, pastMs]);
 
-  const predLtn = [
-    ...(storm?.predicted || []),
-    ...((storm?.predicted_unverified || []).filter((s) => s.kind === "lightning")),
-  ].filter((s) => confOk(s, opt.minConfidence));
-  const predStorms = [
-    ...(storm?.predicted_storms || []),
-    ...((storm?.predicted_unverified || []).filter((s) => s.kind !== "lightning")),
-  ].filter((s) => confOk(s, opt.minConfidence));
+  const predLtn = useMemo(() => {
+    const raw = [
+      ...(storm?.predicted || []),
+      ...((storm?.predicted_unverified || []).filter((s) => s.kind === "lightning")),
+      ...((storm?.incidents || []).filter((i) => (i.phase === "predicted" || (i.lead_min || 0) > 0) && i.kind === "lightning")),
+    ];
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const s of raw) {
+      if (s.lat == null || s.lon == null || !Number.isFinite(Number(s.lat)) || !Number.isFinite(Number(s.lon))) continue;
+      if (!confOk(s, opt.minConfidence)) continue;
+      const key = `${Number(s.lat).toFixed(2)}:${Number(s.lon).toFixed(2)}:lightning`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(s);
+    }
+    return out;
+  }, [storm?.predicted, storm?.predicted_unverified, storm?.incidents, opt.minConfidence]);
+
+  const predStorms = useMemo(() => {
+    const raw = [
+      ...(storm?.predicted_storms || []),
+      ...((storm?.predicted_unverified || []).filter((s) => s.kind !== "lightning")),
+      ...((storm?.incidents || []).filter((i) => (i.phase === "predicted" || (i.lead_min || 0) > 0) && i.kind !== "lightning")),
+      ...((storm?.polygons || [])
+        .filter((p) => (p.lead_min || 0) > 0)
+        .map((p) => {
+          const positions = (p.ring || []).filter(
+            (pt: any) => Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1])
+          );
+          const lats = positions.map((x: any) => x[0]);
+          const lons = positions.map((x: any) => x[1]);
+          const centerLat = lats.length ? lats.reduce((a: number, b: number) => a + b, 0) / lats.length : p.lat;
+          const centerLon = lons.length ? lons.reduce((a: number, b: number) => a + b, 0) / lons.length : p.lon;
+          return {
+            id: p.id ? `pred-poly-${p.id}` : `poly-center-${Number(centerLat).toFixed(2)}-${Number(centerLon).toFixed(2)}`,
+            kind: p.kind || "storm",
+            phase: "predicted" as const,
+            lat: Number.isFinite(centerLat) ? centerLat : p.lat,
+            lon: Number.isFinite(centerLon) ? centerLon : p.lon,
+            place: p.place || p.label || "Predicted storm area",
+            lead_min: p.lead_min || 30,
+            confidence: p.confidence,
+            confidence_band: p.confidence_band,
+          };
+        })),
+    ];
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const s of raw) {
+      if (s.lat == null || s.lon == null || !Number.isFinite(Number(s.lat)) || !Number.isFinite(Number(s.lon))) continue;
+      if (!confOk(s, opt.minConfidence)) continue;
+      const key = `${Number(s.lat).toFixed(2)}:${Number(s.lon).toFixed(2)}:${s.kind || "storm"}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(s);
+    }
+    return out;
+  }, [storm?.predicted_storms, storm?.predicted_unverified, storm?.incidents, storm?.polygons, opt.minConfidence]);
 
   const liveByKind = (kind: string) => {
     const fromCells = (storm?.cells || []).filter((c) => (c.kind || "storm") === kind);
@@ -647,8 +815,11 @@ export function MapView({
 
   return (
     <MapContainer
-      center={[lat, lon]}
-      zoom={zoom}
+      center={[
+        Number.isFinite(Number(lat)) ? Number(lat) : 20.5937,
+        Number.isFinite(Number(lon)) ? Number(lon) : 78.9629,
+      ]}
+      zoom={Number.isFinite(Number(zoom)) ? Number(zoom) : 7}
       minZoom={3}
       maxZoom={18}
       preferCanvas
@@ -732,16 +903,12 @@ export function MapView({
       ) : (
         <IndiaCountryBoundary />
       )}
-      {focusPin ? (
-        <Recenter lat={focusPin.lat} lon={focusPin.lon} zoom={focusPin.zoom ?? 8} />
-      ) : frame ? (
-        <FitFrame frame={frame} />
-      ) : (
-        <Recenter lat={lat} lon={lon} zoom={zoom} />
-      )}
+      <SmoothCenter lat={lat} lon={lon} zoom={zoom} focusPin={focusPin} />
+      <FitStateFrame state={storm?.state} frame={frame} />
+      <MapResizer isVisible={isVisible} />
       <FitEvents nonce={opt.fitNonce} points={fitPts} />
       <CursorReadout grid={weatherGrid} layer={weatherLayer} />
-      {opt.showPin ? (
+      {opt.showPin && Number.isFinite(Number(lat)) && Number.isFinite(Number(lon)) ? (
         <>
           <Circle
             center={[lat, lon]}
@@ -749,9 +916,9 @@ export function MapView({
             pathOptions={{ color: "#38bdf8", fillColor: "#0284c7", fillOpacity: 0.12, weight: 1.5, dashArray: "4 3" }}
           >
             <Popup>
-              <div className="text-xs font-sans">
-                <strong className="text-sky-400">{label}</strong>
-                <div className="text-[11px] text-slate-300 mt-0.5">3-day forecast rain: <span className="font-bold text-sky-300">{rainMm} mm</span></div>
+              <div className="text-xs font-sans text-slate-900 dark:text-slate-900">
+                <strong className="text-sky-700 font-bold">{label}</strong>
+                <div className="text-[11px] text-slate-700 mt-0.5 font-medium">3-day forecast rain: <span className="font-bold text-sky-800">{rainMm} mm</span></div>
               </div>
             </Popup>
           </Circle>
@@ -771,18 +938,18 @@ export function MapView({
             })}
           >
             <Popup>
-              <div className="text-xs space-y-1.5 p-0.5 min-w-[150px]">
-                <div className="flex items-center gap-1.5 border-b border-slate-700/50 pb-1">
-                  <span className="h-2 w-2 rounded-full bg-sky-400 animate-pulse"></span>
-                  <div className="font-black text-sm text-sky-400 truncate">{label}</div>
+              <div className="text-xs space-y-1.5 p-0.5 min-w-[150px] text-slate-900">
+                <div className="flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                  <span className="h-2 w-2 rounded-full bg-sky-600"></span>
+                  <div className="font-black text-sm text-sky-700 truncate">{label}</div>
                 </div>
-                <div className="font-mono text-[11px] text-slate-300 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold">Coords</span>
-                  <span>{lat.toFixed(4)}, {lon.toFixed(4)}</span>
+                <div className="font-mono text-[11px] text-slate-800 flex items-center justify-between">
+                  <span className="text-[10px] text-slate-600 uppercase font-bold">Coords</span>
+                  <span className="font-semibold">{lat.toFixed(4)}, {lon.toFixed(4)}</span>
                 </div>
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold">3-Day Rain</span>
-                  <span className="font-black text-sky-300 bg-sky-500/20 px-1.5 py-0.2 rounded border border-sky-500/30 font-mono">
+                  <span className="text-[10px] text-slate-600 uppercase font-bold">3-Day Rain</span>
+                  <span className="font-black text-sky-900 bg-sky-100 px-1.5 py-0.2 rounded border border-sky-300 font-mono">
                     {rainMm} mm
                   </span>
                 </div>
@@ -813,24 +980,24 @@ export function MapView({
               }}
             >
               <Popup>
-                <div className="text-xs space-y-1">
-                  <div className="font-bold text-sm text-amber-500">⚡ {t.hlPastLightning}</div>
-                  <div className="font-semibold">{s.place || `${s.lat.toFixed(3)}, ${s.lon.toFixed(3)}`}</div>
-                  <div className="font-mono text-[11px] text-slate-400">{s.lat.toFixed(3)}, {s.lon.toFixed(3)}</div>
+                <div className="text-xs space-y-1 text-slate-900">
+                  <div className="font-bold text-sm text-amber-700">⚡ {t.hlPastLightning}</div>
+                  <div className="font-bold text-slate-900">{s.place || `${s.lat.toFixed(3)}, ${s.lon.toFixed(3)}`}</div>
+                  <div className="font-mono text-[11px] text-slate-700 font-semibold">{s.lat.toFixed(3)}, {s.lon.toFixed(3)}</div>
                   {fmtIst(s.occurred_at || s.t || s.timestamp_utc || s.first_seen) ? (
-                    <div className="text-[11px] text-slate-400">{fmtIst(s.occurred_at || s.t || s.timestamp_utc || s.first_seen)} IST</div>
+                    <div className="text-[11px] text-slate-700 font-medium">{fmtIst(s.occurred_at || s.t || s.timestamp_utc || s.first_seen)} IST</div>
                   ) : null}
                   {eventAgeMs(s as unknown as Record<string, unknown>, now) != null ? (
-                    <div className="text-[11px] text-amber-400">{Math.round((eventAgeMs(s as unknown as Record<string, unknown>, now) || 0) / 60000)} min ago</div>
+                    <div className="text-[11px] text-amber-800 font-bold">{Math.round((eventAgeMs(s as unknown as Record<string, unknown>, now) || 0) / 60000)} min ago</div>
                   ) : null}
                   {s.engine === "open-meteo-thunder" ? (
-                    <div className="text-[10px] text-slate-400">Model thunder (not GPS)</div>
+                    <div className="text-[10px] text-slate-600">Model thunder (not GPS)</div>
                   ) : s.engine ? (
-                    <div className="text-[10px] text-slate-500">{s.engine}</div>
+                    <div className="text-[10px] text-slate-600">{s.engine}</div>
                   ) : null}
                   <button
                     type="button"
-                    className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+                    className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-700 hover:bg-sky-600 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
                     onClick={() =>
                       onPick({
                         id: `past-ltn-${i}`,
@@ -872,13 +1039,13 @@ export function MapView({
                 }}
               >
                 <Popup>
-                  <div className="text-xs space-y-1">
-                    <div className="font-bold text-sm text-yellow-400">{t.hlLiveLightning}</div>
-                    <div>{s.place || `${s.lat.toFixed(3)}, ${s.lon.toFixed(3)}`}</div>
-                    <div className="font-mono text-[11px] text-slate-400">{s.lat.toFixed(3)}, {s.lon.toFixed(3)}</div>
+                  <div className="text-xs space-y-1 text-slate-900">
+                    <div className="font-bold text-sm text-amber-700">{t.hlLiveLightning}</div>
+                    <div className="font-bold text-slate-900">{s.place || `${s.lat.toFixed(3)}, ${s.lon.toFixed(3)}`}</div>
+                    <div className="font-mono text-[11px] text-slate-700 font-semibold">{s.lat.toFixed(3)}, {s.lon.toFixed(3)}</div>
                     <button
                       type="button"
-                      className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+                      className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-700 hover:bg-sky-600 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
                       onClick={() =>
                         onPick({
                           id: s.id || `live-ltn-${i}`,
@@ -924,27 +1091,27 @@ export function MapView({
               }}
             >
               <Popup>
-                <div className="text-xs space-y-1">
-                  <div className="font-bold text-sm text-amber-400">✦ {t.hlPredLightning}</div>
-                  <div className="font-semibold">{s.place}</div>
-                  <div className="font-mono text-[11px] text-slate-400">{s.lat.toFixed(3)}, {s.lon.toFixed(3)}</div>
-                  {s.lead_min != null ? <div className="text-amber-400 font-medium">+{s.lead_min} min</div> : null}
+                <div className="text-xs space-y-1 text-slate-900">
+                  <div className="font-bold text-sm text-amber-700">✦ {t.hlPredLightning}</div>
+                  <div className="font-bold text-slate-900">{s.place}</div>
+                  <div className="font-mono text-[11px] text-slate-700 font-semibold">{s.lat.toFixed(3)}, {s.lon.toFixed(3)}</div>
+                  {s.lead_min != null ? <div className="text-amber-800 font-bold">+{s.lead_min} min</div> : null}
                   {fmtIstHm(s.started_ms ?? s.started_at) && fmtIstHm(s.closes_ms ?? s.closes_at) ? (
-                    <div className="text-[11px] text-slate-300">Expected {fmtIstHm(s.started_ms ?? s.started_at)} – {fmtIstHm(s.closes_ms ?? s.closes_at)} IST</div>
+                    <div className="text-[11px] text-slate-700 font-medium">Expected {fmtIstHm(s.started_ms ?? s.started_at)} – {fmtIstHm(s.closes_ms ?? s.closes_at)} IST</div>
                   ) : null}
                   {s.confidence != null ? (
-                    <div className="text-[11px] text-slate-300">
+                    <div className="text-[11px] text-slate-800 font-medium">
                       Confidence {(s.confidence * 100).toFixed(0)}% ({s.confidence_band || "—"})
                     </div>
                   ) : null}
-                  {s.p_lightning != null ? <div className="text-[11px] text-slate-300">P(lightning) {(s.p_lightning * 100).toFixed(0)}%</div> : null}
-                  {s.engine === "open-meteo-thunder" ? <div className="text-[10px] text-slate-400">Model thunder (not GPS)</div> : null}
+                  {s.p_lightning != null ? <div className="text-[11px] text-slate-800 font-medium">P(lightning) {(s.p_lightning * 100).toFixed(0)}%</div> : null}
+                  {s.engine === "open-meteo-thunder" ? <div className="text-[10px] text-slate-600">Model thunder (not GPS)</div> : null}
                   {(s as { verify?: { note?: string } }).verify?.note ? (
-                    <div className="text-[10px] text-slate-400">{(s as { verify?: { note?: string } }).verify?.note}</div>
+                    <div className="text-[10px] text-slate-600">{(s as { verify?: { note?: string } }).verify?.note}</div>
                   ) : null}
                   <button
                     type="button"
-                    className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+                    className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-700 hover:bg-sky-600 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
                     onClick={() =>
                       onPick({
                         id: s.id,
@@ -989,22 +1156,22 @@ export function MapView({
               }}
             >
               <Popup>
-                <div className="text-xs space-y-1">
-                  <div className="font-bold text-sm text-purple-400">◆ {t.hlPredStorm}</div>
-                  <div className="font-semibold">{s.place}</div>
-                  <div className="font-mono text-[11px] text-slate-400">{s.lat.toFixed(3)}, {s.lon.toFixed(3)}</div>
-                  {s.lead_min != null ? <div className="text-purple-400 font-medium">+{s.lead_min} min</div> : null}
+                <div className="text-xs space-y-1 text-slate-900">
+                  <div className="font-bold text-sm text-purple-700">◆ {t.hlPredStorm}</div>
+                  <div className="font-bold text-slate-900">{s.place}</div>
+                  <div className="font-mono text-[11px] text-slate-700 font-semibold">{s.lat.toFixed(3)}, {s.lon.toFixed(3)}</div>
+                  {s.lead_min != null ? <div className="text-purple-800 font-bold">+{s.lead_min} min</div> : null}
                   {fmtIstHm(s.started_ms ?? s.started_at) && fmtIstHm(s.closes_ms ?? s.closes_at) ? (
-                    <div className="text-[11px] text-slate-300">Expected {fmtIstHm(s.started_ms ?? s.started_at)} – {fmtIstHm(s.closes_ms ?? s.closes_at)} IST</div>
+                    <div className="text-[11px] text-slate-700 font-medium">Expected {fmtIstHm(s.started_ms ?? s.started_at)} – {fmtIstHm(s.closes_ms ?? s.closes_at)} IST</div>
                   ) : null}
                   {s.confidence != null ? (
-                    <div className="text-[11px] text-slate-300">
+                    <div className="text-[11px] text-slate-800 font-medium">
                       Confidence {(s.confidence * 100).toFixed(0)}% ({s.confidence_band || "—"})
                     </div>
                   ) : null}
                   <button
                     type="button"
-                    className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+                    className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-700 hover:bg-sky-600 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
                     onClick={() =>
                       onPick({
                         id: s.id,
@@ -1027,19 +1194,19 @@ export function MapView({
         ? pastCells.map((c, i) => {
             const color = CELL_COLOR[c.kind || "storm"] || CELL_COLOR.storm;
             const popupContent = (
-              <div className="text-xs space-y-1">
-                <div className="font-bold text-sm text-slate-300">Past {(c.kind || "storm").toUpperCase()}</div>
-                <div className="font-semibold">{c.place || `${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`}</div>
-                <div className="font-mono text-[11px] text-slate-400">{c.lat.toFixed(3)}, {c.lon.toFixed(3)}</div>
+              <div className="text-xs space-y-1 text-slate-900">
+                <div className="font-bold text-sm text-slate-800">Past {(c.kind || "storm").toUpperCase()}</div>
+                <div className="font-bold text-slate-900">{c.place || `${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`}</div>
+                <div className="font-mono text-[11px] text-slate-700 font-semibold">{c.lat.toFixed(3)}, {c.lon.toFixed(3)}</div>
                 {fmtIst(c.occurred_at || c.first_seen || c.started_at) ? (
-                  <div className="text-[11px] text-slate-400">{fmtIst(c.occurred_at || c.first_seen || c.started_at)} IST</div>
+                  <div className="text-[11px] text-slate-700 font-medium">{fmtIst(c.occurred_at || c.first_seen || c.started_at)} IST</div>
                 ) : null}
                 {eventAgeMs(c as unknown as Record<string, unknown>, now) != null ? (
-                  <div className="text-[11px] text-amber-400">{Math.round((eventAgeMs(c as unknown as Record<string, unknown>, now) || 0) / 60000)} min ago</div>
+                  <div className="text-[11px] text-amber-800 font-bold">{Math.round((eventAgeMs(c as unknown as Record<string, unknown>, now) || 0) / 60000)} min ago</div>
                 ) : null}
                 <button
                   type="button"
-                  className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+                  className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-700 hover:bg-sky-600 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
                   onClick={() =>
                     onPick({
                       id: c.id || `past-cell-${i}`,
@@ -1106,7 +1273,7 @@ export function MapView({
           if (dlat < 0.015 && dlon < 0.015) return null;
           if (dlat > 6 || dlon > 7) return null;
           const centerLat = lats.reduce((a, b) => a + b, 0) / lats.length;
-          const centerLon = lons.reduce((a, b) => a + b, 0) / lons.length;
+          const centerLon = lons.reduce((a, b) => a + b, 0) / lats.length;
           if (!p.label && !p.place) return null;
           const title = p.label || `Predicted ${kind} area`;
           return (
@@ -1139,22 +1306,22 @@ export function MapView({
               }}
             >
               <Popup>
-                <div className="text-xs space-y-1">
+                <div className="text-xs space-y-1 text-slate-900">
                   <div className="font-bold text-sm" style={{ color }}>
                     {predicted ? "◆ " : "☁ "}
                     {title}
                   </div>
-                  {p.place ? <div className="font-semibold">{p.place}</div> : null}
-                  <div className="font-mono text-[11px] text-slate-400">{centerLat.toFixed(3)}, {centerLon.toFixed(3)}</div>
-                  {p.lead_min ? <div className="text-amber-400 font-medium">+{p.lead_min} min</div> : null}
+                  {p.place ? <div className="font-bold text-slate-900">{p.place}</div> : null}
+                  <div className="font-mono text-[11px] text-slate-700 font-semibold">{centerLat.toFixed(3)}, {centerLon.toFixed(3)}</div>
+                  {p.lead_min ? <div className="text-amber-800 font-bold">+{p.lead_min} min</div> : null}
                   {p.confidence != null ? (
-                    <div className="text-[11px] text-slate-300">
+                    <div className="text-[11px] text-slate-800 font-medium">
                       Confidence {(p.confidence * 100).toFixed(0)}% ({p.confidence_band || "—"})
                     </div>
                   ) : null}
                   <button
                     type="button"
-                    className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+                    className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-700 hover:bg-sky-600 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
                     onClick={() =>
                       onPick({
                         id: p.id,
@@ -1196,18 +1363,18 @@ export function MapView({
               pathOptions={{ color, fillColor: color, fillOpacity: selected ? 0.4 : 0.22, weight: selected ? 3 : 2 }}
             >
               <Popup>
-                <div className="text-xs space-y-1">
+                <div className="text-xs space-y-1 text-slate-900">
                   <div className="font-bold text-sm" style={{ color }}>
                     {(c.kind || "cell").toUpperCase()}
                   </div>
-                  <div className="font-semibold">{c.place || `${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`}</div>
-                  <div className="font-mono text-[11px] text-slate-400">{c.lat.toFixed(3)}, {c.lon.toFixed(3)}</div>
-                  {c.rain_ir_mm_h != null ? <div className="text-[11px] text-sky-300">{c.rain_ir_mm_h} mm/h IR</div> : null}
-                  {c.min_tb_k != null ? <div className="text-[11px] text-slate-300">Min Tb: {c.min_tb_k} K</div> : null}
-                  {c.area_km2 != null ? <div className="text-[11px] text-slate-300">Area: {c.area_km2} km²</div> : null}
+                  <div className="font-bold text-slate-900">{c.place || `${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`}</div>
+                  <div className="font-mono text-[11px] text-slate-700 font-semibold">{c.lat.toFixed(3)}, {c.lon.toFixed(3)}</div>
+                  {c.rain_ir_mm_h != null ? <div className="text-[11px] text-sky-800 font-bold">{c.rain_ir_mm_h} mm/h IR</div> : null}
+                  {c.min_tb_k != null ? <div className="text-[11px] text-slate-800 font-medium">Min Tb: {c.min_tb_k} K</div> : null}
+                  {c.area_km2 != null ? <div className="text-[11px] text-slate-800 font-medium">Area: {c.area_km2} km²</div> : null}
                   <button
                     type="button"
-                    className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+                    className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-700 hover:bg-sky-600 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
                     onClick={() =>
                       onPick({
                         id: c.id || `cell-${i}`,
@@ -1268,22 +1435,22 @@ export function MapView({
                 }}
               >
                 <Popup>
-                  <div className="text-xs space-y-1">
-                    <div className="font-bold text-sm text-orange-400">🔥 Forest fire</div>
-                    <div className="font-semibold">{f.place || f.title}</div>
-                    <div className="font-mono text-[11px] text-slate-400">{f.lat.toFixed(3)}, {f.lon.toFixed(3)}</div>
-                    {f.n != null ? <div>{f.n} VIIRS hotspot{f.n === 1 ? "" : "s"}</div> : null}
-                    {f.frp_mw != null ? <div>FRP {f.frp_mw} MW</div> : null}
-                    <div className="text-[10px] text-slate-400">NASA FIRMS thermal · not burned area</div>
+                  <div className="text-xs space-y-1 text-slate-900">
+                    <div className="font-bold text-sm text-orange-700">🔥 Forest fire</div>
+                    <div className="font-bold text-slate-900">{f.place || f.title}</div>
+                    <div className="font-mono text-[11px] text-slate-700 font-semibold">{f.lat.toFixed(3)}, {f.lon.toFixed(3)}</div>
+                    {f.n != null ? <div className="text-slate-800 font-medium">{f.n} VIIRS hotspot{f.n === 1 ? "" : "s"}</div> : null}
+                    {f.frp_mw != null ? <div className="text-slate-800 font-medium">FRP {f.frp_mw} MW</div> : null}
+                    <div className="text-[10px] text-slate-600">NASA FIRMS thermal · not burned area</div>
                     {fmtIst((f as { occurred_at?: string }).occurred_at || (f as { t?: string }).t) ? (
-                      <div className="text-[11px] text-slate-400">{fmtIst((f as { occurred_at?: string }).occurred_at || (f as { t?: string }).t)} IST</div>
+                      <div className="text-[11px] text-slate-700 font-medium">{fmtIst((f as { occurred_at?: string }).occurred_at || (f as { t?: string }).t)} IST</div>
                     ) : null}
                     {(f as any).window_start && (f as any).window_end ? (
-                      <div className="text-[11px] text-slate-300">Expected {fmtIstHm((f as any).window_start)} – {fmtIstHm((f as any).window_end)} IST</div>
+                      <div className="text-[11px] text-slate-800 font-medium">Expected {fmtIstHm((f as any).window_start)} – {fmtIstHm((f as any).window_end)} IST</div>
                     ) : null}
                     <button
                       type="button"
-                      className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white"
+                      className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-700 hover:bg-sky-600 text-white"
                       onClick={() =>
                         onPick({
                           id: f.id,
@@ -1346,19 +1513,19 @@ export function MapView({
                 }}
               >
                 <Popup>
-                  <div className="text-xs space-y-1">
-                    <div className="font-bold text-sm text-amber-700">⛰ Landslide</div>
-                    <div className="font-semibold">{h.place || h.title}</div>
-                    <div className="font-mono text-[11px] text-slate-400">{h.lat.toFixed(3)}, {h.lon.toFixed(3)}</div>
+                  <div className="text-xs space-y-1 text-slate-900">
+                    <div className="font-bold text-sm text-amber-800">⛰ Landslide</div>
+                    <div className="font-bold text-slate-900">{h.place || h.title}</div>
+                    <div className="font-mono text-[11px] text-slate-700 font-semibold">{h.lat.toFixed(3)}, {h.lon.toFixed(3)}</div>
                     {fmtIst((h as { occurred_at?: string }).occurred_at || h.window_start) ? (
-                      <div className="text-[11px] text-slate-400">{fmtIst((h as { occurred_at?: string }).occurred_at)} IST</div>
+                      <div className="text-[11px] text-slate-700 font-medium">{fmtIst((h as { occurred_at?: string }).occurred_at)} IST</div>
                     ) : null}
                     {h.window_start && h.window_end ? (
-                      <div className="text-[11px] text-slate-300">Watch {fmtIstHm(h.window_start)} – {fmtIstHm(h.window_end)} IST (not GSI)</div>
+                      <div className="text-[11px] text-slate-800 font-medium">Watch {fmtIstHm(h.window_start)} – {fmtIstHm(h.window_end)} IST (not GSI)</div>
                     ) : null}
                     <button
                       type="button"
-                      className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-600 hover:bg-sky-500 text-white"
+                      className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-700 hover:bg-sky-600 text-white"
                       onClick={() =>
                         onPick({
                           id: h.id,
