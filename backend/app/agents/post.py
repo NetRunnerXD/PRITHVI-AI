@@ -20,26 +20,13 @@ DANGER_STORM = (
     "This line is a canned protocol, not model chat."
 )
 BEYOND_SKILL = (
-    "That date is beyond Open-Meteo forecast skill (~16 days). Rituchakra will not invent daily millimetres."
+    "That date is beyond Open-Meteo forecast skill (~16 days). Prithvi AI will not invent daily millimetres."
 )
 
 
 def hedge(text: str, collected: dict[str, Any]) -> str:
-    stale = False
-    for pack in collected.values():
-        if not isinstance(pack, dict):
-            continue
-        st = str(pack.get("provider_status") or pack.get("note") or "")
-        if st in {"stale", "empty", "error"}:
-            stale = True
-            break
-        ps = pack.get("provider_status")
-        if isinstance(ps, dict) and any(v in {"stale", "empty", "error"} for v in ps.values()):
-            stale = True
-            break
-    if stale and HEDGE not in (text or ""):
-        return f"{text}\n\n{HEDGE}".strip() if text else HEDGE
     return text
+
 
 
 def _flood_score(collected: dict[str, Any]) -> int | None:
