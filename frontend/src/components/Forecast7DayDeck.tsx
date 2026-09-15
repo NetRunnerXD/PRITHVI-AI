@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import type { DashboardSnapshot, HourlySlot } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
-import { rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
+import { localizeDigits, rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
 import { useApp } from "@/lib/store";
 import { LaymanSummaryBody } from "@/components/LaymanSummaryView";
 import { get7DayLaymanSummary } from "@/lib/laymanSummaries";
@@ -120,72 +120,74 @@ const tip = {
   boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
 };
 
-function weekdayName(iso?: string, short = true) {
+function weekdayName(iso?: string, short = true, locale: Locale = "en") {
   if (!iso) return "—";
   const d = new Date(iso.includes("T") ? iso : `${iso}T12:00:00`);
   if (Number.isNaN(d.getTime())) return iso.slice(5);
-  return d.toLocaleDateString("en-IN", { weekday: short ? "short" : "long" });
+  const locCode = locale === "hi" ? "hi-IN" : locale === "bn" ? "bn-IN" : "en-IN";
+  return d.toLocaleDateString(locCode, { weekday: short ? "short" : "long" });
 }
 
-function formatFullDate(iso?: string) {
+function formatFullDate(iso?: string, locale: Locale = "en") {
   if (!iso) return "—";
   const d = new Date(iso.includes("T") ? iso : `${iso}T12:00:00`);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-IN", {
+  const locCode = locale === "hi" ? "hi-IN" : locale === "bn" ? "bn-IN" : "en-IN";
+  return d.toLocaleDateString(locCode, {
     weekday: "long",
     day: "numeric",
     month: "short",
   });
 }
 
-function getWeatherIcon(weatherCode?: number | null, precipMm?: number | null, prob?: number | null) {
+function getWeatherIcon(weatherCode?: number | null, precipMm?: number | null, prob?: number | null, locale: Locale = "en") {
   if (weatherCode != null) {
     if ([95, 96, 99].includes(weatherCode)) {
       return {
         icon: <IconCloudLightning className="w-4 h-4 text-rose-500 dark:text-rose-400" />,
-        label: "Thunderstorm",
+        label: locale === "hi" ? "गरज-चमक" : locale === "bn" ? "বজ্রঝড়" : "Thunderstorm",
         badgeColor: "text-rose-600 bg-rose-500/10 dark:text-rose-400",
       };
     }
     if ([71, 73, 75, 77, 85, 86].includes(weatherCode)) {
       return {
         icon: <IconCloudFog className="w-4 h-4 text-sky-400 dark:text-sky-300" />,
-        label: "Snowfall",
+        label: locale === "hi" ? "बर्फबारी" : locale === "bn" ? "তুষারপাত" : "Snowfall",
         badgeColor: "text-sky-600 bg-sky-500/10 dark:text-sky-400",
       };
     }
     if ([61, 63, 65, 80, 81, 82].includes(weatherCode)) {
       return {
         icon: <IconCloudRain className="w-4 h-4 text-cyan-500 dark:text-cyan-400" />,
-        label: "Rain Showers",
+        label: locale === "hi" ? "वर्षा" : locale === "bn" ? "বৃষ্টি" : "Rain Showers",
         badgeColor: "text-cyan-600 bg-cyan-500/10 dark:text-cyan-400",
       };
     }
     if ([51, 53, 55, 56, 57].includes(weatherCode)) {
       return {
         icon: <IconCloudRain className="w-4 h-4 text-teal-500 dark:text-teal-400" />,
-        label: "Drizzle",
+        label: locale === "hi" ? "बूंदाबांदी" : locale === "bn" ? "গুঁড়ি গুঁড়ি বৃষ্টি" : "Drizzle",
         badgeColor: "text-teal-600 bg-teal-500/10 dark:text-teal-400",
       };
     }
     if ([45, 48].includes(weatherCode)) {
       return {
         icon: <IconCloudFog className="w-4 h-4 text-slate-400 dark:text-slate-300" />,
-        label: "Fog / Mist",
+        label: locale === "hi" ? "कोहरा / धुंध" : locale === "bn" ? "কুয়াশা" : "Fog / Mist",
         badgeColor: "text-slate-600 bg-slate-500/10 dark:text-slate-400",
       };
     }
     if ([1, 2, 3].includes(weatherCode)) {
       return {
         icon: <IconCloudSun className="w-4 h-4 text-amber-500 dark:text-amber-400" />,
-        label: "Partly Cloudy",
+        label: locale === "hi" ? "आंशिक बादल" : locale === "bn" ? "আংশিক মেঘলা" : "Partly Cloudy",
         badgeColor: "text-amber-600 bg-amber-500/10 dark:text-amber-400",
       };
     }
     if (weatherCode === 0) {
       return {
         icon: <IconSun className="w-4 h-4 text-amber-500 dark:text-amber-400" />,
-        label: "Clear Sky",
+        label: locale === "hi" ? "साफ़ आसमान" : locale === "bn" ? "পরিষ্কার আকাশ" : "Clear Sky",
         badgeColor: "text-amber-600 bg-amber-500/10 dark:text-amber-400",
       };
     }
@@ -193,34 +195,34 @@ function getWeatherIcon(weatherCode?: number | null, precipMm?: number | null, p
   if (precipMm != null && precipMm > 8) {
     return {
       icon: <IconCloudRain className="w-4 h-4 text-cyan-500 dark:text-cyan-400" />,
-      label: "Heavy Rain",
+      label: locale === "hi" ? "भारी बारिश" : locale === "bn" ? "ভারী বৃষ্টি" : "Heavy Rain",
       badgeColor: "text-cyan-600 bg-cyan-500/10 dark:text-cyan-400",
     };
   }
   if (precipMm != null && precipMm > 0.5) {
     return {
       icon: <IconCloudRain className="w-4 h-4 text-cyan-500 dark:text-cyan-400" />,
-      label: "Rain Showers",
+      label: locale === "hi" ? "वर्षा" : locale === "bn" ? "বৃষ্টি" : "Rain Showers",
       badgeColor: "text-cyan-600 bg-cyan-500/10 dark:text-cyan-400",
     };
   }
   if (prob != null && prob > 65) {
     return {
       icon: <IconCloudRain className="w-4 h-4 text-cyan-500 dark:text-cyan-400" />,
-      label: "Rain Likely",
+      label: locale === "hi" ? "संभावित बारिश" : locale === "bn" ? "বৃষ্টির সম্ভাবনা" : "Rain Likely",
       badgeColor: "text-cyan-600 bg-cyan-500/10 dark:text-cyan-400",
     };
   }
   if (prob != null && prob > 30) {
     return {
       icon: <IconCloudSun className="w-4 h-4 text-amber-500 dark:text-amber-400" />,
-      label: "Scattered Clouds",
+      label: locale === "hi" ? "छिटपुट बादल" : locale === "bn" ? "বিক্ষিপ্ত মেঘ" : "Scattered Clouds",
       badgeColor: "text-amber-600 bg-amber-500/10 dark:text-amber-400",
     };
   }
   return {
     icon: <IconSun className="w-4 h-4 text-amber-500 dark:text-amber-400" />,
-    label: "Clear",
+    label: locale === "hi" ? "साफ़ मौसम" : locale === "bn" ? "পরিষ্কার" : "Clear",
     badgeColor: "text-amber-600 bg-amber-500/10 dark:text-amber-400",
   };
 }
@@ -340,7 +342,7 @@ export function Forecast7DayDeck({
   }
 
   const selectedWeather = selectedDay
-    ? getWeatherIcon(undefined, selectedDay.precip_mm, selectedDay.precip_prob_pct)
+    ? getWeatherIcon(undefined, selectedDay.precip_mm, selectedDay.precip_prob_pct, locale)
     : null;
 
   const diurnalSpread =
@@ -357,13 +359,13 @@ export function Forecast7DayDeck({
       {/* Section Header */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1.5">
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400">
+          <p className="forecast-section-title text-[11px] font-black uppercase tracking-[0.18em]">
             {t.forecast7 || "Forecast 7 Days"}
           </p>
         </div>
         {!isSummary && (
           <p className="text-[10px] text-neo-muted hidden sm:inline">
-            Select any day to inspect full hourly curves & agronomy
+            {locale === "hi" ? "दिन चुनें या स्क्रॉल करें · पूर्ण प्रति घंटा वक्र" : locale === "bn" ? "দিন নির্বাচন বা স্ক্রোল করুন · ঘণ্টার বক্ররেখা" : "Scroll horizontally · Select any day for hourly curves & agronomy"}
           </p>
         )}
       </div>
@@ -373,12 +375,12 @@ export function Forecast7DayDeck({
           <LaymanSummaryBody summary={get7DayLaymanSummary(dash, locale)} isWide />
         </div>
       ) : (
-        /* 7-Day Compact & Scrollable Day Strip */
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin sm:grid sm:grid-cols-7 sm:overflow-visible">
+        /* 7-Day Compact & Horizontally Scrollable Day Strip */
+        <div className="flex gap-2.5 overflow-x-auto pb-2 pt-0.5 modal-scrollbar scroll-smooth snap-x snap-mandatory">
         {days.map((d, idx) => {
           const isSelected = activeDate === d.date;
           const isToday = idx === 0;
-          const wInfo = getWeatherIcon(undefined, d.precip_mm, d.precip_prob_pct);
+          const wInfo = getWeatherIcon(undefined, d.precip_mm, d.precip_prob_pct, locale);
 
           // Thermometer bar span calculation
           const dayMin = d.temp_min_c ?? weekMin;
@@ -394,7 +396,7 @@ export function Forecast7DayDeck({
                 e.stopPropagation();
                 setActiveDate(isSelected ? null : d.date);
               }}
-              className={`min-w-[5.8rem] sm:min-w-0 cursor-pointer rounded-xl p-2 flex flex-col justify-between transition-all duration-150 border text-center group ${
+              className={`min-w-[125px] sm:min-w-[140px] md:min-w-[150px] shrink-0 snap-start cursor-pointer rounded-xl p-2.5 flex flex-col justify-between transition-all duration-150 border text-center group ${
                 isSelected
                   ? "bg-[color-mix(in_srgb,var(--accent)_14%,var(--card))] border-[var(--accent)] shadow-sm ring-1 ring-[var(--accent)]"
                   : "bg-[color-mix(in_srgb,var(--card)_80%,transparent)] border-[var(--line)] hover:border-[color-mix(in_srgb,var(--accent)_30%,var(--line))] hover:bg-[color-mix(in_srgb,var(--accent)_4%,transparent)]"
@@ -403,10 +405,10 @@ export function Forecast7DayDeck({
               {/* Day & Date Tag */}
               <div className="flex items-center justify-between gap-1 text-[10px]">
                 <span className={`font-semibold tracking-tight truncate ${isSelected ? "text-neo-accent" : "text-neo-text"}`}>
-                  {isToday ? "Today" : weekdayName(d.date)}
+                  {isToday ? (locale === "hi" ? "आज" : locale === "bn" ? "আজ" : "Today") : weekdayName(d.date, true, locale)}
                 </span>
                 <span className="font-mono text-[9px] text-neo-muted shrink-0">
-                  {d.date.slice(5)}
+                  {localizeDigits(d.date.slice(5), locale)}
                 </span>
               </div>
 
@@ -423,8 +425,8 @@ export function Forecast7DayDeck({
               {/* Min/Max Temperature with Thermometer Bar */}
               <div className="space-y-1">
                 <div className="flex items-baseline justify-between text-[10px] font-mono px-0.5">
-                  <span className="font-bold text-neo-text">{temp(d.temp_max_c, units)}</span>
-                  <span className="text-[9px] text-neo-muted">{temp(d.temp_min_c, units)}</span>
+                  <span className="font-bold text-neo-text">{temp(d.temp_max_c, units, locale)}</span>
+                  <span className="text-[9px] text-neo-muted">{temp(d.temp_min_c, units, locale)}</span>
                 </div>
                 <div className="h-1 w-full bg-[var(--line)] rounded-full overflow-hidden relative">
                   <div
@@ -437,11 +439,11 @@ export function Forecast7DayDeck({
               {/* Rain & Probability */}
               <div className="mt-1.5 pt-1 border-t border-[color-mix(in_srgb,var(--line)_50%,transparent)] flex items-center justify-between text-[9px]">
                 <span className="font-mono font-medium text-neo-rain truncate">
-                  {d.precip_mm > 0 ? rain(d.precip_mm, units) : "0 mm"}
+                  {d.precip_mm > 0 ? rain(d.precip_mm, units, locale) : `${localizeDigits(0, locale)} mm`}
                 </span>
                 <span className="text-[9px] text-neo-muted shrink-0 flex items-center gap-0.5">
                   <IconDroplet className="w-2.5 h-2.5 opacity-70" />
-                  {d.precip_prob_pct ?? 0}%
+                  {localizeDigits(d.precip_prob_pct ?? 0, locale)}%
                 </span>
               </div>
 
@@ -486,7 +488,7 @@ export function Forecast7DayDeck({
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-sm sm:text-base font-bold text-neo-text leading-tight">
-                          {formatFullDate(selectedDay.date)}
+                          {formatFullDate(selectedDay.date, locale)}
                         </h3>
                         <span className="chip text-[9px] font-mono uppercase px-1.5 py-0">
                           Day {selectedDayIndex + 1} of {days.length}
