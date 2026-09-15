@@ -19,6 +19,3 @@ mobile/.env
 .pytest_cache/
 *.pyc
 .DS_Store
-backend/test_5_niche.py
-*.png
-continue.md

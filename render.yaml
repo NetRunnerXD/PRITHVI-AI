@@ -1,4 +1,4 @@
-# Render Blueprint — native Python, not Docker.
+# Render Blueprint — native Python, single Free web service.
 # Dashboard: New → Blueprint → this repo. Instance: Free.
 services:
   - type: web
@@ -38,30 +38,6 @@ services:
         value: "3600"
       - key: APP_ROLE
         value: api
-      - key: MONGODB_SAT_URI
-        sync: false
-      - key: MONGODB_SAT_DB
-        value: rituchakra_sat
-
-  - type: web
-    name: prithvi-ai-ingest
-    runtime: python
-    plan: free
-    region: oregon
-    rootDir: backend
-    buildCommand: python -m pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 75
-    healthCheckPath: /api/ready
-    autoDeploy: true
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.12.8"
-      - key: APP_ROLE
-        value: ingest
-      - key: CORS_ORIGINS
-        value: "*"
-      - key: CACHE_DIR
-        value: /tmp/rituchakra-cache
       - key: MONGODB_URI
         sync: false
       - key: MONGODB_DB
@@ -70,6 +46,8 @@ services:
         sync: false
       - key: MONGODB_SAT_DB
         value: rituchakra_sat
+      - key: OM_SERVER_REFRESH
+        value: "false"
       - key: MOSDAC_USER
         sync: false
       - key: MOSDAC_PASS
@@ -78,5 +56,3 @@ services:
         sync: false
       - key: WEATHERBIT_API_KEY
         sync: false
-      - key: OM_SERVER_REFRESH
-        value: "false"
