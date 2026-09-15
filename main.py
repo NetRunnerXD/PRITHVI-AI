@@ -1,4 +1,4 @@
-"""Start Rituchakra: FastAPI API on :8000 and the Next.js dashboard on :3000."""
+"""Start Prithvi AI: FastAPI API on :8000 and the Next.js dashboard on :3000."""
 
 from __future__ import annotations
 
@@ -194,7 +194,7 @@ def _web_env(npm: str) -> dict[str, str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Start the Rituchakra web app")
+    parser = argparse.ArgumentParser(description="Start the Prithvi AI web app")
     parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
     parser.add_argument("--frontend-port", type=int, default=3000, help="Frontend port (default 3000)")

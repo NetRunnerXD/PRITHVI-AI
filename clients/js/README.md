@@ -1,6 +1,6 @@
 # @rituchakra/client
 
-Framework-free TypeScript client for the Rituchakra HTTP API. No React, Next.js, or DOM.
+Framework-free TypeScript client for the Prithvi AI HTTP API. No React, Next.js, or DOM.
 
 Use this folder when you start a **new web app** or a **React Native / Expo** app. Do not import `frontend/` — that package is one Next.js dashboard, not the API.
 

@@ -18,7 +18,7 @@ _PUSHBACK = (
 
 @dataclass
 class Gate:
-    """Source-gated plan: chat, fetch Rituchakra needs, or refuse unsourced metrics."""
+    """Source-gated plan: chat, fetch Prithvi AI needs, or refuse unsourced metrics."""
 
     mode: str  # chat | data | refuse
     needs: list[str] = field(default_factory=list)
@@ -27,7 +27,7 @@ class Gate:
 
 
 def source_gate(text: str) -> Gate:
-    """Refuse metrics Rituchakra does not compute. Fetch only named product needs."""
+    """Refuse metrics Prithvi AI does not compute. Fetch only named product needs."""
     plan = interpret(text)
     return Gate(mode=plan.mode, needs=list(plan.needs), states=list(plan.states), refuse=plan.refuse)
 
@@ -369,7 +369,7 @@ def quote_facts(collected: dict[str, Any], window: dict[str, str] | None = None)
         else:
             reason = aqi.get("note") or st or "empty"
             lines.append(
-                f"Rituchakra has no AQI for {aqi.get('place') or 'this place'} ({reason}). "
+                f"Prithvi AI has no AQI for {aqi.get('place') or 'this place'} ({reason}). "
                 "I will not invent 0."
             )
     cmp = collected.get("compare") or {}
@@ -432,7 +432,7 @@ def quote_facts(collected: dict[str, Any], window: dict[str, str] | None = None)
                 line += f" — {meaning}"
             lines.append(line)
         if not any(isinstance(w, dict) and w.get("title") for w in wrows):
-            lines.append("No district CAP titles in the current Rituchakra watch list.")
+            lines.append("No district CAP titles in the current Prithvi AI watch list.")
     cap = collected.get("capability") or {}
     if isinstance(cap, dict) and cap.get("available") is False and cap.get("reason"):
         lines.append(str(cap["reason"]))
@@ -451,7 +451,7 @@ def quote_facts(collected: dict[str, Any], window: dict[str, str] | None = None)
             if bits:
                 lines.append("Mandi: " + "; ".join(bits) + ".")
         else:
-            lines.append(f"No Agmarknet arrivals in Rituchakra for {mandi.get('place') or 'this district'} today.")
+            lines.append(f"No Agmarknet arrivals in Prithvi AI for {mandi.get('place') or 'this district'} today.")
     return "\n".join(lines).strip()
 
 

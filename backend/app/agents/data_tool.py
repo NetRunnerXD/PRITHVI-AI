@@ -32,7 +32,7 @@ SCHEMA = {
     "function": {
         "name": "data",
         "description": (
-            "Fetch one Rituchakra fact pack. Call only when the user needs a real number. "
+            "Fetch one Prithvi AI fact pack. Call only when the user needs a real number. "
             "Do not call for chit-chat or off-topic questions."
         ),
         "parameters": {

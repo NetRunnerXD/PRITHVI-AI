@@ -182,7 +182,7 @@ def build_dual_predictions(f: dict[str, Any]) -> dict[str, Any]:
         ),
         "ours": pack(
             ours_days,
-            "Rituchakra hybrid AI–NWP blend v5",
+            "Prithvi AI hybrid AI–NWP blend v5",
             "Vincentized multi-model CDF q50 + ±12% residual (soil / anomaly / India atlas). Rain field is q50, not mean mm.",
         ),
         "adjustments": notes,

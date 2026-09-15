@@ -7,7 +7,7 @@
 
 ## 1. Objective
 
-When Rituchakra is deployed with the frontend on Vercel and backend on Render's free tier, the backend spins down after 15 minutes of inactivity. When a user visits the site, Render's cold start takes **50–90 seconds**, during which the user faces a blank loading screen or timeout errors. Additionally, routing all Open-Meteo requests through a single Render server IP risks hitting Open-Meteo's 10,000 requests/day free-tier rate limit.
+When Prithvi AI is deployed with the frontend on Vercel and backend on Render's free tier, the backend spins down after 15 minutes of inactivity. When a user visits the site, Render's cold start takes **50–90 seconds**, during which the user faces a blank loading screen or timeout errors. Additionally, routing all Open-Meteo requests through a single Render server IP risks hitting Open-Meteo's 10,000 requests/day free-tier rate limit.
 
 This plan outlines how to enable the **client browser to query Open-Meteo directly**, delivering instant sub-300ms weather, eliminating rate-limit bottlenecks, and optimistically hydrating the UI while Render wakes up in the background.
 

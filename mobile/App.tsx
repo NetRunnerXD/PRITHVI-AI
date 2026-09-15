@@ -141,7 +141,7 @@ export default function App() {
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <StatusBar style="light" />
-      <Text style={styles.brand}>Rituchakra</Text>
+      <Text style={styles.brand}>Prithvi AI</Text>
       <Text style={styles.muted}>{health}</Text>
 
       <View style={styles.row}>

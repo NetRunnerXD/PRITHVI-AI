@@ -1,4 +1,4 @@
-# Rituchakra API
+# Prithvi AI API
 
 Standalone FastAPI service. **No frontend assets.** Publish this process and any web or React Native app can call it.
 
@@ -27,7 +27,7 @@ Surfaces (same handlers; local `/api` is unchanged):
 | `/web/v1` | Website / other web frameworks |
 | `/app/v1` | Expo / React Native |
 
-Web origin (`localhost:3000`) and Expo (`localhost:8081`) may call this process at the same time. CORS lists both. Optional `X-Rituchakra-Client: web|app`.
+Web origin (`localhost:3000`) and Expo (`localhost:8081`) may call this process at the same time. CORS lists both. Optional `X-Prithvi AI-Client: web|app`.
 
 Bind `0.0.0.0` if a phone or another machine will call the API. Set `CORS_ORIGINS` / `CORS_ORIGIN_REGEX` and, when publishing, `PUBLIC_BASE_URL`.
 

@@ -700,7 +700,7 @@ def template_from_packet(packet: InsightPacket, collected: dict[str, Any], query
     if body:
         return length_body(body)
     quoted = present_answer(collected, compact=True, query=query, domain=packet.domain)
-    return length_body(quoted or "Rituchakra has no compiled insight for that yet.")
+    return length_body(quoted or "Prithvi AI has no compiled insight for that yet.")
 
 
 def finish_insight_body(

@@ -11,7 +11,7 @@ from app.data.india_mask import in_india
 from app.providers import imd
 from app.schemas.dashboard import EarlyWarning
 from app.schemas.location import Location
-from app.services.locality import alert_belongs, national_severe_belongs, port_relevant
+from app.services.locality import alert_belongs, is_warning_or_worse, national_severe_belongs, port_relevant
 
 SEVERE = {"extreme", "warning"}
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -232,30 +232,47 @@ def _ledger_pin_warnings(loc: Location) -> list[EarlyWarning]:
         except (KeyError, TypeError, ValueError):
             continue
         dkm = ((rlat - lat) ** 2 + (rlon - lon) ** 2) ** 0.5 * 111.3
-        if dkm > 80:
-            continue
-        kind = str(row.get("kind") or "storm")
-        phase = str(row.get("phase") or "live")
-        title = f"{kind.replace('_', ' ').title()} {phase} — {row.get('place') or loc.district}"
-        out.append(
-            _ew(
-                id=f"ledger-{row.get('event_id')}",
-                severity="warning",
-                title=title[:200],
-                body=(row.get("verify") or {}).get("note") or row.get("note") or "Sat ledger event.",
-                source="rituchakra-ledger",
-                hazard="weather",
-                kind=kind if kind != "cloud" else "thunderstorm",
-                scope="local",
-                lat=rlat,
-                lon=rlon,
-                distance_km=round(dkm, 1),
-                window_start=row.get("started_at"),
-                window_end=row.get("closes_at"),
-                href_kind="map",
+        kind = str(row.get("kind") or "thunderstorm")
+        title = str(row.get("title") or f"{kind.replace('_', ' ').capitalize()} — {row.get('place') or 'Local'}")
+        if dkm <= 80:
+            out.append(
+                _ew(
+                    id=f"ledger-{row.get('event_id')}",
+                    severity="warning",
+                    title=title[:200],
+                    body=(row.get("verify") or {}).get("note") or row.get("note") or "Sat ledger event.",
+                    source="prithvi-ai-ledger",
+                    hazard="weather",
+                    kind=kind if kind != "cloud" else "thunderstorm",
+                    scope="local",
+                    lat=rlat,
+                    lon=rlon,
+                    distance_km=round(dkm, 1),
+                    window_start=row.get("started_at"),
+                    window_end=row.get("closes_at"),
+                    href_kind="map",
+                )
             )
-        )
-    return out[:12]
+        elif gate.get("ok") and row.get("p_cloudburst", 0) and float(row.get("p_cloudburst") or 0) >= 0.4:
+            out.append(
+                _ew(
+                    id=f"ledger-nat-{row.get('event_id')}",
+                    severity="warning",
+                    title=f"Severe Convective Storm — {row.get('place') or 'India'}",
+                    body=(row.get("verify") or {}).get("note") or row.get("note") or "Deep convective system detected by satellite.",
+                    source="prithvi-ai-ledger",
+                    hazard="weather",
+                    kind=kind if kind != "cloud" else "thunderstorm",
+                    scope="india",
+                    lat=rlat,
+                    lon=rlon,
+                    distance_km=round(dkm, 1),
+                    window_start=row.get("started_at"),
+                    window_end=row.get("closes_at"),
+                    href_kind="map",
+                )
+            )
+    return out
 
 
 def _norm_key(w: EarlyWarning) -> str:
@@ -292,7 +309,7 @@ def assemble_warnings(
             {"title": w.title, "body": w.body, "lat": w.lat, "lon": w.lon, "source": w.source}
         ):
             if w.source not in {
-                "rituchakra-risk",
+                "prithvi-ai-risk",
                 "vera-extremes",
                 "nowcast",
                 "prithvi-netra",
@@ -373,29 +390,25 @@ def assemble_warnings(
         )
 
     for item in sachet_rows or []:
-        if not national_severe_belongs(item, loc) and not alert_belongs(item, loc):
-            continue
-        local_ok = alert_belongs(item, loc)
-        severe = national_severe_belongs(item, loc) and imd.is_national_severe(item.get("title") or "", item.get("body") or "")
-        if not local_ok and not severe:
-            continue
-        if not is_live(item, kind="rainfall"):
-            continue
         raw = item.get("title") or "SACHET alert"
-        sev = imd.severity_from_title(raw)
-        if severe and sev not in SEVERE:
-            sev = "warning"
-        if not severe and not local_ok:
+        body = item.get("body") or ""
+        local_ok = alert_belongs(item, loc)
+        sev = imd.severity_from_title(raw + " " + body)
+        hint = imd.extract_region_hint(raw, body)
+        if not local_ok and not is_warning_or_worse(item) and not hint:
             continue
+        if not is_live(item, kind=kind_from_text(raw, body)):
+            continue
+        if sev not in SEVERE and (hint or is_warning_or_worse(item)):
+            sev = "warning"
         if sev not in SEVERE:
             continue
-        hint = imd.extract_region_hint(raw, item.get("body") or "")
         add(
             _ew(
                 id=str(item.get("id") or raw)[:64],
                 severity=sev,
-                title=imd.humanize_cap_title(raw, item.get("body") or "", hint or (loc.district if local_ok else "India")),
-                body=imd.clean_cap_body(item.get("body") or "", title=raw, raw_title=raw) or "NDMA SACHET.",
+                title=imd.humanize_cap_title(raw, body, hint or (loc.district if local_ok else "India")),
+                body=imd.clean_cap_body(body, title=raw, raw_title=raw) or "NDMA SACHET.",
                 source="sachet-ndma",
                 hazard="weather",
                 scope="local" if local_ok else "india",
@@ -567,7 +580,7 @@ def assemble_warnings(
                 severity="warning",
                 title=f"Drought risk {int(drought.score_pct)}% at {loc.district}",
                 body="Rainfall deficit and dry soil on this pin.",
-                source="rituchakra-risk",
+                source="prithvi-ai-risk",
                 hazard="drought",
                 kind="drought",
                 scope="local",
@@ -583,7 +596,7 @@ def assemble_warnings(
                 severity="warning",
                 title=f"Heat risk {int(heat.score_pct)}% at {loc.district}",
                 body="High afternoon temperature and humidity on this pin.",
-                source="rituchakra-risk",
+                source="prithvi-ai-risk",
                 hazard="weather",
                 kind="heatwave",
                 scope="local",

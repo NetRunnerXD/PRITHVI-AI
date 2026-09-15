@@ -20,7 +20,7 @@ _EMERGENCY = re.compile(
 EMERGENCY_EN = (
     "If you are in immediate danger, call local emergency services now "
     "(India: 112). For disaster help, NDMA / state disaster control rooms. "
-    "Rituchakra cannot dispatch rescue. Move to higher ground if water is rising."
+    "Prithvi AI cannot dispatch rescue. Move to higher ground if water is rising."
 )
 
 

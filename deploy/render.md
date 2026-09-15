@@ -7,8 +7,8 @@ URL after the first deploy: `https://rituchakra-api.onrender.com` (Render may ad
 ## One-time
 
 1. Sign up at [render.com](https://render.com) with GitHub (free web service; no card for the Free instance).
-2. **New → Blueprint** and select `NetRunnerXD/Rituchakra` (`render.yaml`), **or** **New → Web Service**:
-   - Repo: `Rituchakra`, branch `main`
+2. **New → Blueprint** and select `NetRunnerXD/Prithvi AI` (`render.yaml`), **or** **New → Web Service**:
+   - Repo: `Prithvi AI`, branch `main`
    - Runtime: **Python** (not Docker)
    - Root directory: `backend`
    - Build: `python -m pip install -r requirements.txt`
@@ -33,30 +33,22 @@ Keep-warm: the web app pings `GET /api/ready` every 10 minutes while a tab is vi
 
 `OM_SERVER_REFRESH` defaults off so Render does not rebuild snapshots from its shared IP. Browsers POST their Open-Meteo JSON to `/api/dashboard`.
 
-A second service `prithvi-ai-ingest` (`APP_ROLE=ingest`) runs the satellite cycle. Both services are on the **Free** plan (no credit card needed).
+## Satellite Ingestion on Single Free Instance (Cron Trigger)
 
-### Setting up without a Credit Card (Manual Web Service):
-If Render asks for a credit card when applying a multi-service Blueprint, create the service manually:
-1. Go to **Dashboard → New + → Web Service**.
-2. Select repository `NetRunnerXD/Rituchakra` (branch `main`).
-3. Settings:
-   - **Name**: `prithvi-ai-ingest`
-   - **Root Directory**: `backend`
-   - **Runtime**: `Python 3`
-   - **Build Command**: `python -m pip install -r requirements.txt`
-   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 75`
-   - **Instance Type**: `Free`
-   - **Health Check Path**: `/api/ready`
-4. Add Environment Variables:
-   - `APP_ROLE` = `ingest`
-   - `MONGODB_URI` = `<your-mongodb-uri>`
-   - `MONGODB_DB` = `rituchakra`
-   - `MONGODB_SAT_URI` = `<your-mongodb-sat-uri>`
-   - `MONGODB_SAT_DB` = `rituchakra_sat`
-   - `OM_SERVER_REFRESH` = `false`
-   - `CACHE_DIR` = `/tmp/rituchakra-cache`
-   - *(Optional)* `MOSDAC_USER`, `MOSDAC_PASS`, `NASA_EARTHDATA_API`
-5. Keep-warm: Ping `https://<prithvi-ai-ingest>.onrender.com/api/ready` every 10 minutes (via UptimeRobot or cron-job.org) so the Free tier does not sleep.
+To run the satellite cruncher without a 2nd instance or credit card:
+1. The single `rituchakra-api` service exposes a cron trigger endpoint:
+   `POST` / `GET` `https://<your-service>.onrender.com/api/ingest/trigger`
+2. Configure **[cron-job.org](https://cron-job.org)** or **[UptimeRobot](https://uptimerobot.com)** (Free):
+   - **URL**: `https://<your-service>.onrender.com/api/ingest/trigger` (or `/api/ready` to wake)
+   - **Schedule**: Every 10 to 15 minutes
+   - **Effect**:
+     - Wakes up the Render free instance so it never goes into deep sleep.
+     - Fetches the latest INSAT-3DS IR1 JPEG from IMD.
+     - Runs convective cloud segmentation, nowcasting, and hazard models.
+     - Upserts verified strokes and hazard incidents straight into MongoDB Atlas!
+
+### Optional Security
+Set `INGEST_CRON_SECRET=<your-secret>` in Render Environment Variables. When set, pass `?secret=<your-secret>` in the cron trigger URL.
 
 ## Clients
 

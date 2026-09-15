@@ -53,7 +53,7 @@ async def one(case: dict, cid: str | None) -> dict:
     ok = True
     reasons = []
     if case.get("refuse"):
-        if "Rituchakra" not in text and "cannot" not in text.lower() and "do not" not in text.lower():
+        if "Prithvi AI" not in text and "Rituchakra" not in text and "cannot" not in text.lower() and "do not" not in text.lower():
             ok = False
             reasons.append("expected refuse")
         if fetched:

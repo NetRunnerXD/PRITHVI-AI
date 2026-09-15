@@ -87,7 +87,7 @@ _STOP_HEAD = {
     "spray", "spraying", "sowing", "harvest", "harvesting",
 }
 
-# Place-level packs Rituchakra can actually compute. Used for "all metrics".
+# Place-level packs Prithvi AI can actually compute. Used for "all metrics".
 CATALOG_NEEDS = ("forecast", "nowcast", "aqi", "warnings", "risks", "mandi", "capability")
 
 _AFFIRM = {
@@ -134,7 +134,7 @@ def is_followup_affirm(text: str) -> bool:
 
 
 def wants_catalog(text: str) -> bool:
-    """Human asked for every Rituchakra metric, not one figure."""
+    """Human asked for every Prithvi AI metric, not one figure."""
     t = (text or "").lower()
     if is_followup_affirm(text) and _norm_line(text) in {
         "all of them", "all of it", "all", "everything", "all metrics", "every metric", "the rest",
@@ -191,7 +191,7 @@ def unknown_refuse(name: str) -> str:
             f"Name an Indian town or district in {st} — for example {hub_name} — to view weather, AQI, or flood figures."
         )
     return (
-        f"“{shown}” is not a place in the Rituchakra Indian gazetteer "
+        f"“{shown}” is not a place in the Prithvi AI Indian gazetteer "
         "(and I will not invent weather, AQI, or flood figures for a made-up or foreign name). "
         "Name an Indian town or district — for example Purulia, Puri, or Cherrapunji."
     )
@@ -366,7 +366,7 @@ def interpret(text: str) -> Plan:
             mode="refuse",
             asked=asked,
             refuse=(
-                "Rituchakra does not rank tourist appeal or 'best places to visit'. "
+                "Prithvi AI does not rank tourist appeal or 'best places to visit'. "
                 "I can rank Indian states or districts by 3-day rain, flood score, or heat from Open-Meteo + local-ml. "
                 "Name that metric if you want it."
             ),
@@ -376,7 +376,7 @@ def interpret(text: str) -> Plan:
             mode="refuse",
             asked=asked,
             refuse=(
-                "Rituchakra has no pet-visit, island-outing, or animal-care index. "
+                "Prithvi AI has no pet-visit, island-outing, or animal-care index. "
                 "I will not invent whether you should take an elephant anywhere. "
                 "Ask for rain, heat, flood score, or CPCB AQI at a named Indian town if you want those figures."
             ),
@@ -386,7 +386,7 @@ def interpret(text: str) -> Plan:
             mode="refuse",
             asked=asked,
             refuse=(
-                "Rituchakra does not rank tourist appeal or 'best places to visit'. "
+                "Prithvi AI does not rank tourist appeal or 'best places to visit'. "
                 "I can rank Indian states or districts by 3-day rain, flood score, or heat from Open-Meteo + local-ml. "
                 "Name a metric I actually store."
             ),
@@ -510,7 +510,7 @@ def interpret(text: str) -> Plan:
                 asked=asked,
                 refuse=(
                     "I cannot list the best Indian states or cities to visit. "
-                    "That is not a Rituchakra dataset. "
+                    "That is not a Prithvi AI dataset. "
                     "Ask for a flood, rain, or heat ranking and I will use Open-Meteo + local-ml."
                 ),
                 states=states,

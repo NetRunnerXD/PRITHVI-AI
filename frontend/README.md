@@ -1,4 +1,4 @@
-# Rituchakra web client
+# Prithvi AI web client
 
 Next.js dashboard. It is **one** UI for the API in `../backend`. It does not contain the product logic and is not required to publish the API.
 

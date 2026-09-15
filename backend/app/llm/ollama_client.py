@@ -37,7 +37,7 @@ def client() -> AsyncOpenAI:
     if hit is None:
         kwargs: dict[str, Any] = {"base_url": p.base_url, "api_key": p.api_key or "none", "timeout": 120.0}
         if p.id == "openrouter":
-            kwargs["default_headers"] = {"HTTP-Referer": "https://rituchakra.local", "X-Title": "Rituchakra"}
+            kwargs["default_headers"] = {"HTTP-Referer": "https://rituchakra.local", "X-Title": "Prithvi AI"}
         hit = AsyncOpenAI(**kwargs)
         _clients[p.id] = hit
     return hit

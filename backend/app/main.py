@@ -69,7 +69,7 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 
 app = FastAPI(
-    title="Rituchakra API",
+    title="Prithvi AI API",
     version=settings.api_version,
     description=(
         "India-first environmental intelligence HTTP API. "
@@ -83,7 +83,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
-    contact={"name": "Rituchakra"},
+    contact={"name": "Prithvi AI"},
 )
 
 _cors_kwargs: dict = {

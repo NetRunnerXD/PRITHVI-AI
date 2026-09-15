@@ -142,7 +142,7 @@ def main() -> int:
             repo_id=space,
             repo_type="space",
             ignore_patterns=ignore,
-            commit_message="Deploy Rituchakra API from GitHub",
+            commit_message="Deploy Prithvi AI API from GitHub",
         )
         if SPACE_README.is_file():
             api.upload_file(

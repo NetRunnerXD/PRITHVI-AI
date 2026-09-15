@@ -1,5 +1,5 @@
 ---
-title: Rituchakra API
+title: Prithvi AI API
 emoji: 🌧️
 colorFrom: sky
 colorTo: green
@@ -10,7 +10,7 @@ license: mit
 short_description: India-first environmental intelligence JSON API
 ---
 
-# Rituchakra API
+# Prithvi AI API
 
 Standalone FastAPI origin. No web assets. The Next.js dashboard and the Expo app call this Space together.
 

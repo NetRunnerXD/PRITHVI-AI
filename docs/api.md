@@ -1,4 +1,4 @@
-# Rituchakra API — frontend and app implementation
+# Prithvi AI API — frontend and app implementation
 
 JSON HTTP API. No web assets. The Next.js dashboard (`frontend/`) and Expo app (`mobile/`) are clients of the same origin.
 
@@ -44,7 +44,7 @@ Join rule used by `clients/js` and the Next app: if the path does not already st
 - **Do not invent millimetres, AQI, rupees, or risk %.** Display numbers from JSON. The Advisor LLM only narrates.
 - **Location query** on GET routes: `district`, `place`, `lat`, `lon`. Omit all of them → default **Haldia, Purba Medinipur** (`22.0667, 88.0698`).
 - **Locale:** `locale=en|hi|bn` where supported (`/dashboard`, `POST /brief`). Chat uses `locale_hint` / `output_locale` in the body.
-- **CORS** is enabled. Optional request header `X-Rituchakra-Client: web|app|local`. Response headers: `X-API-Version`, `X-Client-Surface`.
+- **CORS** is enabled. Optional request header `X-Prithvi AI-Client: web|app|local`. Response headers: `X-API-Version`, `X-Client-Surface`.
 - **One replica / in-process cache.** Snapshot routes can take several seconds on a cold host.
 - **Auth:** none. Public JSON.
 
@@ -299,7 +299,7 @@ GET /api/geo/search?q=Pune HTTP/1.1
 
 ```http
 GET /api/alerts?place=Haldia&lat=22.0667&lon=88.0698 HTTP/1.1
-X-Rituchakra-Client: app
+X-Prithvi AI-Client: app
 ```
 
 ```http

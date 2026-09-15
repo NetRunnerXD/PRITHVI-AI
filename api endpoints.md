@@ -2,7 +2,7 @@
 
 Source: live OpenAPI at `http://127.0.0.1:8000/openapi.json` (Swagger UI: `http://127.0.0.1:8000/docs`).
 
-**Rituchakra API** v0.4.0
+**Prithvi AI API** v0.4.0
 
 India-first environmental intelligence HTTP API. JSON only — no web assets. Canonical routes live under /api (local dashboard and tests). The same handlers are also served at /v1, /web/v1, and /app/v1 so a website and a phone app can call this process together. The Advisor LLM never invents millimetres, litres, AQI, or rupees; those come from providers and models.
 

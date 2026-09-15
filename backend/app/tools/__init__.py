@@ -475,7 +475,7 @@ def build_registry(snap: DashboardSnapshot, extra: dict[str, Any] | None = None)
              geo_search, "map"),
         Tool(
             "capability",
-            "What Rituchakra cannot provide (radar, INSAT, NCS, IMD REST, rain-gauge). Call before inventing a missing metric.",
+            "What Prithvi AI cannot provide (radar, INSAT, NCS, IMD REST, rain-gauge). Call before inventing a missing metric.",
             {"type": "object", "properties": {"metric": {"type": "string"}}},
             capability,
         ),

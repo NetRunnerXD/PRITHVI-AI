@@ -1,5 +1,5 @@
 /**
- * Rituchakra HTTP client.
+ * Prithvi AI HTTP client.
  * No React / Next / DOM. Use from a web app or React Native:
  *
  *   import { createClient } from "../clients/js/src";
@@ -129,4 +129,4 @@ export function createClient(opts: ApiConfig) {
   };
 }
 
-export type RituchakraClient = ReturnType<typeof createClient>;
+export type Prithvi AIClient = ReturnType<typeof createClient>;

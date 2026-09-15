@@ -1,6 +1,6 @@
 # Privacy (store listing stub)
 
-Rituchakra is an India-first weather and farm-advice client. It talks only to your published Rituchakra API.
+Prithvi AI is an India-first weather and farm-advice client. It talks only to your published Prithvi AI API.
 
 **Location.** If you grant GPS, the app sends latitude and longitude to `/api/geo/reverse` so the dashboard can pin an Indian district. Location is not sold. You can search a place by name instead.
 

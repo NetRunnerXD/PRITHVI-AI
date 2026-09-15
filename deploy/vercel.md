@@ -7,7 +7,7 @@ Hobby (free) Next.js host. The API stays on Render (`deploy/render.md`). Pushes 
 ## One-time
 
 1. Sign up at [vercel.com](https://vercel.com) with GitHub.
-2. **Add New → Project** → import `NetRunnerXD/Rituchakra` (or this fork).
+2. **Add New → Project** → import `NetRunnerXD/Prithvi AI` (or this fork).
 3. **Root Directory:** `frontend` (Edit → `frontend`).
 4. Framework: **Next.js** (detected). Install `npm ci`, build `npm run build`.
 5. Environment Variables — **Production** and **Preview**:

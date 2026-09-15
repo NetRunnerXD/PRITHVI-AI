@@ -1,4 +1,4 @@
-# Rituchakra mobile (Expo)
+# Prithvi AI mobile (Expo)
 
 Uses `clients/js` against the **same FastAPI** as the web dashboard. Do not import `frontend/`.
 

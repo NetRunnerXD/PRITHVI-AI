@@ -1,4 +1,4 @@
-# Rituchakra parameters
+# Prithvi AI parameters
 
 Every quantity the platform **fetches** from a provider or **calculates** locally. Advisor chat never invents these numbers; it only quotes snapshot / `data()` packs.
 

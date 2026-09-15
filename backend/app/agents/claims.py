@@ -12,7 +12,7 @@ def walk_payload_nums(payloads: list[Any], acc: set[str]) -> None:
     for p in payloads:
         walk_numbers(p, acc)
 
-_NOTE = "I only quote figures from Rituchakra data."
+_NOTE = "I only quote figures from Prithvi AI data."
 
 
 def check_claims(

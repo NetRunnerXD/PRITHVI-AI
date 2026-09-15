@@ -1,4 +1,4 @@
-# Deploy Rituchakra (web + mobile API)
+# Deploy Prithvi AI (web + mobile API)
 
 The backend is a JSON API. The Next dashboard and the Expo app are clients.
 
@@ -35,4 +35,4 @@ See `mobile/README.md`. Production phones need HTTPS; Android blocks cleartext H
 
 Public HTTPS API: [`deploy/render.md`](render.md). Hugging Face Docker Spaces are paid; this path is a Free Render web service. Pushes that change `backend/` redeploy when the repo is connected and `RENDER_DEPLOY_HOOK` is set.
 
-Optional paid path: [`deploy/fly.md`](fly.md). Hugging Face Docker notes: [`huggingface.md`](huggingface.md).
+Optional paid path: [`deploy/fly.md`](fly.md). Hugging Face Gradio notes: [`huggingface.md`](huggingface.md). Northflank (free tier, no card): [`deploy/northflank.md`](northflank.md).

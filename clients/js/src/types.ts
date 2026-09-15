@@ -1,4 +1,4 @@
-/** Wire types for Rituchakra API. Safe to copy into a React Native or web app. */
+/** Wire types for Prithvi AI API. Safe to copy into a React Native or web app. */
 
 export type Location = {
   id: string;
