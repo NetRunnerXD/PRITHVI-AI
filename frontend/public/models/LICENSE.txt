@@ -1,0 +1,12 @@
+Earth globe (earth.glb)
+- Mesh: UV sphere generated for this project (no third-party geometry).
+- Texture: NASA Visible Earth / Blue Marble
+  https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57730/land_ocean_ice_2048.jpg
+  Public domain (US government work). NASA logos not used.
+  https://www.nasa.gov/nasa-brand-center/images-and-media/
+
+Kenney 3D models (kenney-character.glb, kenney-cloud.glb)
+Source: https://github.com/KenneyNL/Starter-Kit-3D-Platformer
+Author: Kenney (https://kenney.nl)
+License: CC0 1.0 Universal — public domain. No attribution required.
+https://creativecommons.org/publicdomain/zero/1.0/
