@@ -437,7 +437,7 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
                 best_d = d
                 best = th if isinstance(th, dict) else {}
         dkm = (best_d ** 0.5) * 111.3
-        if dkm > 250.0:
+        if dkm > 450.0:
             return {}, dkm
         return best, dkm
 
@@ -705,11 +705,15 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
     )
 
     def _pred_ok(i: dict[str, Any]) -> bool:
-        if i.get("engine") == "open-meteo-thunder":
+        if i.get("engine") in {"open-meteo-thunder", "thunder-predict-v1", "cv-nowcast-v1"}:
             return True
         if (i.get("gate") or {}).get("ok"):
             return True
         if i.get("nwp_thunder_fwd") or i.get("nwp_thunder"):
+            return True
+        if float(i.get("p_lightning") or 0) >= 0.12 or float(i.get("p_cloudburst") or 0) >= 0.12:
+            return True
+        if int(i.get("lead_min") or 0) > 0:
             return True
         return int(i.get("n_strokes") or 0) >= 1
 

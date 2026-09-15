@@ -156,3 +156,31 @@ def test_official_odisha_rain_suppresses_model_duplicate():
     rain = [w for w in out if w.kind == "rainfall" and "Odisha" in (w.title + " ".join(w.states))]
     assert any(w.source == "imd-cap" for w in rain)
     assert not any(w.source == "prithvi-netra" for w in rain)
+
+
+def test_ledger_pin_warnings(monkeypatch):
+    from app.services.alerts import _ledger_pin_warnings
+
+    dummy_rows = [
+        {
+            "event_id": "evt_123",
+            "phase": "live",
+            "kind": "thunderstorm",
+            "lat": 23.5,
+            "lon": 88.6,
+            "place": "Nadia",
+            "gate": {"ok": True},
+            "started_at": "2026-09-14T07:00:00Z",
+            "closes_at": "2026-09-14T08:00:00Z",
+        }
+    ]
+
+    import app.store.hazard_events as he
+    monkeypatch.setattr(he, "query", lambda past_h=12: dummy_rows)
+
+    warnings = _ledger_pin_warnings(_nadia())
+    assert len(warnings) >= 1
+    assert warnings[0].id == "ledger-evt_123"
+    assert warnings[0].kind == "thunderstorm"
+    assert "Nadia" in warnings[0].title
+

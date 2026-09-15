@@ -131,15 +131,14 @@ def national_severe(alerts: list[dict]) -> list[dict]:
     seen: set[str] = set()
     for a in alerts:
         title = a.get("title") or ""
-        if not is_national_severe(title, a.get("body") or ""):
+        body = a.get("body") or ""
+        if not is_national_severe(title, body):
             continue
         key = title.lower()[:96]
         if key in seen:
             continue
         seen.add(key)
         out.append(a)
-        if len(out) >= 10:
-            break
     return out
 
 

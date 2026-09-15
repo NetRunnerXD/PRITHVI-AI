@@ -150,7 +150,7 @@ def _hits(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     storm = [h for h in out if h["kind"] == "thunderstorm"]
     floodish = [h for h in out if h["kind"] in {"flood", "rainfall", "heatwave", "cloudburst"}]
     dry = [h for h in out if h["kind"] == "drought"]
-    return (storm + floodish + dry)[:10]
+    return storm + floodish + dry
 
 
 async def capital_warning_hits() -> list[dict[str, Any]]:
