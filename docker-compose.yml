@@ -1,4 +1,4 @@
-# Rituchakra — API + dashboard + local Ollama.
+# Prithvi AI — API + dashboard + local Ollama.
 # Usage:
 #   copy backend/.env.example backend/.env
 #   docker compose up --build

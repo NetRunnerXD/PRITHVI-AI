@@ -1,5 +1,5 @@
 /* Shell-only. Do not cache live weather or /api. */
-const SHELL = "rituchakra-shell-v1";
+const SHELL = "prithvi-ai-shell-v1";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL).then((c) => c.addAll(["/", "/manifest.webmanifest", "/icon.svg"])));

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Rituchakra",
+    "name": "Prithvi AI",
     "slug": "rituchakra",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Rituchakra uses your location to pin the nearest Indian district for live weather and farm advice."
+        "NSLocationWhenInUseUsageDescription": "Prithvi AI uses your location to pin the nearest Indian district for live weather and farm advice."
       },
       "bundleIdentifier": "in.rituchakra.app"
     },

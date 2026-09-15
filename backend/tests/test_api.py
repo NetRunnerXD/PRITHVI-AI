@@ -75,7 +75,7 @@ def test_standalone_service_card_and_openapi():
     root = client.get("/")
     assert root.status_code == 200
     body = root.json()
-    assert body["service"] == "rituchakra-api"
+    assert body["service"] in ("prithvi-ai-api", "rituchakra-api")
     assert body["docs"] == "/docs"
     assert body["openapi"] == "/openapi.json"
     assert body["surfaces"]["local"]["prefix"] == "/api"
@@ -92,7 +92,7 @@ def test_standalone_service_card_and_openapi():
     assert "/api/blend/hazards" in paths
     spec = client.get("/openapi.json")
     assert spec.status_code == 200
-    assert spec.json()["info"]["title"] == "Rituchakra API"
+    assert spec.json()["info"]["title"] in ("Prithvi AI API", "Rituchakra API")
     assert "/api/nowcast/live" in spec.json()["paths"]
     assert "/api/nowcast/sat" in spec.json()["paths"]
 

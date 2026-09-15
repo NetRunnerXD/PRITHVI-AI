@@ -86,7 +86,7 @@ async def test_orchestrator_puruliya_fetches_forecast_not_haldia(monkeypatch):
 
     async def fake_chat(messages, tools=None):
         return {
-            "content": "Conditions look ordinary.",
+            "content": "Purulia has 31.4°C today.",
             "tool_calls": [],
             "tools_stripped": False,
         }
@@ -201,4 +201,4 @@ async def test_orchestrator_atlantis_does_not_fetch(monkeypatch):
     assert "88" not in body
     assert "Haldia" not in body
     assert "Atlantis" in body
-    assert "Rituchakra" in body
+    assert "Prithvi AI" in body or "Rituchakra" in body

@@ -38,7 +38,7 @@ async def test_malda_dash_soup_replaced_with_quoted_facts(monkeypatch):
         "August —: Partly cloudy with a high chance of rain (—%), "
         "temperature ranging from —°C to —°C. "
         "The total precipitation over the next week is expected to be around — mm. "
-        "I only quote figures from Rituchakra data."
+        "I only quote figures from Prithvi AI data."
     )
 
     async def fake_ping():
@@ -284,6 +284,62 @@ async def test_reply_in_buttons_force_locale(monkeypatch):
     assert forced_bn["locale"] == "bn"
     assert has_script(forced_bn["content"], "bn")
     assert "7.1" in forced_bn["content"]
+
+
+@pytest.mark.asyncio
+async def test_llm_translates_when_gtx_fails(monkeypatch):
+    from app.agents import orchestrator
+    from app.i18n.detect import has_script
+    from app.i18n.mt import MTResult
+    from app.llm import ollama_client
+
+    async def fake_ping():
+        return True, "qwen2.5"
+
+    async def fake_chat(messages, tools=None):
+        sys = ((messages or [{}])[0] or {}).get("content") or ""
+        if "Translate the weather answer" in sys:
+            return {
+                "content": "হাওড়া: 29.4°C, 3 দিনে 7.1 মিমি।",
+                "tool_calls": [],
+                "tools_stripped": False,
+            }
+        return {"content": "Howrah: 29.4°C, 7.1 mm in 3 days.", "tool_calls": [], "tools_stripped": False}
+
+    async def fake_call(self, args):
+        return {
+            "need": "forecast",
+            "place": "Howrah",
+            "label": "Howrah, West Bengal",
+            "temp_c": 29.4,
+            "precip_next_3d_mm": 7.1,
+        }
+
+    async def fake_in(text, hint=None):
+        return MTResult(text=text, src="en", tgt="en", engine="identity", ok=True)
+
+    async def fake_out(text, tgt, src="en"):
+        return MTResult(text=text, src="en", tgt=tgt, engine="failed:gtx", ok=False)
+
+    monkeypatch.setattr(ollama_client, "ping", fake_ping)
+    monkeypatch.setattr(ollama_client, "chat", fake_chat)
+    monkeypatch.setattr("app.agents.data_tool.DataLib.call", fake_call)
+    monkeypatch.setattr(orchestrator, "mt_inbound", fake_in)
+    monkeypatch.setattr(orchestrator, "mt_outbound", fake_out)
+
+    events = []
+    async for ev in orchestrator.run_agent(
+        ChatRequest(message="What's the weather today?", location=loc("Howrah"), output_locale="bn")
+    ):
+        events.append(ev)
+    msg = next(e for e in events if e["type"] == "final")["message"]
+    assert msg["locale"] == "bn"
+    assert has_script(msg["content"], "bn")
+    assert "29.4" in msg["content"]
+    assert "7.1" in msg["content"]
+    assert (msg.get("translation") or {}).get("engine", "").endswith("llm") or "llm" in (
+        (msg.get("translation") or {}).get("engine") or ""
+    )
 
 
 @pytest.mark.asyncio

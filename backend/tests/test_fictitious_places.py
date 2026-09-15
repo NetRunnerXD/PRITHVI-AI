@@ -73,7 +73,7 @@ def test_contradiction_nadia_is_real_narnia_is_not():
 def test_unknown_refuse_names_the_span():
     msg = unknown_refuse("Atlantis")
     assert "Atlantis" in msg
-    assert "Rituchakra" in msg
+    assert "Prithvi AI" in msg or "Rituchakra" in msg
 
 
 def test_contradiction_paris_weather_is_not_patna():

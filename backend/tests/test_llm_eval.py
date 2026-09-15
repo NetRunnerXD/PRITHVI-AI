@@ -175,7 +175,7 @@ async def test_offtopic_never_hits_weather_data(forgetful_llm, gold_data):
         assert "12.2" not in ((final or {}).get("content_en") or "")
         assert "0.62" not in ((final or {}).get("content_en") or "")
         if case.get("refuse"):
-            assert "Rituchakra" in ((final or {}).get("content_en") or "")
+            assert "Prithvi AI" in ((final or {}).get("content_en") or "") or "Rituchakra" in ((final or {}).get("content_en") or "")
 
 
 @pytest.mark.asyncio
@@ -201,7 +201,7 @@ async def test_conversation_chain_and_suggestions(forgetful_llm, gold_data):
         assert final
         if not weather:
             assert gold_data == []
-            assert "pet" in (final.get("content_en") or "").lower() or "Rituchakra" in (final.get("content_en") or "")
+            assert "pet" in (final.get("content_en") or "").lower() or "Prithvi AI" in (final.get("content_en") or "") or "Rituchakra" in (final.get("content_en") or "")
             continue
         for n in expect:
             assert n in gold_data or any(str(x).startswith(n) for x in gold_data), (q, gold_data)
@@ -236,4 +236,4 @@ async def test_sticky_refuse_on_still_tell_me(forgetful_llm, gold_data):
     assert "Haldia" not in body
     assert "WBPCB" not in body
     assert "pleasant trip" not in body.lower()
-    assert "elephant" in body.lower() or "Rituchakra" in body
+    assert "elephant" in body.lower() or "Prithvi AI" in body or "Rituchakra" in body

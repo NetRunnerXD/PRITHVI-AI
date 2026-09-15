@@ -34,8 +34,8 @@ def test_contradiction_puruliya_is_still_a_place():
 
 
 def test_catalog_question_fetches_full_pack():
-    assert wants_catalog("List all metrics present on Rituchakra for Puruliya")
-    p = interpret("List all metrics present on Rituchakra for Puruliya")
+    assert wants_catalog("List all metrics present on Prithvi AI for Puruliya")
+    p = interpret("List all metrics present on Prithvi AI for Puruliya")
     assert p.mode == "data"
     assert p.catalog
     for n in ("forecast", "nowcast", "aqi", "warnings", "risks", "mandi"):
@@ -58,7 +58,7 @@ async def test_chain_catalog_then_yes_then_all_of_them(monkeypatch):
         return True, "qwen2.5"
 
     async def fake_chat(messages, tools=None):
-        return {"content": "Here is the Rituchakra pack.", "tool_calls": [], "tools_stripped": False}
+        return {"content": "Here is the Prithvi AI pack for Purulia (25.2°C).", "tool_calls": [], "tools_stripped": False}
 
     fetched: list[tuple[str, str]] = []
 
@@ -95,7 +95,7 @@ async def test_chain_catalog_then_yes_then_all_of_them(monkeypatch):
             events.append(ev)
         return next(e for e in events if e["type"] == "final")["message"]
 
-    first = await turn("List all metrics present on Rituchakra for Puruliya")
+    first = await turn("List all metrics present on Prithvi AI for Puruliya")
     needs1 = {n for n, _ in fetched}
     assert "forecast" in needs1
     assert "aqi" in needs1
@@ -167,7 +167,7 @@ async def test_chain_haldia_then_tomorrow_stays_haldia(monkeypatch):
         return True, "qwen2.5"
 
     async def fake_chat(messages, tools=None):
-        return {"content": "Here are the millimetres.", "tool_calls": [], "tools_stripped": False}
+        return {"content": "Here are the millimetres for Haldia (4.2 mm).", "tool_calls": [], "tools_stripped": False}
 
     async def fake_call(self, args):
         loc = self.loc
