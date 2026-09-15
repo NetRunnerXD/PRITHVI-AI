@@ -34,8 +34,8 @@ SURFACES = {
 
 def service_card() -> dict:
     return {
-        "name": "Rituchakra",
-        "service": "rituchakra-api",
+        "name": "Prithvi AI",
+        "service": "prithvi-ai-api",
         "version": settings.api_version,
         "ok": True,
         "docs": "/docs",
@@ -101,6 +101,14 @@ async def health():
             "aikosh_api_key": bool(settings.aikosh_api_key),
             "data_gov_in_api_key": bool(settings.data_gov_in_api_key),
             "weatherbit_api_key": bool(settings.weatherbit_api_key),
+            "fast2sms_api_key": bool((settings.fast2sms_api_key or "").strip()),
+        },
+        "sms": {
+            "enabled": bool(settings.sms_enabled),
+            "dry_run": bool(settings.sms_dry_run),
+            "has_key": bool((settings.fast2sms_api_key or "").strip()),
+            "demo_to": f"+91 {(settings.sms_demo_to or '7439972482')}",
+            "route": "q",
         },
         "notes": {
             "imd_rest": "api.imd.gov.in requires IP whitelist — CAP alerts are used until then.",
@@ -115,7 +123,7 @@ async def health():
 
 @router.get("/ready", summary="Readiness")
 async def ready():
-    body = {"ok": True, "service": "rituchakra-api", "version": settings.api_version, "role": settings.app_role}
+    body = {"ok": True, "service": "prithvi-ai-api", "version": settings.api_version, "role": settings.app_role}
     try:
         from app.store import ingest_status
 
@@ -123,6 +131,22 @@ async def ready():
     except Exception:
         pass
     return JSONResponse(body)
+
+
+@router.api_route("/ingest/trigger", methods=["GET", "POST"], summary="Trigger one satellite ingest & hazard crunching cycle via Cron")
+async def trigger_ingest(secret: str | None = None, background: bool = False):
+    s = get_settings()
+    if s.ingest_cron_secret and secret != s.ingest_cron_secret:
+        return JSONResponse({"ok": False, "error": "Unauthorized secret"}, status_code=401)
+    from app.ingest.cycle import run_cycle
+    import asyncio
+
+    if background:
+        asyncio.create_task(run_cycle())
+        return JSONResponse({"ok": True, "status": "started_in_background"})
+
+    result = await run_cycle()
+    return JSONResponse(result)
 
 
 @router.get("/bootstrap", summary="Client boot pack")

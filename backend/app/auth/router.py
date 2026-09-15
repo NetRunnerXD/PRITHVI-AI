@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from pydantic import BaseModel
+
 from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.auth import db
 from app.auth.schemas import ForgotIn, LocationPatch, LoginIn, ProfilePatch, RegisterIn, ResetIn
+from app.auth.sms import demo_phone, send_sms, status as sms_status
+from app.api.deps import loc_from_query
+from app.schemas.location import Location
 from app.auth.security import (
     check_password,
     hash_otp,
@@ -16,7 +21,6 @@ from app.auth.security import (
     phone_ok,
     read_token,
 )
-from app.auth.sms import send_sms
 from app.data.india_mask import in_india
 from app.services.location_svc import resolve_location
 
@@ -134,7 +138,7 @@ async def forgot(body: ForgotIn):
             user["_id"],
             {"reset": {"otp_hash": hash_otp(otp), "expires_at": expires.isoformat()}},
         )
-        await send_sms(phone, f"Rituchakra password reset code: {otp}. Valid 10 min.")
+        await send_sms(phone, f"Prithvi AI password reset code: {otp}. Valid 10 min.")
     return {"ok": True}
 
 
@@ -166,3 +170,46 @@ async def reset(body: ResetIn):
 @router.post("/auth/logout")
 async def logout(_: dict = Depends(_bearer)):
     return {"ok": True}
+
+
+class DemoSmsSendIn(BaseModel):
+    text: str | None = None
+    locale: str = "en"
+
+
+@router.get("/sms/demo")
+async def sms_demo_status():
+    return sms_status()
+
+
+@router.post("/sms/demo/preview")
+async def sms_demo_preview(loc: Location = Depends(loc_from_query), locale: str = "en"):
+    from app.auth.sms_compose import preview_sms
+    from app.services.snapshot import build_snapshot
+
+    snap = await build_snapshot(loc, locale)
+    pack = await preview_sms(snap, locale=locale)
+    return {"ok": True, **pack, "sms": sms_status()}
+
+
+@router.post("/sms/demo/send")
+async def sms_demo_send(
+    body: DemoSmsSendIn | None = None,
+    loc: Location = Depends(loc_from_query),
+):
+    from app.auth.sms_compose import preview_sms
+    from app.services.snapshot import build_snapshot
+
+    locale = (body.locale if body else "en") or "en"
+    text = (body.text if body else None) or ""
+    if not text.strip():
+        snap = await build_snapshot(loc, locale)
+        pack = await preview_sms(snap, locale=locale)
+        text = pack["text"]
+    else:
+        pack = {"text": text[:160], "engine": "posted", "facts": None}
+    to = demo_phone()
+    result = await send_sms(to, text, force=True)
+    if not result.get("ok"):
+        raise HTTPException(502, result.get("error") or "fast2sms_failed")
+    return {"ok": True, "to": f"+91 {to}", "text": text[:160], "send": result, "preview": pack, "sms": sms_status()}
