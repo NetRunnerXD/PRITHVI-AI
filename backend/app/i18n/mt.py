@@ -7,7 +7,9 @@ locked so Google/MyMemory cannot invent or drop figures.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -19,13 +21,29 @@ from app.i18n.number_lock import ISO_DATE
 from app.providers import http as http_provider
 
 GTX_URL = "https://translate.googleapis.com/translate_a/single"
+# Same unofficial Google stack. translate.googleapis.com/…/single?client=gtx is
+# frequently 429; clients5 dict-chrome-ex still serves the same translations.
+GTX_CLIENTS5_URL = "https://clients5.google.com/translate_a/t"
+GTX_T_URL = "https://translate.googleapis.com/translate_a/t"
 MYMEMORY_URL = "https://api.mymemory.translated.net/get"
+
+# Google GET URLs blow past ~2k once q is percent-encoded; POST for anything longer.
+_GTX_GET_MAX = 450
 
 # Google's unofficial gtx client is the primary no-key engine; MyMemory is fallback.
 _GTX_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9,hi;q=0.8,bn;q=0.7",
+    "Referer": "https://translate.google.com/",
 }
+
+# Prefer the endpoint that still returns 200 from this network; keep classic gtx as well.
+_GTX_ENDPOINTS: list[tuple[str, dict[str, str]]] = [
+    (GTX_CLIENTS5_URL, {"client": "dict-chrome-ex"}),
+    (GTX_URL, {"client": "gtx", "dt": "t", "ie": "UTF-8", "oe": "UTF-8"}),
+    (GTX_T_URL, {"client": "gtx", "ie": "UTF-8", "oe": "UTF-8"}),
+]
 
 _GOOGLE_CODE = {
     "zh": "zh-CN",
@@ -183,44 +201,99 @@ def _google_code(code: str) -> str:
 
 
 def _parse_gtx(data: Any) -> tuple[str, str | None]:
+    """Accept classic nested arrays, dict-chrome-ex [\"text\"], and dj=1 objects."""
+    if isinstance(data, str):
+        return data.strip(), None
+    if isinstance(data, dict):
+        sents = data.get("sentences") or []
+        bits = [s.get("trans") or "" for s in sents if isinstance(s, dict)]
+        src = data.get("src")
+        return "".join(bits).strip(), normalize_lang(src) if isinstance(src, str) else None
     if not isinstance(data, list) or not data:
         return "", None
-    bits: list[str] = []
     first = data[0]
+    if isinstance(first, str):
+        extra = data[1] if len(data) > 1 and isinstance(data[1], str) and len(data[1]) <= 8 else None
+        return first.strip(), normalize_lang(extra) if extra else None
+    bits: list[str] = []
     if isinstance(first, list):
         for row in first:
-            if isinstance(row, list) and row and isinstance(row[0], str):
+            if isinstance(row, str):
+                bits.append(row)
+            elif isinstance(row, list) and row and isinstance(row[0], str):
                 bits.append(row[0])
     detected = data[2] if len(data) > 2 and isinstance(data[2], str) else None
     return "".join(bits).strip(), normalize_lang(detected)
+
+
+def _gtx_body(resp: Any) -> tuple[str, str | None]:
+    try:
+        data = resp.json()
+    except Exception:
+        raw = (getattr(resp, "text", None) or "").strip()
+        if not raw:
+            return "", None
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return "", None
+    return _parse_gtx(data)
+
+
+async def _gtx_hit(client: Any, url: str, base: dict[str, str], text: str, *, use_get: bool) -> Any | None:
+    params = dict(base)
+    headers = dict(_GTX_HEADERS)
+    try:
+        if use_get:
+            return await client.get(url, params={**params, "q": text}, headers=headers, timeout=15.0)
+        headers = {**headers, "Content-Type": "application/x-www-form-urlencoded"}
+        return await client.post(url, params=params, data={"q": text}, headers=headers, timeout=20.0)
+    except Exception:
+        return None
 
 
 async def _gtx(text: str, src: str, tgt: str) -> MTResult | None:
     client = http_provider.client()
     sl = _google_code(src)
     tl = _google_code(tgt)
-    params = {"client": "gtx", "sl": sl, "tl": tl, "dt": "t"}
-    headers = {**_GTX_HEADERS, "Content-Type": "application/x-www-form-urlencoded"}
-    try:
-        resp = None
-        if len(text) < 1600:
-            resp = await client.get(GTX_URL, params={**params, "q": text}, headers=_GTX_HEADERS, timeout=15.0)
-        if resp is None or resp.status_code != 200:
-            resp = await client.post(
-                GTX_URL,
-                params=params,
-                data={"q": text},
-                headers=headers,
-                timeout=20.0,
+    use_get = len(text) <= _GTX_GET_MAX
+    last_status = "none"
+    for url, extra in _GTX_ENDPOINTS:
+        params = {"sl": sl, "tl": tl, **extra}
+        methods = (True, False) if use_get else (False,)
+        for get in methods:
+            resp = await _gtx_hit(client, url, params, text, use_get=get)
+            if resp is None:
+                last_status = "exc"
+                continue
+            if resp.status_code == 429:
+                last_status = "429"
+                await asyncio.sleep(0.7)
+                resp = await _gtx_hit(client, url, params, text, use_get=get)
+                if resp is None or resp.status_code == 429:
+                    last_status = "429"
+                    continue
+            if resp.status_code != 200:
+                last_status = str(resp.status_code)
+                continue
+            body, detected = _gtx_body(resp)
+            if not body:
+                last_status = "empty"
+                continue
+            return MTResult(
+                text=body,
+                src=detected or (normalize_lang(src) or "auto"),
+                tgt=tgt,
+                engine="google-gtx",
+                ok=True,
             )
-        if resp.status_code != 200:
-            return None
-        body, detected = _parse_gtx(resp.json())
-        if not body:
-            return None
-        return MTResult(text=body, src=detected or (normalize_lang(src) or "auto"), tgt=tgt, engine="google-gtx", ok=True)
-    except Exception:
-        return None
+    return MTResult(
+        text="",
+        src=normalize_lang(src) or "auto",
+        tgt=tgt,
+        engine=f"google-gtx:{last_status}",
+        ok=False,
+    )
 
 
 async def _mymemory(text: str, src: str, tgt: str) -> MTResult | None:
@@ -309,9 +382,9 @@ async def translate(text: str, src: str, tgt: str, *, whole: bool = True) -> MTR
             failed = False
             for piece in pieces:
                 pack = await factory(piece, src_n if src_n != "auto" else "auto", tgt_n)
-                if pack is None or not pack.text:
+                if pack is None or not pack.ok or not pack.text:
                     failed = True
-                    last_err = factory.__name__
+                    last_err = (pack.engine if pack and pack.engine else factory.__name__)
                     break
                 translated.append(pack.text)
                 detected = pack.src or detected

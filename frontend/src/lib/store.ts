@@ -7,6 +7,41 @@ export type ReplyLocale = Locale | "auto";
 import { fetchDashboard, reverseGeocode } from "./api";
 import { fetchMe, logoutAccount, type AuthUser } from "./auth";
 import { buildOptimisticSnapshot, fetchClientOmPack, type OmClientPack } from "./openMeteoClient";
+import type { WxLayer } from "./weatherScale";
+
+export type MapSessionState = {
+  basemap: string;
+  wxLayer: WxLayer | null;
+  hour: number;
+  particles: boolean;
+  overlays: string[];
+  highlights: string[];
+  overlayOpacity: number;
+  showPin: boolean;
+  pastHours: number;
+  minConfidence: number;
+  state: string;
+  sidebarTab: "maps" | "events";
+  sidebarCollapsed: boolean;
+  openSection: "weather" | "basemap" | "hazards" | "geomorph" | null;
+};
+
+export const DEFAULT_MAP_SESSION: MapSessionState = {
+  basemap: "dark",
+  wxLayer: null,
+  hour: 0,
+  particles: true,
+  overlays: [],
+  highlights: [],
+  overlayOpacity: 0.7,
+  showPin: true,
+  pastHours: 6,
+  minConfidence: 0,
+  state: "India",
+  sidebarTab: "maps",
+  sidebarCollapsed: false,
+  openSection: "weather",
+};
 
 async function loadOmPack(loc: Location | null | undefined, disabled: string[]): Promise<OmClientPack | undefined> {
   if (!loc || disabled.includes("open-meteo")) return undefined;
@@ -55,7 +90,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showEvidence: false,
   displayNullValues: false,
   showAdvancedTabs: false,
-  devDisabledProviders: [],
+  devDisabledProviders: ["nasa-power", "nasa-power-clim"],
 };
 
 export function readSettings(): AppSettings {
@@ -63,7 +98,10 @@ export function readSettings(): AppSettings {
   try {
     const raw = JSON.parse(window.localStorage.getItem(SET_KEY) || window.localStorage.getItem("rituchakra.settings") || "{}") as Partial<AppSettings>;
     const tab = resolveTab(raw.defaultTab) || DEFAULT_SETTINGS.defaultTab;
-    return { ...DEFAULT_SETTINGS, ...raw, defaultTab: tab };
+    const devDisabled = Array.isArray(raw.devDisabledProviders)
+      ? raw.devDisabledProviders
+      : DEFAULT_SETTINGS.devDisabledProviders;
+    return { ...DEFAULT_SETTINGS, ...raw, defaultTab: tab, devDisabledProviders: devDisabled };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -173,6 +211,8 @@ type State = {
   settings: AppSettings;
   viewMode: "detail" | "overview";
   setViewMode: (v: "detail" | "overview") => void;
+  mapSession: MapSessionState;
+  setMapSession: (p: Partial<MapSessionState> | ((prev: MapSessionState) => Partial<MapSessionState>)) => void;
   account: AuthUser | null;
   authModal: boolean;
   setAccount: (u: AuthUser | null) => void;
@@ -248,7 +288,7 @@ export const useApp = create<State>((set, get) => ({
   highlight: null,
   mapFocus: null,
   windowPack: null,
-  outputLocale: "en",
+  outputLocale: "auto",
   sidebarOpen: true,
   pendingAsk: null,
   floatChatOpen: false,
@@ -256,6 +296,14 @@ export const useApp = create<State>((set, get) => ({
   recent: [],
   viewMode: "detail",
   setViewMode: (viewMode) => set({ viewMode }),
+  mapSession: DEFAULT_MAP_SESSION,
+  setMapSession: (p) =>
+    set((state) => ({
+      mapSession: {
+        ...state.mapSession,
+        ...(typeof p === "function" ? p(state.mapSession) : p),
+      },
+    })),
   setSettings: (p) => {
     const settings = { ...get().settings, ...p };
     if (typeof window !== "undefined") window.localStorage.setItem(SET_KEY, JSON.stringify(settings));

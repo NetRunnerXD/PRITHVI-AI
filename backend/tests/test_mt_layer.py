@@ -14,6 +14,25 @@ def _clear_mt_cache():
     cache.clear()
 
 
+def test_parse_gtx_shapes():
+    from app.i18n.mt import _parse_gtx
+
+    nested = [[["হাওড়া এখন ২৯", "Howrah now", None, None]], None, "en"]
+    body, det = _parse_gtx(nested)
+    assert "হাওড়া" in body
+    assert det == "en"
+
+    chrome = ["हावड़ा: 29.4°C, 7.1 मिमी।"]
+    body, det = _parse_gtx(chrome)
+    assert body.startswith("हावड़ा")
+    assert det is None
+
+    dj = {"sentences": [{"trans": "বৃষ্টি "}, {"trans": "হচ্ছে।"}], "src": "en"}
+    body, det = _parse_gtx(dj)
+    assert body == "বৃষ্টি হচ্ছে।"
+    assert det == "en"
+
+
 def test_protect_restore_numbers_and_acronyms():
     src = "CPCB AQI 47.2 and 800-1200 liters. IMD CAP. Open-Meteo."
     masked, held = protect(src)

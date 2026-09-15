@@ -2,7 +2,8 @@
 
 import type { RiskCard as Risk } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
-import { levelOf, riskTip, riskTitle } from "@/lib/plain";
+import { factorLabel, levelOf, riskTip, riskTitle } from "@/lib/plain";
+import { localizeDigits } from "@/lib/units";
 import { Pill } from "./ui";
 
 export function RiskCard({
@@ -23,7 +24,9 @@ export function RiskCard({
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-bold">{title}</h3>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-sm text-neo-muted">{risk.score_pct}%</span>
+          <span className="font-mono text-sm text-neo-muted">
+            {localizeDigits(risk.score_pct, locale)}%
+          </span>
           <Pill level={level} locale={locale} />
         </div>
       </div>
@@ -35,8 +38,10 @@ export function RiskCard({
           return (
             <li key={f.id}>
               <div className="mb-1 flex justify-between text-sm">
-                <span>{f.label}</span>
-                <span className="font-mono text-neo-accent">{f.contribution_pct}%</span>
+                <span>{factorLabel(f.id, locale, f.label)}</span>
+                <span className="font-mono text-neo-accent">
+                  {localizeDigits(f.contribution_pct, locale)}%
+                </span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
                 <div
@@ -49,8 +54,9 @@ export function RiskCard({
         })}
       </ul>
       <p className="mt-3 text-xs text-neo-muted">
-        {t.howSure}: {risk.confidence_pct}% · {risk.horizon_hours} h
+        {t.howSure}: {localizeDigits(risk.confidence_pct, locale)}% · {localizeDigits(risk.horizon_hours, locale)} h
       </p>
     </article>
   );
 }
+

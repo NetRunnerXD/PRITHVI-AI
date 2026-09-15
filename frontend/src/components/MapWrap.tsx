@@ -40,6 +40,7 @@ export function MapWrap(props: {
     window_start?: string | null;
     window_end?: string | null;
   }[];
+  isVisible?: boolean;
   onPick: (l: Location) => void;
   onSelectIncident?: (inc: any) => void;
 }) {
