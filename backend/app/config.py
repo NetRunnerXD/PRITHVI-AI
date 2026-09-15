@@ -89,7 +89,7 @@ class Settings(BaseSettings):
         r"172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?"
     )
 
-    user_agent: str = "Rituchakra/0.4 (India environmental intelligence; local-dev)"
+    user_agent: str = "Prithvi AI/0.4 (India environmental intelligence; local-dev)"
 
     # Optional accounts (MongoDB Atlas M0). Empty URI = in-process store.
     mongodb_uri: str = ""
@@ -99,11 +99,16 @@ class Settings(BaseSettings):
     mongodb_sat_db: str = "rituchakra_sat"
     sat_wipe_confirm: bool = False
     app_role: str = "api"
+    ingest_on_cron: bool = True
+    ingest_cron_secret: str = ""
     mosdac_allow_l1b: bool = False
     jwt_secret: str = ""
     fast2sms_api_key: str = ""
+    # Master switch for background SMS alerts. Off unless explicitly enabled.
+    sms_enabled: bool = False
     sms_dry_run: bool = True
     sms_alert_interval_s: float = 900.0
+    sms_demo_to: str = "7439972482"
 
     # Optional VEXYL Indic STT/TTS sidecars (empty = off; chat falls back to Web Speech).
     vexyl_stt_url: str = ""

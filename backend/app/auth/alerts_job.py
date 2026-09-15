@@ -24,7 +24,7 @@ def _fp(user_id: str, title: str, kind: str) -> str:
 
 
 def _sms_text(place: str, title: str, kind: str) -> str:
-    head = f"Rituchakra {kind or 'alert'} @ {place}: {title}"
+    head = f"Prithvi AI {kind or 'alert'} @ {place}: {title}"
     return head[:160]
 
 
@@ -78,4 +78,5 @@ async def loop() -> None:
 def should_start() -> bool:
     if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("RITUCHAKRA_NO_SNAP_LOOP"):
         return False
-    return True
+    s = get_settings()
+    return bool(s.sms_enabled) and not bool(s.sms_dry_run)
