@@ -105,7 +105,7 @@ export function ChatFloat() {
   return (
     <div className="pointer-events-none fixed bottom-20 right-4 z-[1200] flex flex-col items-end gap-3 lg:bottom-6 lg:right-6">
       {floatChatOpen && (
-        <div className="pointer-events-auto w-[min(100vw-1.5rem,27rem)] overflow-hidden rounded-3xl border border-[var(--line)] shadow-2xl shadow-blue-950/30 backdrop-blur-xl bg-[var(--card)] anim-chat-pop">
+        <div className="pointer-events-auto relative w-[min(calc(100vw-1.5rem),28.5rem)] overflow-hidden rounded-3xl border border-white/20 dark:border-white/15 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.7),0_0_1px_1px_rgba(255,255,255,0.15),0_0_35px_rgba(2,132,199,0.2)] backdrop-blur-3xl bg-[color-mix(in_srgb,var(--card)_82%,#050b14_18%)] anim-chat-pop">
           <ChatDock compact onClose={() => setFloatChatOpen(false)} />
         </div>
       )}
@@ -130,7 +130,11 @@ export function ChatFloat() {
         <button
           type="button"
           className={`pointer-events-auto relative p-1 rounded-full hover:scale-110 active:scale-95 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400/50 ${
-            bounce ? "assistant-bob" : ""
+            floatChatOpen
+              ? "ring-4 ring-neo-accent/60 shadow-[0_0_20px_rgba(2,132,199,0.5)]"
+              : bounce
+              ? "assistant-bob"
+              : ""
           }`}
           onClick={() => setFloatChatOpen(!floatChatOpen)}
           title={floatChatOpen ? "Close WeatherGPT assistant" : "Ask WeatherGPT (PRITHVI-AI)"}

@@ -7,6 +7,12 @@ import { fetchRadarFrames, fetchStates, fetchStormMap, fetchWeatherGrid, reverse
 import { MapWrap } from "./MapWrap";
 import { StormFeed } from "./StormFeed";
 import { WX_LAYERS, legendStops, unitOf, type WeatherGrid, type WxLayer } from "@/lib/weatherScale";
+import { useApp } from "@/lib/store";
+
+let cachedStates: string[] = [];
+let cachedRadarPack: { host: string; radarPath: string | null; satPath: string | null } | null = null;
+const cachedGrids = new Map<number, WeatherGrid>();
+const cachedStormMaps = new Map<string, { pack: StormMapPack; ts: number }>();
 
 const BASES = ["dark", "streets", "satellite", "terrain"] as const;
 
@@ -72,51 +78,104 @@ export function SquareMap({
   onPick,
   focus,
   compact = false,
+  isVisible = true,
 }: {
   dash: DashboardSnapshot;
   locale: Locale;
   onPick: (l: Location) => void;
   focus?: { center: [number, number]; zoom?: number } | null;
   compact?: boolean;
+  isVisible?: boolean;
 }) {
   const t = COPY[locale];
-  const [basemap, setBasemap] = useState<string>("dark");
-  const [wxLayer, setWxLayer] = useState<WxLayer | null>("wind");
-  const [hour, setHour] = useState(0);
-  const [particles, setParticles] = useState(true);
-  const [grid, setGrid] = useState<WeatherGrid | null>(null);
-  const [radarHost, setRadarHost] = useState("https://tilecache.rainviewer.com");
-  const [radarPath, setRadarPath] = useState<string | null>(null);
-  const [satPath, setSatPath] = useState<string | null>(null);
+
+  // Persistent map session state backed by Zustand store
+  const mapSession = useApp((s) => s.mapSession);
+  const setMapSession = useApp((s) => s.setMapSession);
+
+  const basemap = mapSession.basemap;
+  const wxLayer = mapSession.wxLayer;
+  const hour = mapSession.hour;
+  const particles = mapSession.particles;
+  const overlays = mapSession.overlays;
+  const highlights = mapSession.highlights;
+  const overlayOpacity = mapSession.overlayOpacity;
+  const showPin = mapSession.showPin;
+  const pastHours = mapSession.pastHours;
+  const minConfidence = mapSession.minConfidence;
+  const state = mapSession.state;
+  const sidebarTab = mapSession.sidebarTab;
+  const sidebarCollapsed = mapSession.sidebarCollapsed;
+  const openSection = mapSession.openSection;
+
+  const setBasemap = (v: string) => setMapSession({ basemap: v });
+  const setWxLayer = (v: WxLayer | null) => setMapSession({ wxLayer: v });
+  const setHour = (v: number | ((h: number) => number)) =>
+    setMapSession((prev) => ({ hour: typeof v === "function" ? v(prev.hour) : v }));
+  const setParticles = (v: boolean | ((p: boolean) => boolean)) =>
+    setMapSession((prev) => ({ particles: typeof v === "function" ? v(prev.particles) : v }));
+  const setOverlays = (v: string[] | ((cur: string[]) => string[])) =>
+    setMapSession((prev) => ({ overlays: typeof v === "function" ? v(prev.overlays) : v }));
+  const setHighlights = (v: string[] | ((cur: string[]) => string[])) =>
+    setMapSession((prev) => ({ highlights: typeof v === "function" ? v(prev.highlights) : v }));
+  const setOverlayOpacity = (v: number) => setMapSession({ overlayOpacity: v });
+  const setShowPin = (v: boolean | ((p: boolean) => boolean)) =>
+    setMapSession((prev) => ({ showPin: typeof v === "function" ? v(prev.showPin) : v }));
+  const setPastHours = (v: number) => setMapSession({ pastHours: v });
+  const setMinConfidence = (v: number) => setMapSession({ minConfidence: v });
+  const setState = (v: string) => setMapSession({ state: v });
+  const setSidebarTab = (v: "maps" | "events") => setMapSession({ sidebarTab: v });
+  const setSidebarCollapsed = (v: boolean | ((c: boolean) => boolean)) =>
+    setMapSession((prev) => ({ sidebarCollapsed: typeof v === "function" ? v(prev.sidebarCollapsed) : v }));
+  const setOpenSection = (
+    v:
+      | "weather"
+      | "basemap"
+      | "hazards"
+      | "geomorph"
+      | null
+      | ((
+          s: "weather" | "basemap" | "hazards" | "geomorph" | null
+        ) => "weather" | "basemap" | "hazards" | "geomorph" | null)
+  ) =>
+    setMapSession((prev) => ({
+      openSection: typeof v === "function" ? v(prev.openSection) : v,
+    }));
+
+  const [grid, setGrid] = useState<WeatherGrid | null>(() => cachedGrids.get(hour) || null);
+  const [radarHost, setRadarHost] = useState(() => cachedRadarPack?.host || "https://tilecache.rainviewer.com");
+  const [radarPath, setRadarPath] = useState<string | null>(() => cachedRadarPack?.radarPath || null);
+  const [satPath, setSatPath] = useState<string | null>(() => cachedRadarPack?.satPath || null);
   const [zoom, setZoom] = useState(focus?.zoom || dash.map.zoom || 7);
-  const [overlays, setOverlays] = useState<string[]>([]);
-  const [highlights, setHighlights] = useState<string[]>([]);
-  const [overlayOpacity, setOverlayOpacity] = useState(0.7);
-  const [showPin, setShowPin] = useState(true);
-  const [pastHours, setPastHours] = useState(6);
-  const [minConfidence, setMinConfidence] = useState(0);
   const [fitNonce, setFitNonce] = useState(0);
   const [copied, setCopied] = useState(false);
-  const [states, setStates] = useState<string[]>([]);
-  const [state, setState] = useState("India");
-  const [storm, setStorm] = useState<StormMapPack | null>(null);
+  const [states, setStates] = useState<string[]>(() => cachedStates);
+  const [storm, setStorm] = useState<StormMapPack | null>(() => cachedStormMaps.get(`${state}:${pastHours}`)?.pack || null);
   const [selected, setSelected] = useState<StormIncident | null>(null);
-  const [sidebarTab, setSidebarTab] = useState<"maps" | "events">("maps");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
-
-  // Collapsible Dropdown Sections inside Maps Tab
-  const [openSection, setOpenSection] = useState<"weather" | "basemap" | "hazards" | "geomorph" | null>("weather");
 
   const rain = dash.predictive.precip_next_3d_mm;
 
   useEffect(() => {
-    void fetchStates().then(setStates);
+    if (cachedStates.length > 0) return;
+    void fetchStates().then((res) => {
+      if (res && res.length) {
+        cachedStates = res;
+        setStates(res);
+      }
+    });
   }, []);
 
   useEffect(() => {
+    if (cachedGrids.has(hour)) {
+      setGrid(cachedGrids.get(hour)!);
+      return;
+    }
     let dead = false;
     void fetchWeatherGrid(hour).then((g) => {
-      if (!dead && g) setGrid(g as WeatherGrid);
+      if (!dead && g) {
+        cachedGrids.set(hour, g as WeatherGrid);
+        setGrid(g as WeatherGrid);
+      }
     });
     return () => {
       dead = true;
@@ -124,14 +183,19 @@ export function SquareMap({
   }, [hour]);
 
   useEffect(() => {
+    if (cachedRadarPack) return;
     let dead = false;
     void fetchRadarFrames().then((pack) => {
       if (dead || !pack?.ok) return;
-      setRadarHost(pack.host || "https://tilecache.rainviewer.com");
+      const host = pack.host || "https://tilecache.rainviewer.com";
       const last = pack.radar?.[pack.radar.length - 1];
       const sat = pack.satellite?.[pack.satellite.length - 1];
-      setRadarPath(last?.path || null);
-      setSatPath(sat?.path || null);
+      const radarP = last?.path || null;
+      const satP = sat?.path || null;
+      cachedRadarPack = { host, radarPath: radarP, satPath: satP };
+      setRadarHost(host);
+      setRadarPath(radarP);
+      setSatPath(satP);
     });
     return () => {
       dead = true;
@@ -140,9 +204,17 @@ export function SquareMap({
 
   useEffect(() => {
     let dead = false;
+    const cacheKey = `${state}:${pastHours}`;
+    const cached = cachedStormMaps.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 45_000) {
+      setStorm(cached.pack);
+    }
     async function load() {
       const data = await fetchStormMap(state, pastHours);
-      if (!dead && data) setStorm(data);
+      if (!dead && data) {
+        cachedStormMaps.set(cacheKey, { pack: data, ts: Date.now() });
+        setStorm(data);
+      }
     }
     void load();
     const id = window.setInterval(() => void load(), 90_000);
@@ -193,11 +265,23 @@ export function SquareMap({
   const box = useMemo(
     () => (
       <MapWrap
-        lat={focus?.center[0] ?? dash.location.lat}
-        lon={focus?.center[1] ?? dash.location.lon}
-        label={dash.location.label}
-        rainMm={rain}
-        zoom={focus?.zoom ?? zoom}
+        lat={
+          focus?.center && Number.isFinite(focus.center[0])
+            ? focus.center[0]
+            : Number.isFinite(dash.location?.lat)
+              ? dash.location.lat
+              : 20.5937
+        }
+        lon={
+          focus?.center && Number.isFinite(focus.center[1])
+            ? focus.center[1]
+            : Number.isFinite(dash.location?.lon)
+              ? dash.location.lon
+              : 78.9629
+        }
+        label={dash.location?.label || "India"}
+        rainMm={rain || 0}
+        zoom={focus?.zoom ?? zoom ?? 7}
         basemap={mapBasemap}
         nearby={dash.ogd?.nearby || []}
         overlays={extraOverlays}
@@ -213,16 +297,23 @@ export function SquareMap({
         }
         storm={storm}
         highlights={highlights}
-        focusPin={focus ? { lat: focus.center[0], lon: focus.center[1], zoom: focus.zoom } : null}
+        focusPin={
+          focus?.center &&
+          Number.isFinite(focus.center[0]) &&
+          Number.isFinite(focus.center[1])
+            ? { lat: focus.center[0], lon: focus.center[1], zoom: focus.zoom }
+            : null
+        }
         selectedId={selected?.id}
         tools={{ overlayOpacity, showPin, pastHours, minConfidence, fitNonce }}
         locale={locale}
         hazardEvents={hazardEvents}
+        isVisible={isVisible}
         onPick={onPick}
         onSelectIncident={pickIncident}
       />
     ),
-    [dash.location, rain, zoom, mapBasemap, dash.ogd?.nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, fitNonce, locale, wxLayer, grid, particles, radarHost, radarPath, satPath, hazardEvents]
+    [dash.location, rain, zoom, mapBasemap, dash.ogd?.nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, fitNonce, locale, wxLayer, grid, particles, radarHost, radarPath, satPath, hazardEvents, isVisible]
   );
 
   function toggleOverlay(id: string) {

@@ -117,50 +117,50 @@ export function Sidebar() {
         }`}
       >
         {/* Header / Brand */}
-        <div className={`flex items-center transition-all duration-300 ${sidebarOpen ? "justify-between gap-2" : "flex-col gap-2"}`}>
+        <div className={`flex items-center transition-all duration-300 ${sidebarOpen ? "justify-between gap-2" : "flex-col gap-2.5"}`}>
           {sidebarOpen ? (
-            <div className="flex items-center gap-2.5 min-w-0 transition-all duration-300">
+            <div className="flex items-center gap-3 min-w-0 transition-all duration-300">
               {/* Brand Logo Emblem */}
-              <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl overflow-hidden bg-gradient-to-tr from-blue-600/20 via-sky-500/20 to-indigo-600/20 shadow-md shadow-blue-500/10 border border-white/20">
+              <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full overflow-hidden bg-transparent shadow-lg shadow-blue-500/15 border-2 border-white/25">
                 <img
                   src="/logo.png"
                   alt="PRITHVI-AI Logo"
-                  width={32}
-                  height={32}
-                  className="h-full w-full object-cover"
+                  width={44}
+                  height={44}
+                  className="h-full w-full object-cover rounded-full"
                 />
-                <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+                <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-300 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400 border border-[var(--card)]" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400 border border-[var(--card)]" />
                 </span>
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[14px] font-black tracking-[0.08em] bg-gradient-to-r from-blue-600 via-sky-600 to-indigo-600 dark:from-sky-400 dark:via-cyan-300 dark:to-indigo-400 bg-clip-text text-transparent">
+                  <span className="sidebar-brand-title text-[15px] font-black tracking-[0.08em] bg-clip-text text-transparent">
                     PRITHVI-AI
                   </span>
                 </div>
-                <p className="mt-0.5 text-[10px] font-medium leading-tight text-white dark:text-white truncate tracking-tight" title={t.tag}>
+                <p className="sidebar-brand-tag mt-0.5 text-[10px] font-medium leading-tight truncate tracking-tight" title={t.tag}>
                   {t.tag}
                 </p>
               </div>
             </div>
           ) : (
             <div
-              className="relative flex h-8 w-8 items-center justify-center rounded-xl overflow-hidden bg-gradient-to-tr from-blue-600/20 via-sky-500/20 to-indigo-600/20 shadow-md shadow-blue-500/10 border border-white/20 transition-transform duration-200 hover:scale-105 cursor-pointer"
+              className="relative flex h-10 w-10 items-center justify-center rounded-full overflow-hidden bg-transparent shadow-lg shadow-blue-500/15 border-2 border-white/25 transition-transform duration-200 hover:scale-110 cursor-pointer"
               onClick={() => setSidebarOpen(true)}
               title="PRITHVI-AI — WeatherGPT for India"
             >
               <img
                 src="/logo.png"
                 alt="PRITHVI-AI Logo"
-                width={32}
-                height={32}
-                className="h-full w-full object-cover"
+                width={40}
+                height={40}
+                className="h-full w-full object-cover rounded-full"
               />
-              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+              <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-300 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400 border border-[var(--card)]" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400 border border-[var(--card)]" />
               </span>
             </div>
           )}
