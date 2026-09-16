@@ -120,7 +120,7 @@ export function DistrictSearch({
           }}
           onKeyDown={handleKeyDown}
           placeholder={COPY[locale].search}
-          className="neo-in w-full pl-3 pr-8 py-2 text-sm outline-none transition-all disabled:opacity-50"
+          className="neo-in neo-search-bar w-full pl-3 pr-8 py-2 text-sm outline-none transition-all disabled:opacity-50"
           data-testid="district-search"
           disabled={disabled}
           onFocus={() => setFocus(true)}

@@ -589,7 +589,7 @@ export function resolveTab(id: string | undefined | null): TabId | null {
   return TAB_ALIAS[id] || null;
 }
 
-export type ThemeId = "sand" | "monsoon" | "midnight" | "ocean" | "contrast";
+export type ThemeId = "sand" | "mist" | "dusk_mist" | "monsoon" | "midnight" | "ocean" | "contrast" | "sih_mobile";
 export type UnitSys = "metric" | "imperial";
 export type Density = "comfortable" | "compact";
 
