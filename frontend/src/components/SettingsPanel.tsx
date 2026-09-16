@@ -8,7 +8,7 @@ import { DEFAULT_SETTINGS, useApp } from "@/lib/store";
 import { DistrictSearch } from "./DistrictSearch";
 import type { Density, TabId, ThemeId, UnitSys } from "@/types/dashboard";
 
-const THEMES: ThemeId[] = ["sand", "monsoon", "midnight", "ocean", "contrast"];
+const THEMES: ThemeId[] = ["sand", "mist", "dusk_mist", "monsoon", "midnight", "ocean", "contrast", "sih_mobile"];
 const TABS: TabId[] = ["home", "analytics", "data", "map", "model", "chat"];
 
 type LlmRow = { id: string; model: string; ok?: boolean; reason?: string };
@@ -22,8 +22,22 @@ const LLM_LABELS: Record<string, string> = {
 };
 
 export function SettingsPanel() {
-  const { locale, setLocale, outputLocale, setOutputLocale, settings, setSettings, resetSettings, account, setAccount, setAuthModal, setLocation } =
-    useApp();
+  const {
+    locale,
+    setLocale,
+    outputLocale,
+    setOutputLocale,
+    settings,
+    setSettings,
+    resetSettings,
+    account,
+    setAccount,
+    setAuthModal,
+    setLocation,
+    location,
+    viewMode,
+    setViewMode,
+  } = useApp();
   const t = COPY[locale];
   const [llms, setLlms] = useState<LlmRow[]>([{ id: "ollama", model: "qwen2.5:3b" }]);
   useEffect(() => {
@@ -45,6 +59,15 @@ export function SettingsPanel() {
   const [name, setName] = useState(account?.display_name || "");
   const [sms, setSms] = useState(Boolean(account?.sms_opt_in));
   const [acctMsg, setAcctMsg] = useState("");
+  const [demoSms, setDemoSms] = useState<{
+    text?: string;
+    engine?: string;
+    to?: string;
+    chars?: number;
+    sms?: { enabled?: boolean; dry_run?: boolean; has_key?: boolean };
+  } | null>(null);
+  const [demoBusy, setDemoBusy] = useState<"off" | "preview" | "send">("off");
+  const [demoMsg, setDemoMsg] = useState("");
   useEffect(() => {
     setName(account?.display_name || "");
     setSms(Boolean(account?.sms_opt_in));
@@ -146,6 +169,165 @@ export function SettingsPanel() {
             </button>
           </>
         )}
+      </section>
+
+      <section className="neo space-y-3 p-4">
+        <h3 className="text-sm font-bold">
+          {locale === "hi" ? "डेमो SMS" : locale === "bn" ? "ডেমো SMS" : "Demo SMS"}
+        </h3>
+        <p className="text-xs text-neo-muted">
+          {locale === "hi"
+            ? "Fast2SMS Quick SMS वायर्ड है लेकिन बैकग्राउंड अलर्ट बंद हैं। पूर्वावलोकन Ollama से; भेजें +91 7439972482 पर।"
+            : locale === "bn"
+            ? "Fast2SMS Quick SMS যুক্ত, ব্যাকগ্রাউন্ড অ্যালার্ট বন্ধ। প্রিভিউ Ollama; পাঠাবে +91 7439972482-এ।"
+            : "Fast2SMS Quick SMS is wired and kept off for background alerts. Preview uses Ollama; Send goes to +91 7439972482."}
+        </p>
+        <p className="font-mono text-[11px] text-neo-muted">
+          {demoSms?.sms
+            ? `enabled=${demoSms.sms.enabled ? "yes" : "no"} · dry_run=${demoSms.sms.dry_run ? "yes" : "no"} · key=${demoSms.sms.has_key ? "yes" : "no"}`
+            : "Fast2SMS route=q · background off"}
+        </p>
+        {demoSms?.text ? (
+          <pre className="neo-in whitespace-pre-wrap px-3 py-2 text-sm">{demoSms.text}</pre>
+        ) : (
+          <p className="text-xs text-neo-muted">
+            {locale === "hi" ? "अभी कोई पूर्वावलोकन नहीं।" : locale === "bn" ? "এখনও কোনো প্রিভিউ নেই।" : "No preview yet."}
+          </p>
+        )}
+        {demoSms?.engine ? (
+          <p className="text-[11px] text-neo-muted">
+            {demoSms.engine === "ollama" ? "Ollama" : demoSms.engine} · {demoSms.chars || 0}/160 · {demoSms.to || "+91 7439972482"}
+          </p>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="neo-btn text-sm"
+            disabled={demoBusy !== "off"}
+            onClick={() => {
+              setDemoBusy("preview");
+              setDemoMsg("");
+              const q = new URLSearchParams();
+              if (location?.lat != null) q.set("lat", String(location.lat));
+              if (location?.lon != null) q.set("lon", String(location.lon));
+              if (location?.place_name || location?.district) q.set("place", location.place_name || location.district);
+              q.set("locale", locale);
+              void fetch(apiUrl(`/sms/demo/preview?${q.toString()}`), { method: "POST" })
+                .then(async (r) => {
+                  const body = await r.json().catch(() => ({}));
+                  if (!r.ok) throw new Error(body?.detail || r.statusText);
+                  setDemoSms(body);
+                  setDemoMsg(locale === "hi" ? "पूर्वावलोकन तैयार।" : locale === "bn" ? "প্রিভিউ তৈরি।" : "Preview ready.");
+                })
+                .catch((e) => setDemoMsg(String(e)))
+                .finally(() => setDemoBusy("off"));
+            }}
+          >
+            {demoBusy === "preview"
+              ? locale === "hi"
+                ? "बना रहे हैं…"
+                : locale === "bn"
+                ? "তৈরি হচ্ছে…"
+                : "Generating…"
+              : locale === "hi"
+              ? "SMS पूर्वावलोकन"
+              : locale === "bn"
+              ? "SMS প্রিভিউ"
+              : "Generate preview"}
+          </button>
+          <button
+            className="neo-btn text-sm"
+            disabled={demoBusy !== "off"}
+            onClick={() => {
+              setDemoBusy("send");
+              setDemoMsg("");
+              const q = new URLSearchParams();
+              if (location?.lat != null) q.set("lat", String(location.lat));
+              if (location?.lon != null) q.set("lon", String(location.lon));
+              if (location?.place_name || location?.district) q.set("place", location.place_name || location.district);
+              void fetch(apiUrl(`/sms/demo/send?${q.toString()}`), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: demoSms?.text || "", locale }),
+              })
+                .then(async (r) => {
+                  const body = await r.json().catch(() => ({}));
+                  if (!r.ok) throw new Error(typeof body?.detail === "string" ? body.detail : "Send failed (need FAST2SMS_API_KEY)");
+                  setDemoSms({ ...demoSms, text: body.text, to: body.to, sms: body.sms });
+                  setDemoMsg(
+                    body.send?.dry_run
+                      ? locale === "hi"
+                        ? "की नहीं — भेजा नहीं गया।"
+                        : locale === "bn"
+                        ? "কী নেই — পাঠানো হয়নি।"
+                        : "No API key — not sent."
+                      : locale === "hi"
+                      ? "+91 7439972482 पर भेजा।"
+                      : locale === "bn"
+                      ? "+91 7439972482-এ পাঠানো হয়েছে।"
+                      : "Sent to +91 7439972482.",
+                  );
+                })
+                .catch((e) => setDemoMsg(String(e)))
+                .finally(() => setDemoBusy("off"));
+            }}
+          >
+            {demoBusy === "send"
+              ? locale === "hi"
+                ? "भेज रहे हैं…"
+                : locale === "bn"
+                ? "পাঠানো হচ্ছে…"
+                : "Sending…"
+              : locale === "hi"
+              ? "+91 7439972482 पर भेजें"
+              : locale === "bn"
+              ? "+91 7439972482-এ পাঠান"
+              : "Send SMS to +91 7439972482"}
+          </button>
+        </div>
+        {demoMsg ? <p className="text-xs font-semibold">{demoMsg}</p> : null}
+      </section>
+
+      <section className="neo space-y-3 p-4">
+        <h3 className="text-sm font-bold">
+          {locale === "hi" ? "डैशबोर्ड दृश्य मोड (View Mode)" : locale === "bn" ? "ড্যাশবোর্ড ভিউ মোড (View Mode)" : "Dashboard View Mode"}
+        </h3>
+        <p className="text-xs text-neo-muted">
+          {locale === "hi"
+            ? "डिटेल मोड में विस्तृत डेटा व चार्ट दिखेंगे। ओवरव्यू मोड में सरल व संक्षिप्त सारांश दिखेगा।"
+            : locale === "bn"
+            ? "ডিটেইল মোডে সম্পূর্ণ ডেটা ও চার্ট প্রদর্শিত হবে। ওভারভিউ মোডে সহজবোধ্য সারসংক্ষেপ থাকবে।"
+            : "Choose between detailed telemetry/charts or a simplified plain-language layman overview."}
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            className={`neo-btn flex flex-col items-center justify-center p-3 text-center transition-all ${
+              viewMode === "detail"
+                ? "border-neo-accent bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] font-bold text-neo-accent ring-1 ring-neo-accent shadow-sm"
+                : "text-neo-muted hover:text-neo-text"
+            }`}
+            onClick={() => setViewMode("detail")}
+          >
+            <span className="text-xs font-bold">{locale === "hi" ? "डिटेल (Detail)" : locale === "bn" ? "ডিটেইল (Detail)" : "Detail Data"}</span>
+            <span className="mt-0.5 text-[10px] text-neo-muted opacity-80">
+              {locale === "hi" ? "चार्ट, मेट्रिक्स व डेटा" : locale === "bn" ? "চার্ট, মেট্রিক্স ও ডেটা" : "Charts, Telemetry & Sensor Data"}
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`neo-btn flex flex-col items-center justify-center p-3 text-center transition-all ${
+              viewMode === "overview"
+                ? "border-amber-500 bg-amber-500/10 font-bold text-amber-600 dark:text-amber-400 ring-1 ring-amber-500 shadow-sm"
+                : "text-neo-muted hover:text-neo-text"
+            }`}
+            onClick={() => setViewMode("overview")}
+          >
+            <span className="text-xs font-bold">{locale === "hi" ? "ओवरव्यू (Overview)" : locale === "bn" ? "ওভারভিউ (Overview)" : "Layman Overview"}</span>
+            <span className="mt-0.5 text-[10px] text-neo-muted opacity-80">
+              {locale === "hi" ? "सरल सारांश व अलर्ट" : locale === "bn" ? "সহজ সারসংক্ষেপ ও সতর্কতা" : "Plain Language & Fast Summary"}
+            </span>
+          </button>
+        </div>
       </section>
 
       <section className="neo space-y-3 p-4">

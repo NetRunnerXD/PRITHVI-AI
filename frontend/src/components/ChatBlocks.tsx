@@ -35,17 +35,35 @@ export function ChatBlocks({ blocks, prose }: { blocks?: ChatBlock[]; prose?: st
         }
         if (b.type === "metrics" && b.items?.length) {
           return (
-            <ul key={i} className="grid grid-cols-2 gap-1.5">
-              {b.items.map((it, j) => (
-                <li key={j} className="rounded-xl bg-neo-bg px-2 py-1.5">
-                  <p className="text-[10px] uppercase tracking-wide text-neo-muted">{it.label}</p>
-                  <p className="font-mono text-sm">
-                    {cell(it.value)}
-                    {it.unit ? ` ${it.unit}` : ""}
-                  </p>
-                </li>
-              ))}
-            </ul>
+            <div key={i} className="my-2.5 rounded-2xl bg-[color-mix(in_srgb,var(--card)_70%,var(--bg))] border border-[var(--line)] p-4 text-center shadow-sm">
+              <div className="flex flex-col items-center justify-center space-y-3">
+                {b.items.map((it, j) => {
+                  const lbl = (it.label || "").toLowerCase();
+                  let icon = "☁️";
+                  if (lbl.includes("temp") || lbl.includes("surface")) icon = "☁️ Surface";
+                  else if (lbl.includes("precip") || lbl.includes("rain") || lbl.includes("prob")) icon = "🌧️ Precip";
+                  else if (lbl.includes("wind") || lbl.includes("speed")) icon = "💨 Wind";
+                  else if (lbl.includes("humid") || lbl.includes("rh")) icon = "💧 Humidity";
+
+                  return (
+                    <div key={j} className="flex flex-col items-center">
+                      <span className="text-[11px] font-semibold text-neo-muted flex items-center gap-1">
+                        {icon}
+                      </span>
+                      <p className={`font-mono font-black text-neo-text tracking-tight mt-0.5 ${j === 0 ? "text-2xl text-neo-text" : "text-lg text-sky-600 dark:text-sky-400"}`}>
+                        {cell(it.value)}
+                        {it.unit ? `${it.unit}` : ""}
+                      </p>
+                      {it.label && (
+                        <span className="text-[10px] font-bold text-neo-muted mt-0.5">
+                          {it.label}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           );
         }
         if (b.type === "table" && (b.rows?.length || b.columns?.length)) {

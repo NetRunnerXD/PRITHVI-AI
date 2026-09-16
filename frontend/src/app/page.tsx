@@ -137,14 +137,14 @@ export default function Page() {
       <Sidebar />
       <AuthModal />
       <div className="min-w-0 flex-1 space-y-3">
-        <header className="neo relative z-50 flex items-center gap-2 px-2.5 py-2 sm:px-4">
+        <header className={`neo relative z-50 flex items-center gap-2 px-2.5 py-2 sm:px-4 ${tab === "chat" ? "hidden lg:flex" : ""}`}>
           <div className="flex items-center gap-2 lg:hidden shrink-0">
             <img
               src="/logo.png"
               alt="PRITHVI-AI"
-              width={28}
-              height={28}
-              className="h-7 w-7 rounded-lg object-cover shadow-sm border border-white/20"
+              width={36}
+              height={36}
+              className="h-9 w-9 rounded-full object-cover shadow-md border-2 border-white/25"
             />
           </div>
           <DistrictSearch locale={locale} onPick={(l) => setLocation(l)} />
@@ -177,36 +177,6 @@ export default function Page() {
               ) : null}
             </div>
           ) : null}
-
-          {/* Compact View Mode toggle for Mobile screens (<lg) where Desktop Sidebar is hidden */}
-          <div className="ml-auto flex items-center shrink-0 lg:hidden">
-            <div className="inline-flex rounded-xl bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] p-0.5 border border-[var(--line)] shadow-inner">
-              <button
-                type="button"
-                onClick={() => setViewMode("detail")}
-                title="Detailed Technical Data & Charts"
-                className={`rounded-lg px-2 py-0.5 text-[10px] font-bold transition-all ${
-                  viewMode === "detail"
-                    ? "bg-neo-accent text-white shadow-sm"
-                    : "text-neo-muted hover:text-neo-text"
-                }`}
-              >
-                Detail
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("overview")}
-                title="Layman Summaries & Overview"
-                className={`rounded-lg px-2 py-0.5 text-[10px] font-bold transition-all ${
-                  viewMode === "overview"
-                    ? "bg-amber-500 text-white shadow-sm"
-                    : "text-neo-muted hover:text-neo-text"
-                }`}
-              >
-                Overview
-              </button>
-            </div>
-          </div>
         </header>
 
         {status === "error" ? <p className="neo px-3 py-2 text-sm text-neo-danger">{error}</p> : null}
@@ -464,13 +434,14 @@ export default function Page() {
               </div>
             ) : null}
 
-            {tab === "map" && dashboard ? (
-              <div className="space-y-3">
+            {dashboard ? (
+              <div className={tab === "map" ? "space-y-3" : "hidden"}>
                 <SquareMap
                   dash={dashboard}
                   locale={locale}
                   onPick={(l) => setLocation(l)}
                   focus={mapFocus}
+                  isVisible={tab === "map"}
                 />
                 <SourcesBox tab="map" locale={locale} />
               </div>
@@ -484,9 +455,8 @@ export default function Page() {
             ) : null}
 
             {tab === "chat" ? (
-              <div className="space-y-3">
+              <div className="h-[calc(100dvh-5rem)] lg:h-auto space-y-0">
                 <ChatDock />
-                <SourcesBox tab="chat" locale={locale} />
               </div>
             ) : null}
 

@@ -15,10 +15,36 @@ import {
 } from "recharts";
 import type { DashboardSnapshot } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
-import { dist, rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
+import { dist, localizeDigits, rain, rainUnit, speed, temp, tempUnit } from "@/lib/units";
 import { useApp } from "@/lib/store";
 import { LaymanSummaryBody } from "@/components/LaymanSummaryView";
 import { getSkyLaymanSummary } from "@/lib/laymanSummaries";
+
+
+const CONDITION_TRANSLATIONS: Record<string, Record<Locale, string>> = {
+  clear: { en: "Clear Sky", hi: "साफ़ आसमान", bn: "পরিষ্কার আকাশ" },
+  fair: { en: "Fair", hi: "साफ़ व शांत", bn: "স্বাভাবিক" },
+  "partly cloudy": { en: "Partly Cloudy", hi: "आंशिक बादल", bn: "আংশিক মেঘলা" },
+  overcast: { en: "Overcast", hi: "घने बादल", bn: "মেঘাচ্ছন্ন" },
+  cloudy: { en: "Cloudy", hi: "बादल", bn: "মেঘলা" },
+  rain: { en: "Rain", hi: "वर्षा", bn: "বৃষ্টি" },
+  "light rain": { en: "Light Rain", hi: "हल्की वर्षा", bn: "হালকা বৃষ্টি" },
+  "heavy rain": { en: "Heavy Rain", hi: "भारी वर्षा", bn: "ভারী বৃষ্টি" },
+  thunderstorm: { en: "Thunderstorm", hi: "गरज-चमक के साथ बारिश", bn: "বজ্রবিদ্যুৎসহ ঝড়" },
+  haze: { en: "Haze", hi: "धुंध", bn: "কুয়াশা" },
+  fog: { en: "Fog", hi: "कोहरा", bn: "ঘন কুয়াশা" },
+  mist: { en: "Mist", hi: "हल्का कोहरा", bn: "হালকা কুয়াশা" },
+};
+
+function translateSkyLabel(raw: string | undefined | null, locale: Locale): string {
+  if (!raw) return locale === "hi" ? "साफ़ आसमान" : locale === "bn" ? "পরিষ্কার আকাশ" : "Clear Sky";
+  const k = raw.toLowerCase().trim();
+  if (CONDITION_TRANSLATIONS[k]?.[locale]) return CONDITION_TRANSLATIONS[k][locale];
+  for (const [key, map] of Object.entries(CONDITION_TRANSLATIONS)) {
+    if (k.includes(key)) return map[locale];
+  }
+  return raw;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Precision Vector SVG Icons (Zero Emojis)                                   */
@@ -138,7 +164,9 @@ function AtmosphericDiorama({
   isStorm,
   windSpeedKmh,
   windDirDeg,
+  locale = "en",
 }: {
+  locale?: Locale;
   isDay: boolean;
   cloudCoverPct: number;
   precip1hMm: number;
@@ -147,108 +175,213 @@ function AtmosphericDiorama({
   windDirDeg: number;
 }) {
   const isRaining = precip1hMm > 0.1 || isStorm;
-  const rainIntensity = Math.min(10, Math.max(1, Math.round(precip1hMm * 2)));
+  const rainIntensity = Math.min(12, Math.max(2, Math.round(precip1hMm * 2.5)));
   const rainAngle = Math.max(-25, Math.min(25, (windDirDeg % 90) - 45));
 
   return (
-    <div className="relative w-28 h-24 sm:w-32 sm:h-28 shrink-0 rounded-2xl overflow-hidden bg-gradient-to-b from-[color-mix(in_srgb,var(--accent)_12%,var(--card))] to-[color-mix(in_srgb,var(--bg)_80%,transparent)] border border-[color-mix(in_srgb,var(--accent)_20%,var(--line))] shadow-inner flex items-center justify-center select-none">
-      {/* Ambient background sky glow */}
+    <div
+      className={`atmospheric-diorama-container relative w-28 h-24 sm:w-32 sm:h-28 shrink-0 rounded-2xl overflow-hidden border shadow-[inset_0_1px_3px_rgba(255,255,255,0.2),0_6px_16px_rgba(0,0,0,0.15)] flex items-center justify-center select-none ${
+        isDay
+          ? "bg-gradient-to-b from-[color-mix(in_srgb,var(--accent)_14%,var(--card))] to-[color-mix(in_srgb,var(--bg)_85%,transparent)] border-[color-mix(in_srgb,var(--accent)_25%,var(--line))]"
+          : "bg-gradient-to-b from-[#0b132b] via-[#1c2541] to-[#0a1128] border-indigo-500/30 text-white"
+      }`}
+    >
+      {/* Dynamic Ambient Sky Backlight */}
       <div
         className="absolute inset-0 transition-opacity duration-1000"
         style={{
           background: isDay
-            ? "radial-gradient(circle at 35% 35%, rgba(245, 158, 11, 0.18), transparent 70%)"
-            : "radial-gradient(circle at 40% 40%, rgba(99, 102, 241, 0.2), transparent 70%)",
+            ? isRaining
+              ? "radial-gradient(circle at 40% 30%, rgba(56, 189, 248, 0.22) 0%, rgba(148, 163, 184, 0.15) 60%, transparent 80%)"
+              : "radial-gradient(circle at 38% 36%, rgba(251, 191, 36, 0.35) 0%, rgba(245, 158, 11, 0.15) 50%, transparent 75%)"
+            : isRaining
+            ? "radial-gradient(circle at 42% 38%, rgba(99, 102, 241, 0.35) 0%, rgba(15, 23, 42, 0.85) 65%, #050b14 100%)"
+            : "radial-gradient(circle at 42% 38%, rgba(99, 102, 241, 0.45) 0%, rgba(30, 27, 75, 0.6) 45%, #0a0f1d 100%)",
         }}
       />
 
       {/* SVG Diorama Scene */}
-      <svg viewBox="0 0 100 100" className="w-full h-full">
+      <svg viewBox="0 0 100 100" className="w-full h-full relative z-1">
+        <defs>
+          {/* Sun Gradient */}
+          <radialGradient id="dioramaSunGrad" cx="35%" cy="32%" r="65%">
+            <stop offset="0%" stopColor="#fffbeb" />
+            <stop offset="40%" stopColor="#fde047" />
+            <stop offset="75%" stopColor="#f59e0b" />
+            <stop offset="100%" stopColor="#d97706" />
+          </radialGradient>
+
+          {/* Moon Gradient */}
+          <radialGradient id="dioramaMoonGrad" cx="35%" cy="30%" r="65%">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="55%" stopColor="#e2e8f0" />
+            <stop offset="100%" stopColor="#94a3b8" />
+          </radialGradient>
+
+          {/* Deep Cloud Gradient (Day vs Night) */}
+          <linearGradient id="dioramaDeepCloud" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor={isDay ? "#ffffff" : "#334155"} stopOpacity={isDay ? "0.9" : "0.75"} />
+            <stop offset="100%" stopColor={isDay ? "#94a3b8" : "#1e293b"} stopOpacity={isDay ? "0.85" : "0.85"} />
+          </linearGradient>
+
+          {/* Fore Cloud Gradient (Day vs Night) */}
+          <linearGradient id="dioramaForeCloud" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor={isDay ? "#ffffff" : "#475569"} stopOpacity={isDay ? "0.98" : "0.85"} />
+            <stop offset="100%" stopColor={isDay ? "#cbd5e1" : "#1e293b"} stopOpacity={isDay ? "0.92" : "0.95"} />
+          </linearGradient>
+        </defs>
+
         {/* Celestial Body: Sun or Moon */}
         {isDay ? (
           <g className="anim-celestial-drift">
-            {/* Outer corona pulse */}
+            {/* Outer Diffuse Corona Glow */}
             <circle
               cx="38"
               cy="36"
-              r="20"
-              fill="none"
-              stroke="rgba(245, 158, 11, 0.25)"
-              strokeWidth="2"
+              r="24"
+              fill="rgba(254, 240, 138, 0.2)"
               className="anim-solar-corona"
             />
             <circle
               cx="38"
               cy="36"
-              r="14"
+              r="17"
               fill="rgba(251, 191, 36, 0.3)"
               className="anim-solar-corona"
             />
-            {/* Sun Core */}
-            <circle cx="38" cy="36" r="10" fill="#f59e0b" />
+
+            {/* Rotating Sunbeam Rays */}
+            <g className="anim-sunburst-spin">
+              {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+                <line
+                  key={angle}
+                  x1="38"
+                  y1="16"
+                  x2="38"
+                  y2="20"
+                  stroke="#f59e0b"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  transform={`rotate(${angle} 38 36)`}
+                  opacity="0.9"
+                />
+              ))}
+              {[22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((angle) => (
+                <line
+                  key={angle}
+                  x1="38"
+                  y1="18"
+                  x2="38"
+                  y2="20"
+                  stroke="#fbbf24"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  transform={`rotate(${angle} 38 36)`}
+                  opacity="0.75"
+                />
+              ))}
+            </g>
+
+            {/* Sun Core Spherical Disc */}
+            <circle cx="38" cy="36" r="11" fill="url(#dioramaSunGrad)" filter="drop-shadow(0 0 6px rgba(245, 158, 11, 0.6))" />
+            <circle cx="35" cy="33" r="3.5" fill="#ffffff" opacity="0.65" />
           </g>
         ) : (
           <g className="anim-celestial-drift">
-            {/* Lunar Glow */}
-            <circle cx="42" cy="36" r="14" fill="rgba(165, 180, 252, 0.2)" />
-            {/* Moon Crescent */}
+            {/* Outer Lunar Aura Glow */}
+            <circle cx="42" cy="36" r="19" fill="rgba(165, 180, 252, 0.22)" className="anim-solar-corona" />
+            <circle cx="42" cy="36" r="14" fill="rgba(199, 210, 254, 0.3)" />
+
+            {/* Moon Body Crescent with Crater Detail */}
             <path
-              d="M44 26 A 10 10 0 0 0 54 36 A 10 10 0 1 1 44 26 Z"
-              fill="#cbd5e1"
+              d="M44 24 A 12 12 0 0 0 56 36 A 12 12 0 1 1 44 24 Z"
+              fill="url(#dioramaMoonGrad)"
+              filter="drop-shadow(0 0 6px rgba(165, 180, 252, 0.5))"
             />
+            {/* Lunar Craters */}
+            <circle cx="50" cy="34" r="1.5" fill="#94a3b8" opacity="0.45" />
+            <circle cx="47" cy="39" r="1.2" fill="#94a3b8" opacity="0.4" />
+            <circle cx="45" cy="30" r="1" fill="#94a3b8" opacity="0.35" />
+
             {/* Distant Twinkling Stars */}
-            <circle cx="20" cy="24" r="1" fill="#e2e8f0" className="anim-star-twinkle" style={{ animationDelay: "0.2s" }} />
-            <circle cx="75" cy="20" r="1.2" fill="#e2e8f0" className="anim-star-twinkle" style={{ animationDelay: "0.7s" }} />
-            <circle cx="85" cy="40" r="0.8" fill="#e2e8f0" className="anim-star-twinkle" style={{ animationDelay: "1.2s" }} />
+            <g className="anim-star-twinkle">
+              <circle cx="18" cy="22" r="1.2" fill="#ffffff" />
+              <polygon points="18,19 19,22 22,22 19.5,23.5 20.5,26 18,24.5 15.5,26 16.5,23.5 14,22 17,22" fill="#e0e7ff" opacity="0.8" transform="scale(0.35) translate(28, 32)" />
+            </g>
+            <circle cx="78" cy="18" r="1.4" fill="#ffffff" className="anim-star-twinkle" style={{ animationDelay: "0.6s" }} />
+            <circle cx="86" cy="38" r="1" fill="#c7d2fe" className="anim-star-twinkle" style={{ animationDelay: "1.2s" }} />
+            <circle cx="28" cy="44" r="0.8" fill="#e0e7ff" className="anim-star-twinkle" style={{ animationDelay: "1.8s" }} />
           </g>
         )}
 
-        {/* Deep Cloud Layer (Parallax Background) */}
-        {cloudCoverPct > 20 && (
-          <g className="anim-cloud-deep opacity-75">
-            <ellipse cx="65" cy="45" rx="22" ry="12" fill="color-mix(in srgb, var(--line) 80%, #94a3b8)" />
-            <ellipse cx="48" cy="48" rx="16" ry="10" fill="color-mix(in srgb, var(--line) 70%, #94a3b8)" />
+        {/* Dynamic Rainbow Arc for Light Rain in Daytime */}
+        {isDay && isRaining && precip1hMm < 4 && (
+          <g className="anim-rainbow pointer-events-none" opacity="0.65">
+            <path d="M10,75 A 50 50 0 0 1 90 75" fill="none" stroke="#f43f5e" strokeWidth="1.2" opacity="0.5" />
+            <path d="M11,75 A 49 49 0 0 1 89 75" fill="none" stroke="#f59e0b" strokeWidth="1.2" opacity="0.6" />
+            <path d="M12,75 A 48 48 0 0 1 88 75" fill="none" stroke="#10b981" strokeWidth="1.2" opacity="0.6" />
+            <path d="M13,75 A 47 47 0 0 1 87 75" fill="none" stroke="#0ea5e9" strokeWidth="1.2" opacity="0.5" />
           </g>
         )}
 
-        {/* Fore Cloud Layer (Parallax Foreground) */}
-        {cloudCoverPct > 40 && (
+        {/* Deep Background Cloud Layer */}
+        {cloudCoverPct > 15 && (
+          <g className="anim-cloud-deep opacity-85">
+            <ellipse cx="68" cy="45" rx="24" ry="14" fill="url(#dioramaDeepCloud)" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.08))" />
+            <ellipse cx="48" cy="49" rx="18" ry="12" fill="url(#dioramaDeepCloud)" />
+            <ellipse cx="32" cy="52" rx="14" ry="9" fill="url(#dioramaDeepCloud)" />
+          </g>
+        )}
+
+        {/* Foreground Volumetric Cloud Layer */}
+        {cloudCoverPct > 35 && (
           <g className="anim-cloud-fore">
-            <ellipse cx="40" cy="56" rx="24" ry="13" fill="color-mix(in srgb, var(--card) 40%, #64748b)" opacity="0.9" />
-            <ellipse cx="58" cy="54" rx="20" ry="12" fill="color-mix(in srgb, var(--card) 30%, #475569)" opacity="0.92" />
-            <ellipse cx="26" cy="60" rx="14" ry="9" fill="color-mix(in srgb, var(--card) 50%, #94a3b8)" opacity="0.85" />
+            <ellipse cx="42" cy="58" rx="26" ry="15" fill="url(#dioramaForeCloud)" filter="drop-shadow(0 4px 8px rgba(0,0,0,0.12))" />
+            <ellipse cx="62" cy="55" rx="22" ry="13" fill="url(#dioramaForeCloud)" />
+            <ellipse cx="24" cy="62" rx="16" ry="10" fill="url(#dioramaForeCloud)" />
+            <circle cx="36" cy="48" r="12" fill="url(#dioramaForeCloud)" />
+            <circle cx="54" cy="46" r="14" fill="url(#dioramaForeCloud)" />
           </g>
         )}
 
         {/* Thunderstorm Lightning Arc Flash */}
         {isStorm && (
-          <polygon
-            points="52,48 44,65 50,65 42,82 62,62 54,62 60,48"
-            fill="#fbbf24"
-            className="anim-storm-flash"
-          />
+          <g className="anim-storm-flash">
+            <polygon
+              points="54,46 44,65 52,65 42,86 64,62 55,62 62,46"
+              fill="#fbbf24"
+              filter="drop-shadow(0 0 8px #f59e0b)"
+            />
+            <polygon
+              points="54,48 46,64 51,64 45,82 61,63 55,63 60,48"
+              fill="#ffffff"
+            />
+          </g>
         )}
 
         {/* Wind-Skewed Dynamic Rain Particles Engine */}
         {isRaining && (
           <g transform={`rotate(${rainAngle} 50 60)`}>
             {[
-              { x: 25, delay: "0s", dur: "0.8s" },
-              { x: 38, delay: "0.25s", dur: "0.7s" },
-              { x: 50, delay: "0.5s", dur: "0.85s" },
-              { x: 62, delay: "0.15s", dur: "0.75s" },
-              { x: 74, delay: "0.4s", dur: "0.8s" },
-              { x: 32, delay: "0.6s", dur: "0.65s" },
-              { x: 56, delay: "0.35s", dur: "0.72s" },
-            ].slice(0, rainIntensity + 2).map((p, idx) => (
+              { x: 22, delay: "0s", dur: "0.7s" },
+              { x: 34, delay: "0.22s", dur: "0.62s" },
+              { x: 46, delay: "0.45s", dur: "0.75s" },
+              { x: 58, delay: "0.12s", dur: "0.68s" },
+              { x: 70, delay: "0.38s", dur: "0.72s" },
+              { x: 80, delay: "0.55s", dur: "0.65s" },
+              { x: 28, delay: "0.18s", dur: "0.60s" },
+              { x: 52, delay: "0.32s", dur: "0.78s" },
+              { x: 64, delay: "0.48s", dur: "0.66s" },
+              { x: 40, delay: "0.28s", dur: "0.70s" },
+            ].slice(0, rainIntensity).map((p, idx) => (
               <line
                 key={idx}
                 x1={p.x}
-                y1="50"
+                y1="48"
                 x2={p.x - 2}
                 y2="66"
                 stroke="var(--rain)"
-                strokeWidth="1.8"
+                strokeWidth="2"
                 strokeLinecap="round"
                 className="anim-raindrop"
                 style={{
@@ -260,18 +393,27 @@ function AtmosphericDiorama({
           </g>
         )}
 
-        {/* Mist / Fog Layer */}
-        {cloudCoverPct > 80 && !isRaining && (
+        {/* Atmospheric Mist / Rolling Fog Waves */}
+        {cloudCoverPct > 75 && !isRaining && (
           <g className="anim-mist-wave">
-            <line x1="15" y1="72" x2="85" y2="72" stroke="var(--muted)" strokeWidth="2.5" strokeLinecap="round" opacity="0.4" />
-            <line x1="25" y1="80" x2="75" y2="80" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" opacity="0.3" />
+            <path d="M12,74 Q30,68 50,74 T88,74" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" opacity="0.6" />
+            <path d="M20,82 Q40,76 60,82 T92,82" fill="none" stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" opacity="0.5" />
+          </g>
+        )}
+
+        {/* Haze Waves for Low Visibility */}
+        {cloudCoverPct <= 75 && !isRaining && (
+          <g className="anim-haze-wave">
+            <line x1="20" y1="80" x2="80" y2="80" stroke="#f59e0b" strokeWidth="1.5" strokeLinecap="round" opacity="0.3" />
+            <line x1="30" y1="85" x2="70" y2="85" stroke="#f59e0b" strokeWidth="1.2" strokeLinecap="round" opacity="0.25" />
           </g>
         )}
       </svg>
 
-      {/* Live Badge Overlay */}
-      <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.2 rounded-md bg-[color-mix(in_srgb,var(--card)_90%,transparent)] border border-[var(--line)] text-[8px] font-mono text-neo-muted">
-        {isRaining ? `${rain(precip1hMm, "metric")}/h` : isDay ? "Daylight" : "Nocturnal"}
+      {/* Live State Floating Badge Overlay */}
+      <div className="absolute bottom-1.5 right-1.5 px-2 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--card)_90%,transparent)] border border-white/40 dark:border-white/20 text-[8.5px] font-bold text-neo-text backdrop-blur-md shadow-xs flex items-center gap-1">
+        <span className={`h-1.5 w-1.5 rounded-full ${isRaining ? "bg-blue-500 animate-ping" : isDay ? "bg-amber-400 animate-pulse" : "bg-indigo-400"}`} />
+        <span>{isRaining ? `${rain(precip1hMm, "metric", locale)}/h` : isDay ? (locale === "hi" ? "दिन" : locale === "bn" ? "দিন" : "Daylight") : (locale === "hi" ? "रात" : locale === "bn" ? "রাত" : "Night")}</span>
       </div>
     </div>
   );
@@ -374,7 +516,7 @@ export function SkyRainHero({
         <div className="flex items-center gap-2">
           <span className="live-dot bg-sky-500 shadow-[0_0_8px_#0ea5e9]" aria-hidden />
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-600 dark:text-sky-400">
-            SKY &amp; ATMOSPHERE
+            {locale === "hi" ? "आसमान और वातावरण" : locale === "bn" ? "আকাশ ও বায়ুমণ্ডল" : "SKY & ATMOSPHERE"}
           </p>
         </div>
 
@@ -390,7 +532,7 @@ export function SkyRainHero({
               title="Inspect full atmospheric diurnal curves"
             >
               <IconSparkles className="w-3 h-3 text-neo-accent" />
-              <span className="hidden sm:inline">Synoptics</span>
+              <span className="hidden sm:inline">{locale === "hi" ? "सिनॉप्टिक्स" : locale === "bn" ? "সিনপটিক্স" : "Synoptics"}</span>
             </button>
           )}
         </div>
@@ -403,8 +545,38 @@ export function SkyRainHero({
       ) : (
         /* Main Grid: Left Animated Diorama & Core Weather, Right Unified Telemetry */
         <div className="grid gap-3.5 lg:grid-cols-12 items-center">
-          {/* Left Column: Atmospheric Diorama & Live Hero Status */}
-          <div className="col-span-12 lg:col-span-6 flex items-center gap-3 sm:gap-3.5">
+          {/* Top/Left Column: Live Diorama & Core Weather Banner */}
+          <div className="col-span-12 lg:col-span-6 flex items-center justify-between sm:justify-start gap-3 sm:gap-4 p-1">
+            <div className="min-w-0 flex-1">
+              {/* Main Temperature & Feels */}
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className="font-mono text-2xl xs:text-3xl sm:text-4xl md:text-5xl font-black text-neo-text tracking-tight leading-none whitespace-nowrap">
+                  {temp(sky.temp_c ?? cur.temp_c, units, locale)}
+                </span>
+                {feels != null && (
+                  <span className="text-[10.5px] xs:text-[11px] sm:text-xs font-mono font-bold text-neo-muted whitespace-nowrap">
+                    {locale === "hi" ? "महसूस " : locale === "bn" ? "অনুভূত " : "Feels "}{temp(feels, units, locale)}
+                  </span>
+                )}
+              </div>
+
+              {/* Weather Condition Label + Day/Night Chip */}
+              <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                <h3 className="text-base sm:text-lg font-black text-neo-text truncate leading-tight">
+                  {translateSkyLabel(sky.label || cur.sky_label, locale)}
+                </h3>
+                <span className={`chip text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full ${isDay ? "text-amber-700 bg-amber-400/20 border border-amber-400/30" : "text-indigo-600 bg-indigo-500/15 border border-indigo-400/30"}`}>
+                  {isDay ? (locale === "hi" ? "दिन" : locale === "bn" ? "দিন" : "Day") : (locale === "hi" ? "रात" : locale === "bn" ? "রাত" : "Night")}
+                </span>
+              </div>
+
+              {/* Atmospheric Boundary Layer Subtext */}
+              <p className="text-[10px] sm:text-[11px] text-neo-muted font-medium mt-1 truncate">
+                {sky.place || (locale === "hi" ? "वर्तमान स्थितियां · स्थिर वायुमंडलीय परत" : locale === "bn" ? "বর্তমান অবস্থা · স্থিতিশীল বায়ুমণ্ডলীয় স্তর" : "Current Conditions · Stable Boundary Layer")}
+              </p>
+            </div>
+
+            {/* Right Hero Diorama Box */}
             <AtmosphericDiorama
               isDay={isDay}
               cloudCoverPct={cloudPct}
@@ -412,102 +584,75 @@ export function SkyRainHero({
               isStorm={isStorm}
               windSpeedKmh={windSpeed}
               windDirDeg={windDeg}
+              locale={locale}
             />
-
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg sm:text-2xl font-black text-neo-text truncate leading-tight">
-                  {sky.label || cur.sky_label || "Clear Sky"}
-                </h3>
-                <span className={`chip text-[8px] font-mono uppercase px-1.5 py-0 ${isDay ? "text-amber-600 bg-amber-500/10" : "text-indigo-500 bg-indigo-500/10"}`}>
-                  {isDay ? "Day" : "Night"}
-                </span>
-              </div>
-
-              <div className="mt-0.5 sm:mt-1 flex items-baseline gap-2">
-                <span className="font-mono text-2xl sm:text-4xl font-extrabold text-neo-accent">
-                  {temp(sky.temp_c ?? cur.temp_c, units)}
-                </span>
-                {feels != null && (
-                  <span className="text-[10px] sm:text-[11px] font-mono text-neo-muted">
-                    Feels {temp(feels, units)}
-                  </span>
-                )}
-              </div>
-
-              {sky.place ? (
-                <p className="text-[10px] text-neo-muted truncate mt-0.5">
-                  {sky.place}
-                </p>
-              ) : null}
-            </div>
           </div>
 
-        {/* Right Column: Unified Telemetry Deck */}
-        <div className="col-span-12 lg:col-span-6 min-h-[90px] flex flex-col justify-center">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-            <div className="neo-in p-2 rounded-xl">
-              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
-                <IconDroplet className="w-2.5 h-2.5 text-neo-rain" />
-                {t.humidity || (locale === "hi" ? "आर्द्रता" : locale === "bn" ? "আর্দ্রতা" : "Humidity")}
-              </span>
-              <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
-                {sky.humidity_pct != null ? `${Math.round(Number(sky.humidity_pct))}%` : "—"}
-              </p>
-            </div>
+          {/* Bottom/Right Column: Clean 6-Pack Unified Telemetry Sub-Cards */}
+          <div className="col-span-12 lg:col-span-6 min-h-[90px] flex flex-col justify-center">
+            <div className="grid grid-cols-3 gap-2 sm:gap-2.5 text-xs">
+              <div className="neo-in p-2 sm:p-2.5 rounded-2xl flex flex-col justify-between transition-all hover:scale-[1.02]">
+                <span className="text-[9.5px] uppercase tracking-wider text-neo-muted font-bold flex items-center gap-1">
+                  <IconDroplet className="w-3 h-3 text-sky-500 shrink-0" />
+                  <span className="truncate">{t.humidity || (locale === "hi" ? "आर्द्रता" : locale === "bn" ? "আর্দ্রতা" : "Humidity")}</span>
+                </span>
+                <p className="mt-1 font-mono text-sm sm:text-base font-extrabold text-neo-text">
+                  {sky.humidity_pct != null ? `${localizeDigits(Math.round(Number(sky.humidity_pct)), locale)}%` : "—"}
+                </p>
+              </div>
 
-            <div className="neo-in p-2 rounded-xl">
-              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
-                <IconCloud className="w-2.5 h-2.5 text-neo-muted" />
-                {t.cloudCover || (locale === "hi" ? "बादल" : locale === "bn" ? "মেঘের আচ্ছাদন" : "Cloud Cover")}
-              </span>
-              <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
-                {sky.cloud_cover_pct != null ? `${Math.round(Number(sky.cloud_cover_pct))}%` : "—"}
-              </p>
-            </div>
+              <div className="neo-in p-2 sm:p-2.5 rounded-2xl flex flex-col justify-between transition-all hover:scale-[1.02]">
+                <span className="text-[9.5px] uppercase tracking-wider text-neo-muted font-bold flex items-center gap-1">
+                  <IconCloud className="w-3 h-3 text-slate-400 shrink-0" />
+                  <span className="truncate">{t.cloudCover || (locale === "hi" ? "बादल" : locale === "bn" ? "মেঘ" : "Cloud")}</span>
+                </span>
+                <p className="mt-1 font-mono text-sm sm:text-base font-extrabold text-neo-text">
+                  {sky.cloud_cover_pct != null ? `${localizeDigits(Math.round(Number(sky.cloud_cover_pct)), locale)}%` : "—"}
+                </p>
+              </div>
 
-            <div className="neo-in p-2 rounded-xl">
-              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
-                <IconEye className="w-2.5 h-2.5 text-neo-accent" />
-                {t.visibility || (locale === "hi" ? "दृश्यता" : locale === "bn" ? "দৃশ্যমানতা" : "Visibility")}
-              </span>
-              <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
-                {sky.visibility_km != null ? dist(sky.visibility_km, units) : "—"}
-              </p>
-            </div>
+              <div className="neo-in p-2 sm:p-2.5 rounded-2xl flex flex-col justify-between transition-all hover:scale-[1.02]">
+                <span className="text-[9.5px] uppercase tracking-wider text-neo-muted font-bold flex items-center gap-1">
+                  <IconEye className="w-3 h-3 text-teal-500 shrink-0" />
+                  <span className="truncate">{t.visibility || (locale === "hi" ? "दृश्यता" : locale === "bn" ? "দৃশ্যমানতা" : "Visibility")}</span>
+                </span>
+                <p className="mt-1 font-mono text-sm sm:text-base font-extrabold text-neo-text">
+                  {sky.visibility_km != null ? dist(sky.visibility_km, units, locale) : (locale === "hi" ? "सामान्य" : locale === "bn" ? "স্বাভাবিক" : "10 km")}
+                </p>
+              </div>
 
-            <div className="neo-in p-2 rounded-xl">
-              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
-                <IconGauge className="w-2.5 h-2.5 text-neo-warn" />
-                {t.lastHourRain || (locale === "hi" ? "पिछले 1 घंटे की बारिश" : locale === "bn" ? "বিগত ১ ঘণ্টার বৃষ্টি" : "Last 1h Rain")}
-              </span>
-              <p className="mt-0.5 font-mono text-sm font-bold text-neo-rain">
-                {rain(sky.precip_1h_mm, units)}
-              </p>
-            </div>
+              <div className="neo-in p-2 sm:p-2.5 rounded-2xl flex flex-col justify-between transition-all hover:scale-[1.02]">
+                <span className="text-[9.5px] uppercase tracking-wider text-neo-muted font-bold flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-sky-500 shrink-0" />
+                  <span className="truncate">{t.lastHourRain || (locale === "hi" ? "बारिश 1h" : locale === "bn" ? "বৃষ্টি ১ঘ" : "Rain 1H")}</span>
+                </span>
+                <p className="mt-1 font-mono text-sm sm:text-base font-extrabold text-sky-600 dark:text-sky-400">
+                  {rain(sky.precip_1h_mm, units, locale)}
+                </p>
+              </div>
 
-            <div className="neo-in p-2 rounded-xl">
-              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
-                <IconCloudRain className="w-2.5 h-2.5 text-neo-rain" />
-                {t.rainToday || (locale === "hi" ? "आज की कुल बारिश" : locale === "bn" ? "আজকের মোট বৃষ্টি" : "Today Total")}
-              </span>
-              <p className="mt-0.5 font-mono text-sm font-bold text-neo-rain">
-                {todayRain != null ? rain(todayRain, units) : "0 mm"}
-              </p>
-            </div>
+              <div className="neo-in p-2 sm:p-2.5 rounded-2xl flex flex-col justify-between transition-all hover:scale-[1.02]">
+                <span className="text-[9.5px] uppercase tracking-wider text-neo-muted font-bold flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-blue-600 shrink-0" />
+                  <span className="truncate">{t.rainToday || (locale === "hi" ? "आज की कुल" : locale === "bn" ? "আজকের" : "Today")}</span>
+                </span>
+                <p className="mt-1 font-mono text-sm sm:text-base font-extrabold text-blue-600 dark:text-blue-400">
+                  {todayRain != null ? rain(todayRain, units, locale) : `${localizeDigits(0, locale)} mm`}
+                </p>
+              </div>
 
-            <div className="neo-in p-2 rounded-xl">
-              <span className="text-[9px] uppercase tracking-wider text-neo-muted font-semibold flex items-center gap-1">
-                <IconSparkles className="w-2.5 h-2.5 text-neo-accent" />
-                {locale === "hi" ? "3 दिनों का संचय" : locale === "bn" ? "৩ দিনের পুঞ্জীভূত" : "3-Day Accum"}
-              </span>
-              <p className="mt-0.5 font-mono text-sm font-bold text-neo-text">
-                {rain(dash.predictive.precip_next_3d_mm, units)}
-              </p>
+              <div className="neo-in p-2 sm:p-2.5 rounded-2xl flex flex-col justify-between transition-all hover:scale-[1.02]">
+                <span className="text-[9.5px] uppercase tracking-wider text-neo-muted font-bold flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-indigo-500 shrink-0" />
+                  <span className="truncate">{locale === "hi" ? "3-दिन संचय" : locale === "bn" ? "৩-দিন সঞ্চয়" : "3-Day Acc"}</span>
+                </span>
+                <p className="mt-1 font-mono text-sm sm:text-base font-extrabold text-indigo-600 dark:text-indigo-400">
+                  {rain(dash.predictive.precip_next_3d_mm, units, locale)}
+                </p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* Floating Synoptic Deep-Dive Modal (Portaled to document.body) */}
@@ -564,7 +709,7 @@ export function SkyRainHero({
                         {locale === "hi" ? "सतह का तापमान" : locale === "bn" ? "পৃষ্ঠের তাপমাত্রা" : "Surface Temperature"}
                       </span>
                       <p className="mt-0.5 font-mono text-base font-bold text-neo-accent">
-                        {temp(sky.temp_c ?? cur.temp_c, units)}
+                        {temp(sky.temp_c ?? cur.temp_c, units, locale)}
                       </p>
                     </div>
 
@@ -573,7 +718,7 @@ export function SkyRainHero({
                         {locale === "hi" ? "सापेक्ष आर्द्रता" : locale === "bn" ? "আপেক্ষিক আর্দ্রতা" : "Relative Humidity"}
                       </span>
                       <p className="mt-0.5 font-mono text-base font-bold text-neo-rain">
-                        {sky.humidity_pct != null ? `${Math.round(Number(sky.humidity_pct))}%` : "—"}
+                        {sky.humidity_pct != null ? `${localizeDigits(Math.round(Number(sky.humidity_pct)), locale)}%` : "—"}
                       </p>
                     </div>
 
@@ -582,7 +727,7 @@ export function SkyRainHero({
                         {locale === "hi" ? "बादल आवरण" : locale === "bn" ? "মেঘের কভারেজ" : "Cloud Cover"}
                       </span>
                       <p className="mt-0.5 font-mono text-base font-bold text-neo-text">
-                        {cloudPct}%
+                        {localizeDigits(cloudPct, locale)}%
                       </p>
                     </div>
 
@@ -591,7 +736,7 @@ export function SkyRainHero({
                         {locale === "hi" ? "7-दिवसीय जल संतुलन" : locale === "bn" ? "৭ দিনের জল ভারসাম্য" : "7-Day Water Balance"}
                       </span>
                       <p className={`mt-0.5 font-mono text-base font-bold ${Number(dash.predictive.water_balance_7d_mm ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
-                        {rain(dash.predictive.water_balance_7d_mm, units)}
+                        {rain(dash.predictive.water_balance_7d_mm, units, locale)}
                       </p>
                     </div>
                   </div>

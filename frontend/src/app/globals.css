@@ -105,6 +105,63 @@
   color-scheme: light;
 }
 
+[data-theme="mist"] {
+  --bg: #cbd5e1;
+  --card: #dbe4ee;
+  --text: #0f172a;
+  --muted: #475569;
+  --accent: #0284c7;
+  --accent2: #0f766e;
+  --warn: #c2410c;
+  --danger: #be123c;
+  --flood: #0369a1;
+  --rain: #1d4ed8;
+  --gold: #b45309;
+  --indigo: #4338ca;
+  --line: #94a3b8;
+  --glow1: rgba(2, 132, 199, 0.12);
+  --glow2: rgba(15, 118, 110, 0.10);
+  color-scheme: light;
+}
+
+[data-theme="dusk_mist"] {
+  --bg: #94a3b8;
+  --card: #2c3a4d;
+  --text: #f8fafc;
+  --muted: #cbd5e1;
+  --accent: #38bdf8;
+  --accent2: #2dd4bf;
+  --warn: #fb923c;
+  --danger: #f87171;
+  --flood: #38bdf8;
+  --rain: #60a5fa;
+  --gold: #fbbf24;
+  --indigo: #818cf8;
+  --line: #475569;
+  --glow1: rgba(56, 189, 248, 0.20);
+  --glow2: rgba(45, 212, 191, 0.16);
+  color-scheme: dark;
+}
+
+[data-theme="sih_mobile"] {
+  --bg: #d9f0fd;
+  --card: #e4f4fd;
+  --text: #0f172a;
+  --muted: #475569;
+  --accent: #0284c7;
+  --accent2: #059669;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --flood: #0284c7;
+  --rain: #2563eb;
+  --gold: #f59e0b;
+  --indigo: #4f46e5;
+  --line: #bfe3f7;
+  --glow1: rgba(2, 132, 199, 0.14);
+  --glow2: rgba(5, 150, 105, 0.12);
+  color-scheme: light;
+}
+
 /* ==========================================================================
    THEME-SPECIFIC UI ARCHITECTURES & TEMPLATES
    ========================================================================== */
@@ -650,7 +707,648 @@
 
 
 /* ──────────────────────────────────────────────────────────────────────────
-   5. MIDNIGHT THEME: (Untouched & Preserved Deep Neon Sci-Fi)
+   5. MIST THEME: "Nordic Slate Mist" (Soft Glare-Free Light, Slate-Silver & Soft Cyan Accent)
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="mist"] {
+  font-family: "Instrument Sans", "Manrope", sans-serif;
+}
+
+[data-theme="mist"] h1,
+[data-theme="mist"] h2,
+[data-theme="mist"] h3 {
+  font-family: "Space Grotesk", "Instrument Sans", sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: #1a2530;
+}
+
+[data-theme="mist"] body {
+  background-color: var(--bg);
+  background-image: 
+    radial-gradient(900px 500px at 20% 0%, rgba(2, 132, 199, 0.08), transparent 70%),
+    radial-gradient(800px 500px at 80% 100%, rgba(13, 148, 136, 0.07), transparent 70%),
+    linear-gradient(rgba(100, 116, 139, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100, 116, 139, 0.12) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+}
+
+[data-theme="mist"] .neo {
+  border-radius: 16px !important;
+  background: var(--card) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+[data-theme="mist"] .neo-in {
+  border-radius: 10px !important;
+  background: #cbd5e1 !important;
+  border: 1px solid #94a3b8 !important;
+  box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.08) !important;
+}
+
+[data-theme="mist"] .neo-btn {
+  border-radius: 10px !important;
+  background: #cbd5e1 !important;
+  border: 1px solid #94a3b8 !important;
+  color: var(--text) !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+[data-theme="mist"] .neo-btn:hover {
+  background: #b8c7d9 !important;
+  border-color: #64748b !important;
+  color: #020617 !important;
+  transform: translateY(-1px) !important;
+}
+
+[data-theme="mist"] .neo-btn-on {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  border-color: #0369a1 !important;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35) !important;
+}
+
+[data-theme="mist"] .chip {
+  border-radius: 6px !important;
+  background: #cbd5e1 !important;
+  border: 1px solid #94a3b8 !important;
+  color: #0369a1 !important;
+  font-weight: 700 !important;
+}
+
+/* Mist Section Bespoke Individual Themes */
+[data-theme="mist"] .neo-section-sky { 
+  background: radial-gradient(circle at 85% 15%, #cbe5f8 0%, #d8e4ee 60%, #cbd9e4 100%) !important; 
+  border: 1px solid #93c5fd !important; 
+  box-shadow: 0 6px 20px rgba(2, 132, 199, 0.09) !important;
+}
+[data-theme="mist"] .neo-section-sky .neo-in {
+  background: rgba(255, 255, 255, 0.55) !important;
+  border-color: #93c5fd !important;
+}
+
+[data-theme="mist"] .neo-section-rain { 
+  background: linear-gradient(145deg, #cfdef2 0%, #c1d3ea 100%) !important; 
+  border: 1px solid #93c5fd !important; 
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.08) !important;
+}
+[data-theme="mist"] .neo-section-rain .neo-in {
+  background: rgba(255, 255, 255, 0.55) !important;
+  border-color: #93c5fd !important;
+}
+
+[data-theme="mist"] .neo-section-wind { 
+  background: linear-gradient(145deg, #cee5df 0%, #bddbd4 100%) !important; 
+  border: 1px solid #5eead4 !important; 
+  box-shadow: 0 6px 20px rgba(13, 148, 136, 0.08) !important;
+}
+[data-theme="mist"] .neo-section-wind .neo-in {
+  background: rgba(255, 255, 255, 0.55) !important;
+  border-color: #5eead4 !important;
+}
+
+[data-theme="mist"] .neo-section-alerts { 
+  background: radial-gradient(circle at 10% 10%, #fee6a5 0%, #f3dbb8 100%) !important; 
+  border: 1.5px solid #d97706 !important; 
+  box-shadow: 0 6px 22px rgba(217, 119, 6, 0.12) !important;
+}
+[data-theme="mist"] .neo-section-alerts .neo-in {
+  background: rgba(255, 255, 255, 0.6) !important;
+  border-color: #fcd34d !important;
+}
+
+[data-theme="mist"] .neo-section-air { 
+  background: linear-gradient(145deg, #d8e2ec 0%, #cbd5e1 100%) !important; 
+  border: 1px solid #94a3b8 !important; 
+}
+[data-theme="mist"] .neo-section-air .neo-in {
+  background: rgba(255, 255, 255, 0.55) !important;
+  border-color: #94a3b8 !important;
+}
+
+[data-theme="mist"] .neo-section-land { 
+  background: radial-gradient(circle at 90% 90%, #bbf7d0 0%, #cde4d6 60%, #bdd9c8 100%) !important; 
+  border: 1px solid #86efac !important; 
+  box-shadow: 0 6px 20px rgba(22, 101, 52, 0.08) !important;
+}
+[data-theme="mist"] .neo-section-land .neo-in {
+  background: rgba(255, 255, 255, 0.55) !important;
+  border-color: #86efac !important;
+}
+
+[data-theme="mist"] .neo-section-marine { 
+  background: radial-gradient(circle at 50% 0%, #bae6fd 0%, #cce2f2 60%, #b8d7eb 100%) !important; 
+  border: 1px solid #38bdf8 !important; 
+  box-shadow: 0 6px 20px rgba(2, 132, 199, 0.1) !important;
+}
+[data-theme="mist"] .neo-section-marine .neo-in {
+  background: rgba(255, 255, 255, 0.55) !important;
+  border-color: #7dd3fc !important;
+}
+
+[data-theme="mist"] .neo-section-cyclone { 
+  background: radial-gradient(circle at 80% 20%, #fecdd3 0%, #f1d7dc 60%, #e2c4cb 100%) !important; 
+  border: 1.5px solid #f43f5e !important; 
+  box-shadow: 0 6px 22px rgba(225, 29, 72, 0.11) !important;
+}
+[data-theme="mist"] .neo-section-cyclone .neo-in {
+  background: rgba(255, 255, 255, 0.6) !important;
+  border-color: #fda4af !important;
+}
+
+[data-theme="mist"] .neo-section-seismic { 
+  background: radial-gradient(circle at 20% 80%, #fed7aa 0%, #f1dcce 60%, #e1cbbd 100%) !important; 
+  border: 1.5px solid #ea580c !important; 
+  box-shadow: 0 6px 22px rgba(234, 88, 12, 0.11) !important;
+}
+[data-theme="mist"] .neo-section-seismic .neo-in {
+  background: rgba(255, 255, 255, 0.6) !important;
+  border-color: #fdba74 !important;
+}
+
+[data-theme="mist"] .neo-section-nowcast { 
+  background: linear-gradient(145deg, #ddd6fe 0%, #cec9e0 100%) !important; 
+  border: 1px solid #a78bfa !important; 
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.08) !important;
+}
+[data-theme="mist"] .neo-section-nowcast .neo-in {
+  background: rgba(255, 255, 255, 0.55) !important;
+  border-color: #c4b5fd !important;
+}
+
+[data-theme="mist"] .neo-section-forecast7d { 
+  background: linear-gradient(145deg, #d8e5f2 0%, #cbd9ea 100%) !important; 
+  border: 1px solid #7dd3fc !important; 
+  box-shadow: 0 6px 22px rgba(2, 132, 199, 0.1) !important;
+}
+[data-theme="mist"] .neo-section-forecast7d .neo-in {
+  background: rgba(255, 255, 255, 0.6) !important;
+  border-color: #bae6fd !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   5b. DUSK MIST THEME: (Nordic Slate Mist with Darker Sections & Vivid Heading Readability)
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="dusk_mist"] {
+  font-family: "Instrument Sans", "Manrope", sans-serif;
+}
+
+[data-theme="dusk_mist"] h1,
+[data-theme="dusk_mist"] h2,
+[data-theme="dusk_mist"] h3,
+[data-theme="dusk_mist"] h4,
+[data-theme="dusk_mist"] h5,
+[data-theme="dusk_mist"] h6 {
+  font-family: "Space Grotesk", "Instrument Sans", sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="dusk_mist"] .text-neo-text {
+  color: #f8fafc !important;
+}
+
+[data-theme="dusk_mist"] .text-neo-muted {
+  color: #cbd5e1 !important;
+}
+
+[data-theme="dusk_mist"] body {
+  background-color: var(--bg);
+  background-image: 
+    radial-gradient(900px 500px at 20% 0%, rgba(2, 132, 199, 0.12), transparent 70%),
+    radial-gradient(800px 500px at 80% 100%, rgba(13, 148, 136, 0.10), transparent 70%),
+    linear-gradient(rgba(71, 85, 105, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 85, 105, 0.22) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+}
+
+[data-theme="dusk_mist"] .neo {
+  border-radius: 16px !important;
+  background: var(--card) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.28), 0 2px 6px rgba(15, 23, 42, 0.18) !important;
+  backdrop-filter: blur(12px) !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dusk_mist"] .neo-in {
+  border-radius: 10px !important;
+  background: #1e293b !important;
+  border: 1px solid #475569 !important;
+  color: #f8fafc !important;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35) !important;
+}
+
+[data-theme="dusk_mist"] .neo-btn {
+  border-radius: 10px !important;
+  background: #334155 !important;
+  border: 1px solid #475569 !important;
+  color: #f8fafc !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+[data-theme="dusk_mist"] .neo-btn:hover {
+  background: #475569 !important;
+  border-color: #64748b !important;
+  color: #ffffff !important;
+  transform: translateY(-1px) !important;
+}
+
+[data-theme="dusk_mist"] .neo-btn-on {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 2px 10px rgba(2, 132, 199, 0.5) !important;
+}
+
+[data-theme="dusk_mist"] .chip {
+  border-radius: 6px !important;
+  background: #1e293b !important;
+  border: 1px solid #475569 !important;
+  color: #38bdf8 !important;
+  font-weight: 700 !important;
+}
+
+/* Dusk Mist Section Bespoke Individual Themes (Darker than Background) */
+[data-theme="dusk_mist"] .neo-section-sky { 
+  background: radial-gradient(circle at 85% 15%, #254060 0%, #1e3149 60%, #172639 100%) !important; 
+  border: 1px solid #38bdf8 !important; 
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3) !important;
+}
+[data-theme="dusk_mist"] .neo-section-sky .neo-in {
+  background: rgba(15, 23, 42, 0.65) !important;
+  border-color: #38bdf8 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dusk_mist"] .neo-section-rain { 
+  background: linear-gradient(145deg, #243b5e 0%, #1c2e4a 100%) !important; 
+  border: 1px solid #60a5fa !important; 
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3) !important;
+}
+[data-theme="dusk_mist"] .neo-section-rain .neo-in {
+  background: rgba(15, 23, 42, 0.65) !important;
+  border-color: #60a5fa !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dusk_mist"] .neo-section-wind { 
+  background: linear-gradient(145deg, #1c3d3a 0%, #152f2d 100%) !important; 
+  border: 1px solid #2dd4bf !important; 
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3) !important;
+}
+[data-theme="dusk_mist"] .neo-section-wind .neo-in {
+  background: rgba(15, 23, 42, 0.65) !important;
+  border-color: #2dd4bf !important;
+  color: #f8fafc !important;
+}
+[data-theme="dusk_mist"] .wind-compass-dial {
+  fill: rgba(15, 23, 42, 0.65) !important;
+  stroke: #2dd4bf !important;
+}
+[data-theme="dusk_mist"] .wind-compass-hub {
+  fill: #0f172a !important;
+  stroke: #2dd4bf !important;
+}
+[data-theme="dusk_mist"] .wind-compass-cardinal {
+  fill: #f8fafc !important;
+}
+[data-theme="dusk_mist"] .wind-compass-text {
+  fill: #38bdf8 !important;
+}
+[data-theme="dusk_mist"] .wind-compass-flow {
+  fill: #cbd5e1 !important;
+}
+
+[data-theme="dusk_mist"] .neo-section-alerts { 
+  background: radial-gradient(circle at 10% 10%, #4d3312 0%, #38240a 100%) !important; 
+  border: 1.5px solid #f59e0b !important; 
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35) !important;
+}
+[data-theme="dusk_mist"] .neo-section-alerts .neo-in {
+  background: rgba(20, 15, 5, 0.7) !important;
+  border-color: #fbbf24 !important;
+  color: #fef3c7 !important;
+}
+
+[data-theme="dusk_mist"] .neo-section-air { 
+  background: linear-gradient(145deg, #2a374a 0%, #202b3b 100%) !important; 
+  border: 1px solid #64748b !important; 
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3) !important;
+}
+[data-theme="dusk_mist"] .neo-section-air .neo-in {
+  background: rgba(15, 23, 42, 0.65) !important;
+  border-color: #64748b !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dusk_mist"] .neo-section-land { 
+  background: radial-gradient(circle at 90% 90%, #183e28 0%, #132f1f 60%, #0e2417 100%) !important; 
+  border: 1px solid #4ade80 !important; 
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3) !important;
+}
+[data-theme="dusk_mist"] .neo-section-land .neo-in {
+  background: rgba(10, 25, 15, 0.65) !important;
+  border-color: #4ade80 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dusk_mist"] .neo-section-marine { 
+  background: radial-gradient(circle at 50% 0%, #1a3c5a 0%, #132d45 60%, #0e2133 100%) !important; 
+  border: 1px solid #0ea5e9 !important; 
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3) !important;
+}
+[data-theme="dusk_mist"] .neo-section-marine .neo-in {
+  background: rgba(10, 20, 35, 0.65) !important;
+  border-color: #38bdf8 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dusk_mist"] .neo-section-cyclone { 
+  background: radial-gradient(circle at 80% 20%, #4a1d27 0%, #38141c 60%, #290d14 100%) !important; 
+  border: 1.5px solid #f43f5e !important; 
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35) !important;
+}
+[data-theme="dusk_mist"] .neo-section-cyclone .neo-in {
+  background: rgba(30, 10, 15, 0.7) !important;
+  border-color: #fb7185 !important;
+  color: #ffe4e6 !important;
+}
+
+[data-theme="dusk_mist"] .neo-section-seismic { 
+  background: radial-gradient(circle at 20% 80%, #4a2817 0%, #381c0e 60%, #291408 100%) !important; 
+  border: 1.5px solid #ea580c !important; 
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35) !important;
+}
+[data-theme="dusk_mist"] .neo-section-seismic .neo-in {
+  background: rgba(30, 15, 8, 0.7) !important;
+  border-color: #fb923c !important;
+  color: #ffedd5 !important;
+}
+
+[data-theme="dusk_mist"] .neo-section-nowcast { 
+  background: linear-gradient(145deg, #322659 0%, #261c45 100%) !important; 
+  border: 1px solid #a78bfa !important; 
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3) !important;
+}
+[data-theme="dusk_mist"] .neo-section-nowcast .neo-in {
+  background: rgba(20, 15, 35, 0.65) !important;
+  border-color: #c4b5fd !important;
+  color: #f5f3ff !important;
+}
+
+[data-theme="dusk_mist"] .neo-section-forecast7d { 
+  background: linear-gradient(145deg, #1e3550 0%, #16273d 100%) !important; 
+  border: 1px solid #38bdf8 !important; 
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3) !important;
+}
+[data-theme="dusk_mist"] .neo-section-forecast7d .neo-in {
+  background: rgba(15, 23, 42, 0.65) !important;
+  border-color: #7dd3fc !important;
+  color: #f8fafc !important;
+}
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   5B. SIH MODERN MOBILE THEME: "Cerulean App" (Soft Blue Sky, Clean Pure White Cards, Pastel Badges)
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="sih_mobile"] {
+  font-family: "Outfit", "Manrope", system-ui, -apple-system, sans-serif;
+}
+
+[data-theme="sih_mobile"] body {
+  background-color: #d9f0fd;
+  background-image: 
+    radial-gradient(1000px 700px at 50% 0%, #e8f6fe 0%, #d2ecfc 100%);
+  color: #0f172a;
+}
+
+/* Large rounded app cards (28px) */
+[data-theme="sih_mobile"] .neo {
+  border-radius: 28px !important;
+  background: #e4f4fd !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.8) !important;
+  box-shadow: 0 10px 30px -5px rgba(2, 132, 199, 0.08), 0 2px 8px -2px rgba(15, 23, 42, 0.04) !important;
+  backdrop-filter: blur(16px) !important;
+}
+
+/* Crisp pure-white interior telemetry sub-cards (20px) */
+[data-theme="sih_mobile"] .neo-in {
+  border-radius: 20px !important;
+  background: #ffffff !important;
+  border: 1px solid #e2f0fb !important;
+  box-shadow: 0 4px 14px -2px rgba(15, 23, 42, 0.03), 0 1px 3px rgba(15, 23, 42, 0.02) !important;
+}
+
+/* Buttons with tactile pill geometry */
+[data-theme="sih_mobile"] .neo-btn {
+  border-radius: 18px !important;
+  background: #ffffff !important;
+  border: 1.5px solid #d4ebfa !important;
+  color: #0369a1 !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.06) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+[data-theme="sih_mobile"] .neo-btn:hover {
+  background: #f0f9ff !important;
+  border-color: #38bdf8 !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.12) !important;
+}
+
+[data-theme="sih_mobile"] .neo-btn-on {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
+  color: #ffffff !important;
+  border-color: #0284c7 !important;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35) !important;
+}
+
+[data-theme="sih_mobile"] .chip {
+  border-radius: 9999px !important;
+  background: #e0f2fe !important;
+  border: 1px solid #bae6fd !important;
+  color: #0369a1 !important;
+  font-weight: 800 !important;
+}
+
+/* Atmospheric / Sky Card in SIH Mobile theme: Soft Cerulean Card */
+[data-theme="sih_mobile"] .neo-section-sky {
+  background: #e0f2fe !important;
+  border: 1.5px solid #bae6fd !important;
+  box-shadow: 0 12px 32px -8px rgba(2, 132, 199, 0.15) !important;
+}
+[data-theme="sih_mobile"] .neo-section-sky .neo-in {
+  background: #ffffff !important;
+  border: 1px solid #e0f2fe !important;
+  box-shadow: 0 3px 10px rgba(2, 132, 199, 0.04) !important;
+}
+
+/* Rainfall Section in SIH Mobile theme: Mint/Aquamarine Card */
+[data-theme="sih_mobile"] .neo-section-rain {
+  background: #dcfce7 !important;
+  border: 1.5px solid #bbf7d0 !important;
+  box-shadow: 0 12px 32px -8px rgba(5, 150, 105, 0.12) !important;
+}
+[data-theme="sih_mobile"] .neo-section-rain .neo-in {
+  background: #ffffff !important;
+  border: 1px solid #dcfce7 !important;
+  box-shadow: 0 3px 10px rgba(5, 150, 105, 0.04) !important;
+}
+
+/* Wind Section in SIH Mobile theme: Soft Cyan Card */
+[data-theme="sih_mobile"] .neo-section-wind {
+  background: #e0f7fa !important;
+  border: 1.5px solid #b2ebf2 !important;
+  box-shadow: 0 12px 32px -8px rgba(6, 182, 212, 0.12) !important;
+}
+[data-theme="sih_mobile"] .neo-section-wind .neo-in {
+  background: #ffffff !important;
+  border: 1px solid #e0f7fa !important;
+  box-shadow: 0 3px 10px rgba(6, 182, 212, 0.04) !important;
+}
+
+/* Alert / Warning Banner in SIH Mobile theme: Soft Warm Peach/Orange Card */
+[data-theme="sih_mobile"] .neo-section-alerts {
+  background: #ffedd5 !important;
+  border: 1.5px solid #fed7aa !important;
+  box-shadow: 0 10px 28px -6px rgba(234, 88, 12, 0.1) !important;
+}
+[data-theme="sih_mobile"] .neo-section-alerts .neo-in {
+  background: #ffffff !important;
+  border: 1px solid #fed7aa !important;
+}
+
+/* Air Quality Section */
+[data-theme="sih_mobile"] .neo-section-air {
+  background: #f0fdf4 !important;
+  border: 1.5px solid #dcfce7 !important;
+}
+[data-theme="sih_mobile"] .neo-section-air .neo-in {
+  background: #ffffff !important;
+  border: 1px solid #dcfce7 !important;
+}
+
+/* Land & Soil Section */
+[data-theme="sih_mobile"] .neo-section-land {
+  background: #f0fdfa !important;
+  border: 1.5px solid #ccfbf1 !important;
+}
+[data-theme="sih_mobile"] .neo-section-land .neo-in {
+  background: #ffffff !important;
+  border: 1px solid #ccfbf1 !important;
+}
+
+/* Marine Section */
+[data-theme="sih_mobile"] .neo-section-marine {
+  background: #e0f2fe !important;
+  border: 1.5px solid #bae6fd !important;
+}
+[data-theme="sih_mobile"] .neo-section-marine .neo-in {
+  background: #ffffff !important;
+  border: 1px solid #e0f2fe !important;
+}
+
+/* Cyclone Section */
+[data-theme="sih_mobile"] .neo-section-cyclone {
+  background: #ffe4e6 !important;
+  border: 1.5px solid #fecdd3 !important;
+}
+[data-theme="sih_mobile"] .neo-section-cyclone .neo-in {
+  background: #ffffff !important;
+  border: 1px solid #fecdd3 !important;
+}
+
+/* Seismic Section */
+[data-theme="sih_mobile"] .neo-section-seismic {
+  background: #ffedd5 !important;
+  border: 1.5px solid #fed7aa !important;
+}
+[data-theme="sih_mobile"] .neo-section-seismic .neo-in {
+  background: #ffffff !important;
+  border: 1px solid #fed7aa !important;
+}
+
+/* Nowcast / 6-Hour Section */
+[data-theme="sih_mobile"] .neo-section-nowcast {
+  background: #ede9fe !important;
+  border: 1.5px solid #ddd6fe !important;
+}
+[data-theme="sih_mobile"] .neo-section-nowcast .neo-in {
+  background: #ffffff !important;
+  border: 1px solid #ddd6fe !important;
+}
+
+/* 7-Day Outlook Section */
+[data-theme="sih_mobile"] .neo-section-forecast7d {
+  background: #e8f4fd !important;
+  border: 1.5px solid #c7e5fc !important;
+}
+[data-theme="sih_mobile"] .neo-section-forecast7d .neo-in {
+  background: #ffffff !important;
+  border: 1px solid #ddecfa !important;
+}
+
+/* Search Bar in SIH Mobile theme: Pill Shaped Pure White with Soft Shadow */
+[data-theme="sih_mobile"] .neo-search-bar {
+  border-radius: 9999px !important;
+  background: #ffffff !important;
+  border: 1.5px solid #d4ebfa !important;
+  box-shadow: 0 6px 20px -2px rgba(2, 132, 199, 0.08) !important;
+}
+
+/* Bottom Navigation Bar in SIH Mobile theme: Clean White Pill Bar with Slate Icons */
+[data-theme="sih_mobile"] .mobile-bottom-bar {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-top: 1.5px solid #e0f2fe !important;
+  box-shadow: 0 -4px 25px rgba(2, 132, 199, 0.08) !important;
+  backdrop-filter: blur(20px) !important;
+}
+
+/* Diorama in SIH Mobile theme */
+[data-theme="sih_mobile"] .atmospheric-diorama-container {
+  background: #ffffff !important;
+  border: 1.5px solid #d8ecf8 !important;
+  box-shadow: 0 4px 16px rgba(2, 132, 199, 0.06) !important;
+  border-radius: 20px !important;
+}
+
+/* Leaflet Container in SIH Mobile theme */
+[data-theme="sih_mobile"] .leaflet-container {
+  background: #d9f0fd !important;
+  border: 1.5px solid #bae6fd !important;
+}
+
+/* Wind compass in SIH Mobile */
+[data-theme="sih_mobile"] .wind-compass-dial {
+  fill: #ffffff !important;
+  stroke: #bae6fd !important;
+}
+[data-theme="sih_mobile"] .wind-compass-hub {
+  fill: #e0f2fe !important;
+  stroke: #38bdf8 !important;
+}
+[data-theme="sih_mobile"] .wind-compass-cardinal {
+  fill: #0369a1 !important;
+}
+[data-theme="sih_mobile"] .wind-compass-text {
+  fill: #0284c7 !important;
+}
+[data-theme="sih_mobile"] .wind-compass-flow {
+  fill: #64748b !important;
+}
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   6. MIDNIGHT THEME: (Untouched & Preserved Deep Neon Sci-Fi)
    ────────────────────────────────────────────────────────────────────────── */
 [data-theme="midnight"] {
   font-family: "Outfit", "Manrope", sans-serif;
@@ -1008,8 +1706,32 @@ select.neo-in {
   100% { transform: translateX(0) scaleY(1); opacity: 0.35; }
 }
 
+@keyframes sunburst-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes rainbow-shimmer {
+  0%, 100% { opacity: 0.35; transform: scale(0.98); }
+  50% { opacity: 0.75; transform: scale(1.02); }
+}
+
+@keyframes atmospheric-haze {
+  0%, 100% { transform: translateY(0px) scaleX(1); opacity: 0.25; }
+  50% { transform: translateY(-2px) scaleX(1.05); opacity: 0.55; }
+}
+
 .anim-solar-corona {
   animation: solar-corona 4s ease-in-out infinite;
+}
+
+.anim-sunburst-spin {
+  animation: sunburst-spin 20s linear infinite;
+  transform-origin: 38px 36px;
+}
+
+.anim-rainbow {
+  animation: rainbow-shimmer 6s ease-in-out infinite;
 }
 
 .anim-celestial-drift {
@@ -1030,6 +1752,10 @@ select.neo-in {
 
 .anim-mist-wave {
   animation: mist-rolling-wave 8s ease-in-out infinite;
+}
+
+.anim-haze-wave {
+  animation: atmospheric-haze 7s ease-in-out infinite;
 }
 
 /* Custom sleek modal scrollbar */
@@ -1055,7 +1781,7 @@ select.neo-in {
 @keyframes float-chat-in {
   from {
     opacity: 0;
-    transform: translateY(20px) scale(0.95);
+    transform: translateY(24px) scale(0.94);
   }
   to {
     opacity: 1;
@@ -1064,8 +1790,38 @@ select.neo-in {
 }
 
 .anim-chat-pop {
-  animation: float-chat-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: float-chat-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   transform-origin: bottom right;
+}
+
+@keyframes lightbar-gradient-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.anim-lightbar-shimmer {
+  background-size: 200% 200%;
+  animation: lightbar-gradient-flow 4s ease infinite;
+}
+
+@keyframes pulse-subtle-glow {
+  0%, 100% {
+    box-shadow: 0 0 25px -5px rgba(2, 132, 199, 0.35), 0 20px 50px -10px rgba(0, 0, 0, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 40px -5px rgba(2, 132, 199, 0.55), 0 25px 60px -10px rgba(0, 0, 0, 0.55);
+  }
+}
+
+.anim-window-glow {
+  animation: pulse-subtle-glow 4s ease-in-out infinite;
 }
 
 @keyframes mic-recording-ripple {
@@ -1175,3 +1931,162 @@ select.neo-in {
   background-color: color-mix(in srgb, var(--card) 75%, transparent);
   border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
 }
+
+.alerts-section-title {
+  color: var(--warn);
+}
+[data-theme="sand"] .alerts-section-title {
+  color: #b45309;
+}
+[data-theme="mist"] .alerts-section-title {
+  color: #c2410c;
+}
+[data-theme="monsoon"] .alerts-section-title {
+  color: #fbbf24;
+}
+[data-theme="ocean"] .alerts-section-title {
+  color: #fbbf24;
+}
+[data-theme="midnight"] .alerts-section-title {
+  color: #f59e0b;
+}
+[data-theme="contrast"] .alerts-section-title {
+  color: #854d0e;
+}
+
+/* Sidebar Brand & Tag Typography */
+.sidebar-brand-title {
+  background-image: linear-gradient(to right, var(--accent), var(--rain), var(--indigo));
+}
+[data-theme="mist"] .sidebar-brand-title {
+  background-image: linear-gradient(to right, #0369a1, #0284c7, #2563eb);
+}
+[data-theme="sand"] .sidebar-brand-title {
+  background-image: linear-gradient(to right, #9a3412, #b45309, #d97706);
+}
+[data-theme="monsoon"] .sidebar-brand-title {
+  background-image: linear-gradient(to right, #34d399, #10b981, #06b6d4);
+}
+[data-theme="ocean"] .sidebar-brand-title {
+  background-image: linear-gradient(to right, #00d2ff, #38bdf8, #818cf8);
+}
+[data-theme="midnight"] .sidebar-brand-title {
+  background-image: linear-gradient(to right, #38bdf8, #4ee0d0, #818cf8);
+}
+[data-theme="contrast"] .sidebar-brand-title {
+  background-image: linear-gradient(to right, #000000, #1e293b);
+}
+
+.sidebar-brand-tag {
+  color: var(--muted);
+}
+[data-theme="mist"] .sidebar-brand-tag {
+  color: #334155;
+  font-weight: 600;
+}
+[data-theme="sand"] .sidebar-brand-tag {
+  color: #78350f;
+}
+[data-theme="monsoon"] .sidebar-brand-tag {
+  color: #6ee7b7;
+}
+[data-theme="ocean"] .sidebar-brand-tag {
+  color: #7dd3fc;
+}
+[data-theme="midnight"] .sidebar-brand-tag {
+  color: #94a3b8;
+}
+[data-theme="contrast"] .sidebar-brand-tag {
+  color: #334155;
+}
+
+/* Section Headers Typography & Per-Theme Palettes */
+.neo-section-sky p[class*="tracking-[0.18em]"],
+.neo-section-rain p[class*="tracking-[0.18em]"],
+.neo-section-wind p[class*="tracking-[0.18em]"],
+.neo-section-alerts p[class*="tracking-[0.18em]"],
+.neo-section-air p[class*="tracking-[0.18em]"],
+.neo-section-land p[class*="tracking-[0.18em]"],
+.neo-section-marine p[class*="tracking-[0.18em]"],
+.neo-section-cyclone p[class*="tracking-[0.18em]"],
+.neo-section-seismic p[class*="tracking-[0.18em]"],
+.neo-section-nowcast p[class*="tracking-[0.18em]"],
+.neo-section-forecast7d p[class*="tracking-[0.18em]"],
+.neo-section-forecast7d .forecast-section-title {
+  letter-spacing: 0.18em;
+  font-weight: 900;
+}
+
+[data-theme="mist"] .neo-section-sky p[class*="tracking-[0.18em]"] {
+  color: #0369a1 !important;
+}
+[data-theme="mist"] .neo-section-rain p[class*="tracking-[0.18em]"] {
+  color: #1d4ed8 !important;
+}
+[data-theme="mist"] .neo-section-wind p[class*="tracking-[0.18em]"] {
+  color: #0f766e !important;
+}
+[data-theme="mist"] .neo-section-alerts p[class*="tracking-[0.18em]"],
+[data-theme="mist"] .alerts-section-title {
+  color: #c2410c !important;
+}
+[data-theme="mist"] .neo-section-air p[class*="tracking-[0.18em]"] {
+  color: #334155 !important;
+}
+[data-theme="mist"] .neo-section-land p[class*="tracking-[0.18em]"] {
+  color: #15803d !important;
+}
+[data-theme="mist"] .neo-section-marine p[class*="tracking-[0.18em]"] {
+  color: #0284c7 !important;
+}
+[data-theme="mist"] .neo-section-cyclone p[class*="tracking-[0.18em]"] {
+  color: #be123c !important;
+}
+[data-theme="mist"] .neo-section-seismic p[class*="tracking-[0.18em]"] {
+  color: #c2410c !important;
+}
+[data-theme="mist"] .neo-section-nowcast p[class*="tracking-[0.18em]"] {
+  color: #4338ca !important;
+}
+[data-theme="mist"] .neo-section-forecast7d p[class*="tracking-[0.18em]"],
+[data-theme="mist"] .forecast-section-title {
+  color: #0369a1 !important;
+}
+
+/* Forecast 7-Day Headline Color */
+.forecast-section-title {
+  color: var(--accent);
+}
+[data-theme="sand"] .forecast-section-title {
+  color: #b45309;
+}
+[data-theme="monsoon"] .forecast-section-title {
+  color: #10b981;
+}
+[data-theme="ocean"] .forecast-section-title {
+  color: #00d2ff;
+}
+[data-theme="midnight"] .forecast-section-title {
+  color: #ffd54f;
+}
+[data-theme="contrast"] .forecast-section-title {
+  color: #0f172a;
+}
+
+/* Leaflet Map Popup High-Contrast Typography */
+.leaflet-popup-content-wrapper {
+  color: #0f172a !important;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, sans-serif);
+  border-radius: 12px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.2) !important;
+}
+
+.leaflet-popup-content {
+  color: #0f172a !important;
+  line-height: 1.4 !important;
+}
+
+.leaflet-popup-content * {
+  color-scheme: light !important;
+}
+
