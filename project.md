@@ -1,10 +1,12 @@
-# PRITHVI-AI / Rituchakra — agent handoff
+# PRITHVI-AI / Prithvi AI — agent handoff
 
 **Proposal title:** PRITHVI-AI: An Open-LLM Powered Multilingual Environmental Intelligence & Climate Resilience Platform for India.
 
-**Code / product name in this repo:** Rituchakra. Folder may still be `RainFall`. GitHub: `https://github.com/NetRunnerXD/Rituchakra.git` (`main`).
+**Code / product name in this repo:** Prithvi AI. Folder may still be `RainFall`. GitHub: `https://github.com/NetRunnerXD/Prithvi AI.git` (`main`).
 
-India-first environmental intelligence. Live weather, flood, drought, heat, air, marine, seismic, tsunami, mandi prices, explainable risk, 0–6 h decision nowcast, and a live convective storm map — then a chat Advisor that **only quotes Rituchakra `data()` packs**. It never invents millimetres, AQI, rupees, or risk scores.
+India-first environmental intelligence. Live weather, flood, drought, heat, air, marine, seismic, tsunami, mandi prices, explainable risk, 0–6 h decision nowcast, and a live convective storm map — then a chat Advisor that **only quotes Prithvi AI `data()` packs**. It never invents millimetres, AQI, rupees, or risk scores.
+
+**Code map for agents:** `docs/CODEMAP.md` + `docs/codegraph.json` (refresh: `python backend/scripts/codebase_graph.py`). See also `AGENTS.md`.
 
 Use this file to continue engineering work in a new session. Prefer this over `README.md` for file-level rules. For the proposal narrative (problem, objectives, LLM use, impact, future scope) read **`full.md`**. For a public overview read **`README.md`**.
 
@@ -141,7 +143,7 @@ Any client (frontend/ or a new web / React Native folder using clients/js)
 **Accounts are optional.** Sign-in is a sidebar action, not a gate. Dashboard, search, nowcast, and Advisor work as a guest. Profiles (phone, GPS at register, SMS opt-in, alert location) persist on MongoDB Atlas when `MONGODB_URI` is set, else an in-process store. SMS uses Fast2SMS or dry-run.
 ```
 
-One process serves web and app together. Do not change frontend URLs: they stay on `/api`. App clients may use `/app/v1` (or keep `/api`). Optional header `X-Rituchakra-Client: web|app|local|v1` is echoed as `X-Client-Surface`.
+One process serves web and app together. Do not change frontend URLs: they stay on `/api`. App clients may use `/app/v1` (or keep `/api`). Optional header `X-Prithvi AI-Client: web|app|local|v1` is echoed as `X-Client-Surface`.
 
 **Snapshot is the core object.** Almost every dashboard widget and most tools read a `DashboardSnapshot`.
 
@@ -703,7 +705,7 @@ Use `clients/js`. Do not fork `frontend/` unless you need that exact Next dashbo
 | 11434 | Ollama |
 | 8081 / 19006 | Expo / RN defaults (CORS already allows these) |
 
-Only one listener on 8000. After a restart, `/api/health` should be 200 and `/` should return JSON (`service: rituchakra-api`).
+Only one listener on 8000. After a restart, `/api/health` should be 200 and `/` should return JSON (`service: prithvi-ai-api`).
 
 ---
 
