@@ -63,6 +63,20 @@ from app.llm import ollama_client
 from app.schemas.chat import ChatRequest
 from app.schemas.location import Location
 from app.services.location_svc import resolve_india_place, resolve_location, resolve_named_place
+from app.agents.orch_place import (
+    _bind_focus_place,
+    _fold_hit,
+    _iso_window,
+    _place_matches_locus,
+    _same_pin,
+)
+from app.agents.orch_locale import (
+    _english_history,
+    _llm_translate,
+    _localize_validated,
+    _mt_kept_numbers,
+    _usable_translation,
+)
 
 _FOLLOW = re.compile(
     r"\b(there|same|that place|same for|what about|and the|how about|and tomorrow)\b",
@@ -80,127 +94,6 @@ def _parse_args(raw: Any) -> dict[str, Any]:
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
-
-
-async def _english_history(history: list[Any] | None) -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
-    for h in (history or [])[-6:]:
-        role = h.role if getattr(h, "role", None) in {"user", "assistant"} else "user"
-        ready = getattr(h, "content_en", None)
-        raw = getattr(h, "content", None) or ""
-        if ready:
-            content = ready
-        else:
-            pack = await mt_inbound(raw, getattr(h, "locale", None))
-            content = pack.text
-        out.append({"role": role, "content": content})
-    return out
-
-
-def _iso_window(message: str) -> dict[str, str] | None:
-    win = parse_window(message)
-    if not win:
-        return None
-    start, end = win.get("start"), win.get("end")
-    out = {
-        "start": start.isoformat() if hasattr(start, "isoformat") else str(start),
-        "end": end.isoformat() if hasattr(end, "isoformat") else str(end),
-        "kind": str(win.get("kind") or ""),
-    }
-    if win.get("hour") is not None:
-        out["hour"] = str(win["hour"])
-    return out
-
-
-def _same_pin(a: Location | None, b: Location | dict | None) -> bool:
-    if a is None or b is None:
-        return False
-    if isinstance(b, dict):
-        try:
-            lat, lon = float(b.get("lat")), float(b.get("lon"))
-        except (TypeError, ValueError):
-            return False
-    else:
-        lat, lon = float(b.lat), float(b.lon)
-    return abs(float(a.lat) - lat) < 1e-3 and abs(float(a.lon) - lon) < 1e-3
-
-
-def _fold_hit(a: str | None, b: str | None) -> bool:
-    from app.data.fuzzy import fold
-
-    fa, fb = fold(a or ""), fold(b or "")
-    if not fa or not fb:
-        return False
-    return fa == fb or fa in fb or fb in fa
-
-
-def _place_matches_locus(requested: str, loc: Location, asked: str | None) -> bool:
-    names = [asked, loc.place_name, loc.district, loc.label]
-    return any(_fold_hit(requested, n) for n in names)
-
-
-def _bind_focus_place(original: str, message_en: str, pin: Location) -> tuple[str, str | None]:
-    """Trust a place named in the user text; ignore towns invented by inbound MT.
-
-    If nothing is named, keep the dashboard / GPS pin as the locus.
-    """
-    from app.i18n.detect import script_of
-
-    orig_p = mentioned_place(original)
-    en_p = mentioned_place(message_en)
-    if orig_p:
-        return message_en, orig_p
-    if en_p and _place_matches_locus(en_p, pin, None):
-        return message_en, en_p
-    if en_p and script_of(original) is None:
-        return message_en, en_p
-    if en_p and script_of(original):
-        focus = pin.place_name or pin.district or pin.label
-        safe = re.sub(rf"(?i)\b{re.escape(en_p)}\b", focus, message_en or "")
-        pin_state = (pin.state or "").strip()
-        if pin_state:
-            from app.data.india_districts import match_states
-
-            for st in match_states(safe):
-                if st.lower() != pin_state.lower():
-                    safe = re.sub(rf"(?i)\b{re.escape(st)}\b", pin_state, safe)
-        return safe, None
-    return message_en, None
-
-
-def _mt_kept_numbers(en: str, translated: str) -> bool:
-    """True when Indic text still carries the English draft's significant figures."""
-    if is_dash_soup(translated) or "⟦" in (translated or "") or "⟧" in (translated or ""):
-        return False
-    skip = {str(i) for i in range(0, 16)} | {"2024", "2025", "2026", "2027", "2028"}
-    need = {n for n in NUM.findall(en or "") if n not in skip}
-    if not need:
-        return True
-    have = set(NUM.findall(translated or ""))
-    return bool(need & have)
-
-
-async def _localize_validated(content_en: str, out_locale: str, *, native: bool = False):
-    """After English validation, translate the whole reply. Never splice templates."""
-    if out_locale == "en" or not (content_en or "").strip():
-        return content_en, None, "llm-en"
-    if native and has_script(content_en, out_locale):
-        ident = MTResult(text=content_en, src=out_locale, tgt=out_locale, engine="gemini-native", ok=True)
-        return content_en, ident, "gemini-native"
-    outbound = await mt_outbound(content_en, out_locale)
-    usable = bool(
-        outbound.ok
-        and outbound.text
-        and not looks_like_dump(outbound.text)
-        and not is_dash_soup(outbound.text)
-        and not has_null_metrics(outbound.text)
-        and "⟦" not in outbound.text
-        and "⟧" not in outbound.text
-        and _mt_kept_numbers(content_en, outbound.text)
-    )
-    if usable:
-        return outbound.text, outbound, f"llm-en+{outbound.engine}"
-    return content_en, outbound, "en-fallback"
 
 
 async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
@@ -226,8 +119,8 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         from app.llm.providers import resolve as resolve_llm
 
         llm_id = resolve_llm().id
-    native_gemini = llm_id == "gemini" and gemini_native(detected0)
-    if native_gemini:
+    native_in = llm_id == "gemini" and gemini_native(detected0) and detected0 != "en"
+    if native_in:
         incoming = MTResult(text=original, src=detected0 or "en", tgt="en", engine="gemini-native", ok=True)
     else:
         incoming = await mt_inbound(original, payload.locale_hint)
@@ -247,6 +140,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         locale_hint=payload.locale_hint,
         detected=locale,
     )
+    native_gemini = llm_id == "gemini" and gemini_native(out_locale) and out_locale != "en"
 
     prior = mem_load(payload.conversation_id)
     history_en = await _english_history(payload.history)
@@ -835,7 +729,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                         + (
                             "Reply with the InsightReply JSON object only."
                             if insight_turn
-                            else "Reply as chat. Call data() if you need a Rituchakra number for the named place."
+                            else "Reply as chat. Call data() if you need a Prithvi AI number for the named place."
                         )
                     ),
                 }
@@ -930,7 +824,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                             {
                                 "role": "user",
                                 "content": (
-                                    "This question needs Rituchakra figures. "
+                                    "This question needs Prithvi AI figures. "
                                     f"Call data() now with need in {needed}. Then quote those numbers."
                                 ),
                             }
@@ -1139,7 +1033,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         content_en = quoted
     if not content_en:
         if collected:
-            content_en = quoted or "Here is what Rituchakra has for that."
+            content_en = quoted or "Here is what Prithvi AI has for that."
         else:
             content_en = (
                 "I can chat about Indian weather, flood, heat, air, marine, and field decisions. "
