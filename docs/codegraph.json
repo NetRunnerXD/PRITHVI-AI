@@ -1,0 +1,5600 @@
+{
+  "generated_at": "2026-09-19T03:06:31Z",
+  "root": "Prithvi AI",
+  "node_count": 265,
+  "edge_count": 543,
+  "nodes": [
+    {
+      "id": "backend/app/__init__.py",
+      "lines": 1,
+      "lang": "py",
+      "exports": [],
+      "bucket": "__init__.py"
+    },
+    {
+      "id": "backend/app/agents/__init__.py",
+      "lines": 0,
+      "lang": "py",
+      "exports": [],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/binder.py",
+      "lines": 599,
+      "lang": "py",
+      "exports": [
+        "CITE_TOKEN",
+        "SENTENCE",
+        "looks_like_dump",
+        "resolve_cite",
+        "parse_spec",
+        "fallback_spec",
+        "ensure_window_table",
+        "bind",
+        "spec_from_prose"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/claims.py",
+      "lines": 100,
+      "lang": "py",
+      "exports": [
+        "walk_payload_nums",
+        "check_claims"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/counterfactual.py",
+      "lines": 63,
+      "lang": "py",
+      "exports": [
+        "detect_scale",
+        "scale_forecast"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/data_tool.py",
+      "lines": 498,
+      "lang": "py",
+      "exports": [
+        "NEEDS",
+        "SCHEMA",
+        "HOLES",
+        "parse_xml_tool_calls",
+        "parse_text_call",
+        "strip_tool_syntax",
+        "DataLib",
+        "suggestions_for",
+        "attachments_for"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/dates.py",
+      "lines": 206,
+      "lang": "py",
+      "exports": [
+        "parse_hour",
+        "today_ist",
+        "parse_window",
+        "iso_span"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/dimensions.py",
+      "lines": 436,
+      "lang": "py",
+      "exports": [
+        "detect_domain",
+        "ALWAYS_SCHEMAS",
+        "Dimensions",
+        "extract_state",
+        "mentioned_place",
+        "mentioned_places",
+        "extract_compare_other",
+        "extract_metric",
+        "classify",
+        "hint_dimensions",
+        "merge_followup",
+        "required_tools",
+        "wants_nowcast",
+        "safety_tools",
+        "schema_names",
+        "looks_like_place"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/eval_llm.py",
+      "lines": 119,
+      "lang": "py",
+      "exports": [
+        "CASES_PATH",
+        "SKIP_NUM",
+        "load_cases",
+        "significant_numbers",
+        "reply_text",
+        "score_case",
+        "check_need_detector"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/facts.py",
+      "lines": 806,
+      "lang": "py",
+      "exports": [
+        "Gate",
+        "source_gate",
+        "is_pushback",
+        "fill_slots",
+        "is_dash_soup",
+        "has_null_metrics",
+        "drop_false_shrug",
+        "strip_unasked_pin",
+        "strip_foreign_places",
+        "needed_facts",
+        "rank_metric",
+        "quote_facts",
+        "generate_actionable_advice",
+        "format_card_overview",
+        "present_answer",
+        "prose_has_payload_number"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/graph.py",
+      "lines": 97,
+      "lang": "py",
+      "exports": [
+        "NODES",
+        "ALPHA",
+        "DEPTH",
+        "TOP_K",
+        "TAU_LOW",
+        "seed_scores",
+        "activate",
+        "route"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/insight_compiler.py",
+      "lines": 732,
+      "lang": "py",
+      "exports": [
+        "INSIGHT_L1",
+        "INSIGHT_NEEDS",
+        "EPA_AQI",
+        "CPCB_BAND",
+        "CPCB_MEANING",
+        "us_epa_aqi_category",
+        "insight_eligible",
+        "insight_canary",
+        "cache_key",
+        "snapshot_to_collected",
+        "compile_insight",
+        "length_body",
+        "parse_insight_reply",
+        "strip_ungrounded_text",
+        "template_from_packet",
+        "finish_insight_body"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/intent_router.py",
+      "lines": 15,
+      "lang": "py",
+      "exports": [],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/layer1_parser.py",
+      "lines": 346,
+      "lang": "py",
+      "exports": [
+        "SemanticContext",
+        "detect_tone",
+        "fast_parse_entities",
+        "parse_semantic_context"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/ledger.py",
+      "lines": 27,
+      "lang": "py",
+      "exports": [
+        "hash_pack",
+        "root",
+        "ledger_for"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/memory.py",
+      "lines": 45,
+      "lang": "py",
+      "exports": [
+        "TurnState",
+        "load",
+        "save"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/orch_locale.py",
+      "lines": 131,
+      "lang": "py",
+      "exports": [],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/orch_place.py",
+      "lines": 81,
+      "lang": "py",
+      "exports": [],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/orchestrator.py",
+      "lines": 1138,
+      "lang": "py",
+      "exports": [
+        "run_agent"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/post.py",
+      "lines": 73,
+      "lang": "py",
+      "exports": [
+        "HEDGE",
+        "DANGER_FLOOD",
+        "DANGER_AQI",
+        "DANGER_STORM",
+        "BEYOND_SKILL",
+        "hedge",
+        "severity"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/prompts.py",
+      "lines": 59,
+      "lang": "py",
+      "exports": [
+        "INSIGHT_SYSTEM_DELTA",
+        "SYSTEM",
+        "GEMINI_NATIVE_DELTA"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/resolved.py",
+      "lines": 75,
+      "lang": "py",
+      "exports": [
+        "ResolvedQuery",
+        "infer_persona",
+        "build",
+        "as_dict"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/triage.py",
+      "lines": 41,
+      "lang": "py",
+      "exports": [
+        "EMERGENCY_EN",
+        "Triage",
+        "classify"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/utterance.py",
+      "lines": 556,
+      "lang": "py",
+      "exports": [
+        "CATALOG_NEEDS",
+        "Plan",
+        "is_followup_affirm",
+        "wants_catalog",
+        "is_time_followup",
+        "looks_like_bare_place",
+        "unknown_refuse",
+        "is_place_retarget",
+        "extract_asked_span",
+        "interpret"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/agents/views.py",
+      "lines": 169,
+      "lang": "py",
+      "exports": [
+        "FORBIDDEN_KEYS",
+        "strip_forbidden",
+        "compact_nowcast",
+        "compact_science",
+        "snapshot_index",
+        "compact_tool"
+      ],
+      "bucket": "agents"
+    },
+    {
+      "id": "backend/app/api/__init__.py",
+      "lines": 0,
+      "lang": "py",
+      "exports": [],
+      "bucket": "api"
+    },
+    {
+      "id": "backend/app/api/chat.py",
+      "lines": 102,
+      "lang": "py",
+      "exports": [
+        "parse_chat_payload",
+        "chat"
+      ],
+      "bucket": "api"
+    },
+    {
+      "id": "backend/app/api/dashboard.py",
+      "lines": 448,
+      "lang": "py",
+      "exports": [
+        "imd_asia_jpeg",
+        "dashboard",
+        "dashboard_post",
+        "dashboard_enrich",
+        "forecast",
+        "forecast_hourly",
+        "blend_weights",
+        "blend_hazards",
+        "vera_parameters",
+        "vera_train",
+        "vera_train_status",
+        "predictions",
+        "outlook",
+        "risks",
+        "science_api",
+        "nowcast_api",
+        "nowcast_live_api",
+        "nowcast_live_alias",
+        "nowcast_sat_api",
+        "insights",
+        "alerts_api",
+        "market_api",
+        "compare_api",
+        "storm_map_api",
+        "states_api",
+        "districts_api",
+        "scan_api",
+        "list_tools",
+        "brief"
+      ],
+      "bucket": "api"
+    },
+    {
+      "id": "backend/app/api/deps.py",
+      "lines": 24,
+      "lang": "py",
+      "exports": [
+        "loc_from_query"
+      ],
+      "bucket": "api"
+    },
+    {
+      "id": "backend/app/api/geo.py",
+      "lines": 210,
+      "lang": "py",
+      "exports": [
+        "BHUVAN_WMS",
+        "BHUVAN_WB",
+        "BHUVAN_IN",
+        "geo_search",
+        "geo_reverse",
+        "geo_nearby",
+        "map_weather_grid",
+        "map_radar",
+        "map_layers",
+        "bhuvan_wms_proxy"
+      ],
+      "bucket": "api"
+    },
+    {
+      "id": "backend/app/api/llm_worker.py",
+      "lines": 79,
+      "lang": "py",
+      "exports": [
+        "llm_home_status",
+        "llm_worker"
+      ],
+      "bucket": "api"
+    },
+    {
+      "id": "backend/app/api/meta.py",
+      "lines": 196,
+      "lang": "py",
+      "exports": [
+        "SURFACES",
+        "service_card",
+        "capabilities",
+        "health_head",
+        "health",
+        "ready",
+        "trigger_ingest",
+        "bootstrap"
+      ],
+      "bucket": "api"
+    },
+    {
+      "id": "backend/app/api/speech.py",
+      "lines": 65,
+      "lang": "py",
+      "exports": [
+        "TtsIn",
+        "speech_status",
+        "speech_stt",
+        "speech_tts"
+      ],
+      "bucket": "api"
+    },
+    {
+      "id": "backend/app/api/surfaces.py",
+      "lines": 47,
+      "lang": "py",
+      "exports": [
+        "infer_surface",
+        "mount_surfaces"
+      ],
+      "bucket": "api"
+    },
+    {
+      "id": "backend/app/auth/__init__.py",
+      "lines": 1,
+      "lang": "py",
+      "exports": [],
+      "bucket": "auth"
+    },
+    {
+      "id": "backend/app/auth/alerts_job.py",
+      "lines": 82,
+      "lang": "py",
+      "exports": [
+        "SEVERE",
+        "scan_once",
+        "loop",
+        "should_start"
+      ],
+      "bucket": "auth"
+    },
+    {
+      "id": "backend/app/auth/db.py",
+      "lines": 142,
+      "lang": "py",
+      "exports": [
+        "reset_memory",
+        "mongo_enabled",
+        "connect",
+        "close",
+        "public_user",
+        "insert_user",
+        "find_by_phone",
+        "find_by_id",
+        "update_user",
+        "opted_in_users",
+        "sms_already_sent",
+        "log_sms"
+      ],
+      "bucket": "auth"
+    },
+    {
+      "id": "backend/app/auth/router.py",
+      "lines": 215,
+      "lang": "py",
+      "exports": [
+        "register",
+        "login",
+        "me",
+        "patch_me",
+        "patch_location",
+        "forgot",
+        "reset",
+        "logout",
+        "DemoSmsSendIn",
+        "sms_demo_status",
+        "sms_demo_preview",
+        "sms_demo_send"
+      ],
+      "bucket": "auth"
+    },
+    {
+      "id": "backend/app/auth/schemas.py",
+      "lines": 42,
+      "lang": "py",
+      "exports": [
+        "RegisterIn",
+        "LoginIn",
+        "ProfilePatch",
+        "LocationPatch",
+        "ForgotIn",
+        "ResetIn"
+      ],
+      "bucket": "auth"
+    },
+    {
+      "id": "backend/app/auth/security.py",
+      "lines": 71,
+      "lang": "py",
+      "exports": [
+        "PHONE_RE",
+        "normalize_phone",
+        "phone_ok",
+        "hash_password",
+        "check_password",
+        "hash_otp",
+        "new_otp",
+        "jwt_secret",
+        "make_token",
+        "read_token"
+      ],
+      "bucket": "auth"
+    },
+    {
+      "id": "backend/app/auth/sms.py",
+      "lines": 99,
+      "lang": "py",
+      "exports": [
+        "FAST2SMS",
+        "QUICK_ROUTE",
+        "SMS_MAX",
+        "demo_phone",
+        "status",
+        "send_sms"
+      ],
+      "bucket": "auth"
+    },
+    {
+      "id": "backend/app/auth/sms_compose.py",
+      "lines": 399,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "fmt_ist",
+        "fmt_span",
+        "facts_pack",
+        "template_sms",
+        "preview_sms"
+      ],
+      "bucket": "auth"
+    },
+    {
+      "id": "backend/app/cache.py",
+      "lines": 170,
+      "lang": "py",
+      "exports": [
+        "get",
+        "peek",
+        "set",
+        "keys_prefix",
+        "clear",
+        "remember",
+        "aget"
+      ],
+      "bucket": "cache.py"
+    },
+    {
+      "id": "backend/app/config.py",
+      "lines": 133,
+      "lang": "py",
+      "exports": [
+        "ROOT",
+        "Settings",
+        "get_settings"
+      ],
+      "bucket": "config.py"
+    },
+    {
+      "id": "backend/app/data/__init__.py",
+      "lines": 0,
+      "lang": "py",
+      "exports": [],
+      "bucket": "data"
+    },
+    {
+      "id": "backend/app/data/blocked_places.py",
+      "lines": 31,
+      "lang": "py",
+      "exports": [
+        "FICTION",
+        "FOREIGN",
+        "is_blocked_name"
+      ],
+      "bucket": "data"
+    },
+    {
+      "id": "backend/app/data/closed_class.py",
+      "lines": 78,
+      "lang": "py",
+      "exports": [
+        "CALENDAR",
+        "DEIXIS",
+        "PRODUCT",
+        "CLOSED",
+        "tokens_of",
+        "is_closed_token",
+        "is_closed_query",
+        "is_time_only"
+      ],
+      "bucket": "data"
+    },
+    {
+      "id": "backend/app/data/cwc_wb.py",
+      "lines": 57,
+      "lang": "py",
+      "exports": [
+        "MAX_SHOW_KM",
+        "nearest"
+      ],
+      "bucket": "data"
+    },
+    {
+      "id": "backend/app/data/fuzzy.py",
+      "lines": 131,
+      "lang": "py",
+      "exports": [
+        "clean_place_query",
+        "fold",
+        "damerau",
+        "ratio",
+        "close_enough",
+        "match_rank",
+        "tokens",
+        "best_fuzzy"
+      ],
+      "bucket": "data"
+    },
+    {
+      "id": "backend/app/data/india_capitals.py",
+      "lines": 215,
+      "lang": "py",
+      "exports": [
+        "capital_of",
+        "all_capital_names",
+        "all_capitals"
+      ],
+      "bucket": "data"
+    },
+    {
+      "id": "backend/app/data/india_coast.py",
+      "lines": 72,
+      "lang": "py",
+      "exports": [
+        "nearest_coast"
+      ],
+      "bucket": "data"
+    },
+    {
+      "id": "backend/app/data/india_districts.py",
+      "lines": 433,
+      "lang": "py",
+      "exports": [
+        "all_districts",
+        "default_district",
+        "search_districts",
+        "all_states",
+        "is_state_name",
+        "state_frame",
+        "districts_in_state",
+        "extract_places",
+        "extract_place",
+        "match_states",
+        "match_state",
+        "nearest",
+        "state_representative_district"
+      ],
+      "bucket": "data"
+    },
+    {
+      "id": "backend/app/data/india_mask.py",
+      "lines": 154,
+      "lang": "py",
+      "exports": [
+        "in_india"
+      ],
+      "bucket": "data"
+    },
+    {
+      "id": "backend/app/data/india_towns.py",
+      "lines": 144,
+      "lang": "py",
+      "exports": [
+        "extract_towns",
+        "extract_town",
+        "search_towns"
+      ],
+      "bucket": "data"
+    },
+    {
+      "id": "backend/app/data/physiography.py",
+      "lines": 221,
+      "lang": "py",
+      "exports": [
+        "HOOGHLY_DISTRICTS",
+        "HOOGHLY_TOWNS",
+        "OROGRAPHIC_STATES",
+        "OROGRAPHIC_DISTRICTS",
+        "ARID_DISTRICTS",
+        "KAL_STATES",
+        "hugli_relevant",
+        "classify"
+      ],
+      "bucket": "data"
+    },
+    {
+      "id": "backend/app/http_urls.py",
+      "lines": 23,
+      "lang": "py",
+      "exports": [
+        "public_origin",
+        "api_url"
+      ],
+      "bucket": "http_urls.py"
+    },
+    {
+      "id": "backend/app/i18n/__init__.py",
+      "lines": 0,
+      "lang": "py",
+      "exports": [],
+      "bucket": "i18n"
+    },
+    {
+      "id": "backend/app/i18n/detect.py",
+      "lines": 189,
+      "lang": "py",
+      "exports": [
+        "SCHEDULED_22",
+        "normalize_lang",
+        "script_of",
+        "detect_lang",
+        "has_script",
+        "pick_output_locale"
+      ],
+      "bucket": "i18n"
+    },
+    {
+      "id": "backend/app/i18n/gemini_langs.py",
+      "lines": 38,
+      "lang": "py",
+      "exports": [
+        "GEMINI_NATIVE",
+        "GEMINI_WEAK_INDIC",
+        "gemini_native"
+      ],
+      "bucket": "i18n"
+    },
+    {
+      "id": "backend/app/i18n/mt.py",
+      "lines": 453,
+      "lang": "py",
+      "exports": [
+        "GTX_URL",
+        "GTX_CLIENTS5_URL",
+        "GTX_T_URL",
+        "MYMEMORY_URL",
+        "MTResult",
+        "protect",
+        "restore",
+        "held_missing",
+        "translate",
+        "inbound",
+        "outbound"
+      ],
+      "bucket": "i18n"
+    },
+    {
+      "id": "backend/app/i18n/number_lock.py",
+      "lines": 65,
+      "lang": "py",
+      "exports": [
+        "NUM",
+        "ISO_DATE",
+        "walk_numbers",
+        "allowed_from_tools",
+        "ungrounded",
+        "lock_and_note"
+      ],
+      "bucket": "i18n"
+    },
+    {
+      "id": "backend/app/i18n/templates.py",
+      "lines": 93,
+      "lang": "py",
+      "exports": [
+        "INTENSITY",
+        "render"
+      ],
+      "bucket": "i18n"
+    },
+    {
+      "id": "backend/app/i18n/translate_reply.py",
+      "lines": 289,
+      "lang": "py",
+      "exports": [
+        "compose_indic",
+        "translate_reply"
+      ],
+      "bucket": "i18n"
+    },
+    {
+      "id": "backend/app/ingest/__init__.py",
+      "lines": 1,
+      "lang": "py",
+      "exports": [],
+      "bucket": "ingest"
+    },
+    {
+      "id": "backend/app/ingest/cycle.py",
+      "lines": 125,
+      "lang": "py",
+      "exports": [
+        "SATELLITES",
+        "run_cycle"
+      ],
+      "bucket": "ingest"
+    },
+    {
+      "id": "backend/app/ingest/wipe.py",
+      "lines": 22,
+      "lang": "py",
+      "exports": [
+        "main"
+      ],
+      "bucket": "ingest"
+    },
+    {
+      "id": "backend/app/ingest/worker.py",
+      "lines": 39,
+      "lang": "py",
+      "exports": [
+        "ingest_loop",
+        "main"
+      ],
+      "bucket": "ingest"
+    },
+    {
+      "id": "backend/app/llm/__init__.py",
+      "lines": 0,
+      "lang": "py",
+      "exports": [],
+      "bucket": "llm"
+    },
+    {
+      "id": "backend/app/llm/ollama_client.py",
+      "lines": 357,
+      "lang": "py",
+      "exports": [
+        "use_provider",
+        "reset_provider",
+        "client",
+        "sanitize_tools",
+        "chat",
+        "ping",
+        "catalog"
+      ],
+      "bucket": "llm"
+    },
+    {
+      "id": "backend/app/llm/providers.py",
+      "lines": 115,
+      "lang": "py",
+      "exports": [
+        "GROQ_URL",
+        "GEMINI_URL",
+        "OPENROUTER_URL",
+        "XAI_URL",
+        "GITHUB_URL",
+        "IDS",
+        "SETTINGS_IDS",
+        "Provider",
+        "spec",
+        "available",
+        "resolve",
+        "select_narrator",
+        "fallback_ids"
+      ],
+      "bucket": "llm"
+    },
+    {
+      "id": "backend/app/llm/worker_hub.py",
+      "lines": 103,
+      "lang": "py",
+      "exports": [
+        "WorkerOffline",
+        "WorkerHub"
+      ],
+      "bucket": "llm"
+    },
+    {
+      "id": "backend/app/main.py",
+      "lines": 146,
+      "lang": "py",
+      "exports": [
+        "lifespan",
+        "stamp_version",
+        "root",
+        "api_catalog"
+      ],
+      "bucket": "main.py"
+    },
+    {
+      "id": "backend/app/ml/__init__.py",
+      "lines": 0,
+      "lang": "py",
+      "exports": [],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/anomaly.py",
+      "lines": 98,
+      "lang": "py",
+      "exports": [
+        "compute"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/blend.py",
+      "lines": 243,
+      "lang": "py",
+      "exports": [
+        "build_dual_predictions"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/features.py",
+      "lines": 420,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "hourly_now_index",
+        "past_window",
+        "from_now",
+        "value_at_now",
+        "extract"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/hazards_outlook.py",
+      "lines": 102,
+      "lang": "py",
+      "exports": [
+        "build_hazard_forecast"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/hybrid_blend.py",
+      "lines": 97,
+      "lang": "py",
+      "exports": [
+        "RAIN_HEAVY_MM",
+        "RAIN_VERY_HEAVY_MM",
+        "RAIN_EXTREME_MM",
+        "vincentize",
+        "p_exceed",
+        "equal_weights",
+        "member_daily_from_om",
+        "day_members"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/outlook.py",
+      "lines": 196,
+      "lang": "py",
+      "exports": [
+        "build_outlook",
+        "build_hourly_7d",
+        "pick_hourly_slot",
+        "compact_compare"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/prescribe.py",
+      "lines": 199,
+      "lang": "py",
+      "exports": [
+        "FIELD_CAPACITY",
+        "WILTING",
+        "ROOT_MM",
+        "recommend"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/risk.py",
+      "lines": 387,
+      "lang": "py",
+      "exports": [
+        "FLOOD_WEIGHTS",
+        "LIVELIHOOD_WEIGHTS",
+        "DROUGHT_WEIGHTS",
+        "HEAT_WEIGHTS",
+        "IRRIG_WEIGHTS",
+        "AIR_WEIGHTS",
+        "SEISMIC_WEIGHTS",
+        "TSUNAMI_WEIGHTS",
+        "flood_risk",
+        "drought_risk",
+        "heat_risk",
+        "irrigation_need",
+        "air_quality_risk",
+        "seismic_risk",
+        "tsunami_risk",
+        "livelihood_risk",
+        "all_risks"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/sky.py",
+      "lines": 135,
+      "lang": "py",
+      "exports": [
+        "COMPASS",
+        "ROSE_ORDER",
+        "SKY",
+        "sky_label",
+        "compass",
+        "flow_deg",
+        "flow_compass",
+        "rose_bins"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/train/__init__.py",
+      "lines": 1,
+      "lang": "py",
+      "exports": [],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/train/eqrn.py",
+      "lines": 144,
+      "lang": "py",
+      "exports": [
+        "WEIGHTS",
+        "META",
+        "LOG",
+        "device_name",
+        "train",
+        "predict_quantiles",
+        "status"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/train/finetune_precip.py",
+      "lines": 16,
+      "lang": "py",
+      "exports": [
+        "step",
+        "main"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/train/pretrain_sat.py",
+      "lines": 18,
+      "lang": "py",
+      "exports": [
+        "main"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/train/swin_unet.py",
+      "lines": 116,
+      "lang": "py",
+      "exports": [
+        "WEIGHTS",
+        "META",
+        "FRAME_DIR",
+        "train",
+        "status"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/train/train_gate.py",
+      "lines": 39,
+      "lang": "py",
+      "exports": [
+        "WEIGHTS",
+        "main"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/__init__.py",
+      "lines": 5,
+      "lang": "py",
+      "exports": [],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/cv_branch.py",
+      "lines": 425,
+      "lang": "py",
+      "exports": [
+        "FRAME_DIR",
+        "SEQ_PATH",
+        "persist_grid",
+        "load_sequence",
+        "cnn_encode",
+        "convlstm",
+        "temporal_vit",
+        "swin_encode",
+        "unet_decode",
+        "heatmap_png",
+        "rain_png",
+        "derived",
+        "embedding_vector",
+        "run",
+        "try_persist_from_insat"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/disagreement.py",
+      "lines": 88,
+      "lang": "py",
+      "exports": [
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/extremes.py",
+      "lines": 165,
+      "lang": "py",
+      "exports": [
+        "LEVELS",
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/fusion.py",
+      "lines": 257,
+      "lang": "py",
+      "exports": [
+        "RAIN_VERY_HEAVY_DOC",
+        "QUANTILES",
+        "pinball_loss",
+        "pinball_mean",
+        "member_quantiles",
+        "blend_quantiles",
+        "p_from_quantiles",
+        "gaussian_pdf",
+        "mixture_pdf",
+        "schaake_shuffle",
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/gate.py",
+      "lines": 384,
+      "lang": "py",
+      "exports": [
+        "WEIGHT_PATH",
+        "LEAD_WINDOWS",
+        "CONDITION_KEYS",
+        "cross_attention",
+        "kalman_smooth",
+        "tv_smooth",
+        "rgb_map",
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/heads.py",
+      "lines": 317,
+      "lang": "py",
+      "exports": [
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/historical.py",
+      "lines": 198,
+      "lang": "py",
+      "exports": [
+        "GRID_DIR",
+        "CATALOG",
+        "load_imd_series",
+        "climatology",
+        "extreme_catalog",
+        "analogue_search",
+        "spatial_patterns",
+        "embedding",
+        "kmeans_probs",
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/hourly.py",
+      "lines": 144,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "PAST_H",
+        "FUTURE_H",
+        "member_hourly",
+        "blend_hour",
+        "mean_hour",
+        "build"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/intra_hour.py",
+      "lines": 378,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "WD",
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/issue_store.py",
+      "lines": 110,
+      "lang": "py",
+      "exports": [
+        "mongo_ok",
+        "upsert_frozen",
+        "set_obs",
+        "load_pin"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/leads.py",
+      "lines": 86,
+      "lang": "py",
+      "exports": [
+        "LEADS_H",
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/mlops.py",
+      "lines": 95,
+      "lang": "py",
+      "exports": [
+        "LEDGER",
+        "REG",
+        "update_skill",
+        "registry",
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/pipeline.py",
+      "lines": 302,
+      "lang": "py",
+      "exports": [
+        "api_needed",
+        "GRAPH",
+        "build_vera"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/preprocess.py",
+      "lines": 49,
+      "lang": "py",
+      "exports": [
+        "quantile_map",
+        "align_hourly",
+        "impute",
+        "remap_note"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/regime.py",
+      "lines": 81,
+      "lang": "py",
+      "exports": [
+        "REGIMES",
+        "classify"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/replays.py",
+      "lines": 55,
+      "lang": "py",
+      "exports": [
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/temporal.py",
+      "lines": 64,
+      "lang": "py",
+      "exports": [
+        "sat_weight",
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/ml/vera/verify.py",
+      "lines": 478,
+      "lang": "py",
+      "exports": [
+        "LOG",
+        "IST",
+        "ingest_forecast",
+        "backfill_obs",
+        "csi",
+        "scores",
+        "walk_forward_cv",
+        "history",
+        "om_blend_pack",
+        "agreement",
+        "hourly_history",
+        "run"
+      ],
+      "bucket": "ml"
+    },
+    {
+      "id": "backend/app/providers/__init__.py",
+      "lines": 0,
+      "lang": "py",
+      "exports": [],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/aikosh.py",
+      "lines": 30,
+      "lang": "py",
+      "exports": [
+        "search_datasets"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/cwc.py",
+      "lines": 17,
+      "lang": "py",
+      "exports": [
+        "lookup"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/datagov.py",
+      "lines": 327,
+      "lang": "py",
+      "exports": [
+        "BASE",
+        "AQI_ID",
+        "MANDI_ID",
+        "STATE_ALIASES",
+        "CITY_ALIASES",
+        "AQI_CATEGORY",
+        "aqi_category",
+        "resource",
+        "nearest_aqi",
+        "mandi_prices",
+        "mandi_by_state"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/firms.py",
+      "lines": 176,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "CSV_URLS",
+        "BIN",
+        "parse_csv",
+        "cluster",
+        "fetch_india",
+        "near_pin"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/gdacs.py",
+      "lines": 120,
+      "lang": "py",
+      "exports": [
+        "RSS",
+        "SEARCH",
+        "parse_events",
+        "events"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/gibs_ir.py",
+      "lines": 180,
+      "lang": "py",
+      "exports": [
+        "WMS",
+        "IR_LAYERS",
+        "IMERG_LAYERS",
+        "decode_gray",
+        "decode_rgb",
+        "gray_to_tb",
+        "rgb_to_mmh",
+        "fetch_ir",
+        "fetch_imerg"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/gpm_imerg.py",
+      "lines": 335,
+      "lang": "py",
+      "exports": [
+        "ARCHIVE",
+        "CMR",
+        "OBS_LOG",
+        "earthdata_token",
+        "earthdata_ready",
+        "status",
+        "GESDISC_EULA",
+        "OPENDAP_ROOT",
+        "fetch_pin",
+        "append_obs",
+        "fetch_late_pin"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/graphcast_run.py",
+      "lines": 33,
+      "lang": "py",
+      "exports": [
+        "WEIGHTS",
+        "status",
+        "attach_members"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/hazards.py",
+      "lines": 437,
+      "lang": "py",
+      "exports": [
+        "USGS",
+        "INCOIS_CATALOG",
+        "INCOIS_FEEDS",
+        "felt_radius_km",
+        "quake_affects_pin",
+        "filter_quakes_for_pin",
+        "tsunami_affects_pin",
+        "filter_tsunami_for_pin",
+        "parse_usgs_csv",
+        "recent_quakes",
+        "EMSC",
+        "emsc_quakes",
+        "parse_incois_catalog",
+        "incois_tsunami"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/http.py",
+      "lines": 31,
+      "lang": "py",
+      "exports": [
+        "client",
+        "aclose"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/imd.py",
+      "lines": 245,
+      "lang": "py",
+      "exports": [
+        "CAP_RSS",
+        "official_get",
+        "city_forecast",
+        "district_rainfall",
+        "district_warnings",
+        "basin_qpf",
+        "cap_alerts",
+        "alerts_for_location",
+        "is_national_severe",
+        "national_severe",
+        "INDIAN_REGIONS",
+        "extract_region_hint",
+        "severity_from_title",
+        "humanize_cap_title",
+        "clean_cap_body",
+        "now_iso"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/imd_gridded.py",
+      "lines": 48,
+      "lang": "py",
+      "exports": [
+        "GRID_DIR",
+        "IMD_INDEX",
+        "status",
+        "write_pin_series",
+        "ingest_from_nasa",
+        "ingest_index"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/imd_insat.py",
+      "lines": 280,
+      "lang": "py",
+      "exports": [
+        "IR_URLS",
+        "CHANNELS",
+        "ASIA_BOUNDS",
+        "INDIA_BOUNDS",
+        "CHROME_LTRB",
+        "crop_chrome",
+        "downsample_india",
+        "downsample_sector",
+        "fetch_jpeg",
+        "fetch_ir",
+        "fetch_sector",
+        "fetch_channels"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/lightning_feed.py",
+      "lines": 236,
+      "lang": "py",
+      "exports": [
+        "STROKE_MEM",
+        "IST",
+        "parse_rows",
+        "fetch_bbox",
+        "remember_strokes",
+        "fetch_hubs"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/mosdac.py",
+      "lines": 495,
+      "lang": "py",
+      "exports": [
+        "ARCHIVE",
+        "TOKEN_URL",
+        "SEARCH_URL",
+        "DOWNLOAD_URL",
+        "REFRESH_URL",
+        "LOGOUT_URL",
+        "DATASETS",
+        "PRIORITY",
+        "L1B",
+        "QUOTA_CAP",
+        "NotConfigured",
+        "credentials_present",
+        "status",
+        "list_archive",
+        "logout",
+        "search",
+        "search_latest",
+        "download_granule",
+        "fetch_live",
+        "quota_snapshot",
+        "ingest_latest",
+        "download_product",
+        "hem_knot",
+        "write_mdapi_config"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/nasa_power.py",
+      "lines": 139,
+      "lang": "py",
+      "exports": [
+        "URL",
+        "daily_point",
+        "daily_years",
+        "dated_precip",
+        "precip_series"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/om_thunder.py",
+      "lines": 261,
+      "lang": "py",
+      "exports": [
+        "URL",
+        "IST",
+        "PAST_H",
+        "fetch",
+        "fetch_batch",
+        "thunder_now",
+        "thunder_forward",
+        "agrees",
+        "past_strikes"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/open_meteo.py",
+      "lines": 964,
+      "lang": "py",
+      "exports": [
+        "FORECAST",
+        "FLOOD",
+        "AIR",
+        "MARINE",
+        "ARCHIVE",
+        "GEO",
+        "client_seeded",
+        "seed_from_client",
+        "forecast",
+        "forecast_models",
+        "era5_context",
+        "flood",
+        "air_quality",
+        "marine",
+        "daily_window",
+        "geocode_india"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/openaq.py",
+      "lines": 55,
+      "lang": "py",
+      "exports": [
+        "V2",
+        "history"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/openweather_air.py",
+      "lines": 46,
+      "lang": "py",
+      "exports": [
+        "URL",
+        "current"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/port_signal.py",
+      "lines": 45,
+      "lang": "py",
+      "exports": [
+        "BULLETIN",
+        "hooghly"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/sachet.py",
+      "lines": 124,
+      "lang": "py",
+      "exports": [
+        "IN_RSS",
+        "alerts"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/sat_obs.py",
+      "lines": 126,
+      "lang": "py",
+      "exports": [
+        "from_open_meteo_hours",
+        "knots_from_nowcast",
+        "from_satellite_rate",
+        "from_imerg_rate",
+        "available_source"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/waqi.py",
+      "lines": 45,
+      "lang": "py",
+      "exports": [
+        "FEED",
+        "nearest"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/weather_grid.py",
+      "lines": 261,
+      "lang": "py",
+      "exports": [
+        "FORECAST",
+        "UTC",
+        "CHUNK",
+        "HOURLY",
+        "FIELDS",
+        "mesh",
+        "synthetic",
+        "fetch_raw",
+        "world_grid",
+        "india_grid"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/providers/weatherbit_lightning.py",
+      "lines": 214,
+      "lang": "py",
+      "exports": [
+        "URL",
+        "HIST",
+        "rate_limited",
+        "mark_rate_limited",
+        "parse_payload",
+        "fetch",
+        "fetch_history"
+      ],
+      "bucket": "providers"
+    },
+    {
+      "id": "backend/app/rag/__init__.py",
+      "lines": 0,
+      "lang": "py",
+      "exports": [],
+      "bucket": "rag"
+    },
+    {
+      "id": "backend/app/rag/store.py",
+      "lines": 41,
+      "lang": "py",
+      "exports": [
+        "KNOWLEDGE",
+        "retrieve"
+      ],
+      "bucket": "rag"
+    },
+    {
+      "id": "backend/app/schemas/__init__.py",
+      "lines": 16,
+      "lang": "py",
+      "exports": [],
+      "bucket": "schemas"
+    },
+    {
+      "id": "backend/app/schemas/answer.py",
+      "lines": 85,
+      "lang": "py",
+      "exports": [
+        "TAB_IDS",
+        "MetricItem",
+        "AnswerBlock",
+        "UiAction",
+        "AnswerSpec"
+      ],
+      "bucket": "schemas"
+    },
+    {
+      "id": "backend/app/schemas/chat.py",
+      "lines": 71,
+      "lang": "py",
+      "exports": [
+        "ChatMessage",
+        "ChatRequest"
+      ],
+      "bucket": "schemas"
+    },
+    {
+      "id": "backend/app/schemas/dashboard.py",
+      "lines": 177,
+      "lang": "py",
+      "exports": [
+        "OmClientPack",
+        "DashboardPost",
+        "EarlyWarning",
+        "CurrentConditions",
+        "Anomaly",
+        "Descriptive",
+        "DiagnosticStory",
+        "Diagnostic",
+        "Predictive",
+        "Prescriptive",
+        "MapState",
+        "LiveWatch",
+        "DashboardSnapshot"
+      ],
+      "bucket": "schemas"
+    },
+    {
+      "id": "backend/app/schemas/insight.py",
+      "lines": 37,
+      "lang": "py",
+      "exports": [
+        "Band",
+        "InsightPacket",
+        "InsightReply"
+      ],
+      "bucket": "schemas"
+    },
+    {
+      "id": "backend/app/schemas/location.py",
+      "lines": 20,
+      "lang": "py",
+      "exports": [
+        "Location"
+      ],
+      "bucket": "schemas"
+    },
+    {
+      "id": "backend/app/schemas/risk.py",
+      "lines": 53,
+      "lang": "py",
+      "exports": [
+        "TimePoint",
+        "Factor",
+        "RiskCard",
+        "Quant",
+        "Prescription"
+      ],
+      "bucket": "schemas"
+    },
+    {
+      "id": "backend/app/science/__init__.py",
+      "lines": 106,
+      "lang": "py",
+      "exports": [
+        "enrich_features",
+        "build_science"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/alert_head.py",
+      "lines": 68,
+      "lang": "py",
+      "exports": [
+        "p_exceed",
+        "word",
+        "build"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/astro.py",
+      "lines": 111,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "moon_illumination",
+        "moon_rise_set",
+        "at_pin"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/bandit.py",
+      "lines": 53,
+      "lang": "py",
+      "exports": [
+        "pick"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/blindspot.py",
+      "lines": 42,
+      "lang": "py",
+      "exports": [
+        "detect"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/convective.py",
+      "lines": 240,
+      "lang": "py",
+      "exports": [
+        "build"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/cv_memory.py",
+      "lines": 223,
+      "lang": "py",
+      "exports": [
+        "DISK",
+        "KEEP_H",
+        "mongo_ok",
+        "remember_cells",
+        "remember_frame",
+        "last_ir_cells",
+        "past_cells"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/cv_nowcast.py",
+      "lines": 402,
+      "lang": "py",
+      "exports": [
+        "FRAME_PATH",
+        "OT_K",
+        "DEEP_K",
+        "block_flow",
+        "cooling_stats",
+        "schultz_jump",
+        "lightningcast_lite",
+        "lightning_prob",
+        "cloudburst_prob",
+        "enhance"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/env_hazards.py",
+      "lines": 535,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "IGP_STATES",
+        "FOG_VERY_DENSE",
+        "FOG_DENSE",
+        "FOG_MODERATE",
+        "FOG_SHALLOW",
+        "UVI_HIGH",
+        "UVI_VERY_HIGH",
+        "UVI_EXTREME",
+        "fog_nowcast",
+        "heatwave_nowcast",
+        "uv_nowcast",
+        "compound_uv_heat",
+        "convective_window",
+        "build"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/hysteresis.py",
+      "lines": 106,
+      "lang": "py",
+      "exports": [
+        "initial_state",
+        "step_day",
+        "fingerprint"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/landslide.py",
+      "lines": 101,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "HILL_STATES",
+        "nowcast"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/ledger.py",
+      "lines": 38,
+      "lang": "py",
+      "exports": [
+        "week"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/live.py",
+      "lines": 319,
+      "lang": "py",
+      "exports": [
+        "LOG_PATH",
+        "gap_series",
+        "hugli_station",
+        "tide_height_m",
+        "playhead",
+        "attach_live",
+        "persist_issue",
+        "load_issues",
+        "skill_from_log"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/livelihood.py",
+      "lines": 67,
+      "lang": "py",
+      "exports": [
+        "evaluate"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/monsoon.py",
+      "lines": 28,
+      "lang": "py",
+      "exports": [
+        "clock"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/nowcast.py",
+      "lines": 1075,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "split_hours",
+        "state_vector",
+        "regime",
+        "advection",
+        "stream_pair",
+        "neighbor_storm",
+        "neighborhood_skill",
+        "cap_prior",
+        "blend_hours",
+        "onset_cessation",
+        "kal_baisakhi",
+        "ponding",
+        "hourly_budget",
+        "tide_rain",
+        "pluvial_fluvial",
+        "pump_regret",
+        "cost_loss",
+        "air_hours",
+        "labour_window",
+        "squall_vis",
+        "field_access",
+        "fuse_speech",
+        "apply_speech_only",
+        "error_memory",
+        "decide_actions",
+        "locked",
+        "build",
+        "fetch_neighbors"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/phenology.py",
+      "lines": 83,
+      "lang": "py",
+      "exports": [
+        "invert"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/pollen_in.py",
+      "lines": 106,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "pollen_remark",
+        "estimate"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/rain_field.py",
+      "lines": 181,
+      "lang": "py",
+      "exports": [
+        "rain_from_tb",
+        "optical_flow",
+        "advect",
+        "steps_ensemble",
+        "sample_pin",
+        "pack"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/regret.py",
+      "lines": 58,
+      "lang": "py",
+      "exports": [
+        "evaluate"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/residual.py",
+      "lines": 83,
+      "lang": "py",
+      "exports": [
+        "monsoon_regime",
+        "atlas_lookup",
+        "describe"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/sat_cv.py",
+      "lines": 407,
+      "lang": "py",
+      "exports": [
+        "DEEP_K",
+        "CORE_K",
+        "COLD_K",
+        "INSAT_SUB_LON",
+        "OVERLAP_MIN",
+        "ir_rain_mmh",
+        "parallax_nudge",
+        "segment",
+        "track",
+        "forecast_track",
+        "pin_eta_min",
+        "associate_strokes"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/sat_kalman.py",
+      "lines": 583,
+      "lang": "py",
+      "exports": [
+        "EPS",
+        "STATE_PATH",
+        "Q_DIAG",
+        "R_OBS",
+        "MAX_INNOV",
+        "set_state_path",
+        "place_key",
+        "load",
+        "save",
+        "rate_from_x",
+        "predict_rate",
+        "formula",
+        "propagate",
+        "update",
+        "ingest_knots",
+        "series",
+        "replay_history",
+        "integral_mm",
+        "pack",
+        "attach_to_nowcast"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/sat_live.py",
+      "lines": 172,
+      "lang": "py",
+      "exports": [
+        "TRACK_PATH",
+        "place_key",
+        "fetch",
+        "compact"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/sat_phys.py",
+      "lines": 373,
+      "lang": "py",
+      "exports": [
+        "code_class",
+        "drivers_from_features",
+        "compact_drivers",
+        "hydrate",
+        "diurnal",
+        "schedule_pulses",
+        "pulse_at",
+        "advect_at",
+        "r_phys",
+        "blend"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/soil.py",
+      "lines": 27,
+      "lang": "py",
+      "exports": [
+        "classify"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/storm_map.py",
+      "lines": 853,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "PAST_CELLS",
+        "remember_past_cells",
+        "build"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/thunder_predict.py",
+      "lines": 498,
+      "lang": "py",
+      "exports": [
+        "IST",
+        "WINDOW_PATH",
+        "VERIFY_PATH",
+        "log_verify",
+        "confidence_of",
+        "remember_start",
+        "lifetime_min",
+        "age_min",
+        "agreement_gate",
+        "remaining_min",
+        "ellipse_ring",
+        "advect_ring",
+        "cell_ring",
+        "live_window",
+        "lightning_window",
+        "predicted_strikes",
+        "om_predicted",
+        "attach_live_windows"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/verify.py",
+      "lines": 22,
+      "lang": "py",
+      "exports": [
+        "skill_proxy"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/vernacular.py",
+      "lines": 92,
+      "lang": "py",
+      "exports": [
+        "observe_speech",
+        "name_state"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/wb_xai.py",
+      "lines": 33,
+      "lang": "py",
+      "exports": [
+        "attribute"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/science/wbgt.py",
+      "lines": 23,
+      "lang": "py",
+      "exports": [
+        "estimate"
+      ],
+      "bucket": "science"
+    },
+    {
+      "id": "backend/app/services/__init__.py",
+      "lines": 0,
+      "lang": "py",
+      "exports": [],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/alert_scan.py",
+      "lines": 203,
+      "lang": "py",
+      "exports": [
+        "RAIN_VERY_HEAVY",
+        "capital_warning_hits"
+      ],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/alerts.py",
+      "lines": 987,
+      "lang": "py",
+      "exports": [
+        "SEVERE",
+        "IST",
+        "KIND_HREF",
+        "kind_from_text",
+        "india_affects",
+        "is_live",
+        "assemble_warnings"
+      ],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/compare.py",
+      "lines": 34,
+      "lang": "py",
+      "exports": [
+        "compare"
+      ],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/locality.py",
+      "lines": 75,
+      "lang": "py",
+      "exports": [
+        "foreign_states_in",
+        "alert_belongs",
+        "is_warning_or_worse",
+        "national_severe_belongs",
+        "port_relevant",
+        "nearby_is_local"
+      ],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/location_svc.py",
+      "lines": 324,
+      "lang": "py",
+      "exports": [
+        "compose_label",
+        "location_from_geocode",
+        "resolve_named_place",
+        "resolve_india_place",
+        "resolve_location",
+        "search",
+        "search_places",
+        "list_states",
+        "list_districts",
+        "nearby"
+      ],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/rain_window.py",
+      "lines": 159,
+      "lang": "py",
+      "exports": [
+        "fetch_window",
+        "format_en",
+        "format_indic"
+      ],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/scan.py",
+      "lines": 162,
+      "lang": "py",
+      "exports": [
+        "rank_districts",
+        "rank_states",
+        "predict_one"
+      ],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/snapshot.py",
+      "lines": 155,
+      "lang": "py",
+      "exports": [
+        "pin_key",
+        "peek_snapshot",
+        "build_snapshot",
+        "refresh_recent_snapshots",
+        "snapshot_tool_views",
+        "primary_reply"
+      ],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/snapshot_assemble.py",
+      "lines": 724,
+      "lang": "py",
+      "exports": [],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/snapshot_live.py",
+      "lines": 187,
+      "lang": "py",
+      "exports": [],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/snapshot_obs.py",
+      "lines": 281,
+      "lang": "py",
+      "exports": [
+        "gather_observations"
+      ],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/services/speech.py",
+      "lines": 268,
+      "lang": "py",
+      "exports": [
+        "STT_LANGS",
+        "TTS_LANGS",
+        "TTS_MAX_CHARS",
+        "STT_MAX_BYTES",
+        "reset_status_cache",
+        "bcp_for",
+        "lang_id",
+        "plain_for_speech",
+        "sidecar_status",
+        "transcribe",
+        "synthesize"
+      ],
+      "bucket": "services"
+    },
+    {
+      "id": "backend/app/store/__init__.py",
+      "lines": 1,
+      "lang": "py",
+      "exports": [],
+      "bucket": "store"
+    },
+    {
+      "id": "backend/app/store/hazard_events.py",
+      "lines": 295,
+      "lang": "py",
+      "exports": [
+        "LIVE_GAP_MS",
+        "slim_event",
+        "upsert_many",
+        "persist_live_cell",
+        "close_track",
+        "prune",
+        "query",
+        "persist_pack_incidents"
+      ],
+      "bucket": "store"
+    },
+    {
+      "id": "backend/app/store/ingest_status.py",
+      "lines": 135,
+      "lang": "py",
+      "exports": [
+        "DOC_ID",
+        "snapshot",
+        "begin",
+        "update",
+        "finish"
+      ],
+      "bucket": "store"
+    },
+    {
+      "id": "backend/app/store/sat_frames.py",
+      "lines": 126,
+      "lang": "py",
+      "exports": [
+        "BUCKET",
+        "has_granule",
+        "put_frame",
+        "load_grid",
+        "latest",
+        "prune"
+      ],
+      "bucket": "store"
+    },
+    {
+      "id": "backend/app/store/sat_mongo.py",
+      "lines": 124,
+      "lang": "py",
+      "exports": [
+        "sat_mongo_ok",
+        "db_name",
+        "client",
+        "db",
+        "col",
+        "wipe_user_databases"
+      ],
+      "bucket": "store"
+    },
+    {
+      "id": "backend/app/store/time.py",
+      "lines": 71,
+      "lang": "py",
+      "exports": [
+        "ALLOWED_H",
+        "KEEP_H",
+        "KEEP_MS",
+        "to_utc",
+        "iso_z",
+        "ms",
+        "from_ms",
+        "parse_any",
+        "clamp_horizon",
+        "now_utc"
+      ],
+      "bucket": "store"
+    },
+    {
+      "id": "backend/app/tools/__init__.py",
+      "lines": 522,
+      "lang": "py",
+      "exports": [
+        "build_registry"
+      ],
+      "bucket": "tools"
+    },
+    {
+      "id": "backend/app/tools/registry.py",
+      "lines": 43,
+      "lang": "py",
+      "exports": [
+        "Tool",
+        "Registry"
+      ],
+      "bucket": "tools"
+    },
+    {
+      "id": "clients/js/src/config.ts",
+      "lines": 29,
+      "lang": "ts",
+      "exports": [
+        "ApiConfig",
+        "normalizeBase",
+        "joinApi",
+        "withQuery"
+      ],
+      "bucket": "clients"
+    },
+    {
+      "id": "clients/js/src/index.ts",
+      "lines": 132,
+      "lang": "ts",
+      "exports": [
+        "createClient",
+        "Prithvi"
+      ],
+      "bucket": "clients"
+    },
+    {
+      "id": "clients/js/src/sse.ts",
+      "lines": 26,
+      "lang": "ts",
+      "exports": [
+        "SseHandler",
+        "readSse"
+      ],
+      "bucket": "clients"
+    },
+    {
+      "id": "clients/js/src/types.ts",
+      "lines": 87,
+      "lang": "ts",
+      "exports": [
+        "Location",
+        "LocQuery",
+        "ChatBlock",
+        "ChatMsg",
+        "ChatRequest",
+        "Health",
+        "ServiceCard"
+      ],
+      "bucket": "clients"
+    },
+    {
+      "id": "frontend/src/app/api/nowcast/live/route.ts",
+      "lines": 27,
+      "lang": "ts",
+      "exports": [
+        "dynamic",
+        "GET"
+      ],
+      "bucket": "fe-app"
+    },
+    {
+      "id": "frontend/src/app/api/nowcast/sat/route.ts",
+      "lines": 27,
+      "lang": "ts",
+      "exports": [
+        "dynamic",
+        "GET"
+      ],
+      "bucket": "fe-app"
+    },
+    {
+      "id": "frontend/src/app/layout.tsx",
+      "lines": 36,
+      "lang": "tsx",
+      "exports": [
+        "metadata",
+        "viewport"
+      ],
+      "bucket": "fe-app"
+    },
+    {
+      "id": "frontend/src/app/page.tsx",
+      "lines": 475,
+      "lang": "tsx",
+      "exports": [],
+      "bucket": "fe-app"
+    },
+    {
+      "id": "frontend/src/components/AuthModal.tsx",
+      "lines": 404,
+      "lang": "tsx",
+      "exports": [
+        "AuthModal"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/ChatAssistant3D.tsx",
+      "lines": 44,
+      "lang": "tsx",
+      "exports": [
+        "EARTH_GLB",
+        "useModelViewer",
+        "ChatAssistant3D"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/ChatBlocks.tsx",
+      "lines": 123,
+      "lang": "tsx",
+      "exports": [
+        "ChatBlocks"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/ChatDock.tsx",
+      "lines": 621,
+      "lang": "tsx",
+      "exports": [
+        "ChatDock"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/ChatFloat.tsx",
+      "lines": 156,
+      "lang": "tsx",
+      "exports": [
+        "ChatFloat"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/DistrictSearch.tsx",
+      "lines": 209,
+      "lang": "tsx",
+      "exports": [
+        "DistrictSearch"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/EarlyWarnings.tsx",
+      "lines": 254,
+      "lang": "tsx",
+      "exports": [
+        "EarlyWarnings"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/Forecast7DayDeck.tsx",
+      "lines": 847,
+      "lang": "tsx",
+      "exports": [
+        "Forecast7DayDeck"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/ForecastCharts.tsx",
+      "lines": 120,
+      "lang": "tsx",
+      "exports": [
+        "ForecastCharts"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/HourlyForecast.tsx",
+      "lines": 112,
+      "lang": "tsx",
+      "exports": [
+        "HourlyForecast"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/Icons.tsx",
+      "lines": 259,
+      "lang": "tsx",
+      "exports": [
+        "IconOverview",
+        "IconMap",
+        "IconForecast",
+        "IconPredicted",
+        "IconRisks",
+        "IconMarket",
+        "IconNowcast",
+        "IconAlerts",
+        "IconUser",
+        "IconSettings",
+        "IconAdvisor",
+        "IconPanelClose",
+        "IconPanelOpen",
+        "IconRefresh",
+        "IconPin",
+        "IconLanguages",
+        "IconDroplet",
+        "IconMic",
+        "IconVolume",
+        "IconVolumeOff",
+        "IconChevronDown",
+        "IconCross",
+        "IconSend",
+        "IconSparkle"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/LaymanSummaryView.tsx",
+      "lines": 122,
+      "lang": "tsx",
+      "exports": [
+        "LaymanSummaryBody",
+        "LaymanSummaryView"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/LensGrid.tsx",
+      "lines": 107,
+      "lang": "tsx",
+      "exports": [
+        "LensGrid"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/MandiPanel.tsx",
+      "lines": 84,
+      "lang": "tsx",
+      "exports": [
+        "MandiPanel"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/MapView.tsx",
+      "lines": 1549,
+      "lang": "tsx",
+      "exports": [
+        "MapView"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/MapWrap.tsx",
+      "lines": 48,
+      "lang": "tsx",
+      "exports": [
+        "MapWrap"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/Markdown.tsx",
+      "lines": 131,
+      "lang": "tsx",
+      "exports": [
+        "Markdown"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/NowcastLive.tsx",
+      "lines": 373,
+      "lang": "tsx",
+      "exports": [
+        "NowcastLive"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/NowcastSat.tsx",
+      "lines": 282,
+      "lang": "tsx",
+      "exports": [
+        "NowcastSat"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/OutlookTable.tsx",
+      "lines": 104,
+      "lang": "tsx",
+      "exports": [
+        "OutlookTable"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/overview/alertModel.ts",
+      "lines": 687,
+      "lang": "ts",
+      "exports": [
+        "INDIA_CITIES_MAP",
+        "STATE_NAMES",
+        "parseAlertLocation",
+        "AlertCluster",
+        "groupAlertsByLocation",
+        "getGeneralizedAlertGuidance",
+        "openAlert",
+        "formatAlertWindow",
+        "alertTimePhase",
+        "formatOfficialBulletin"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/overview/cards.tsx",
+      "lines": 1518,
+      "lang": "tsx",
+      "exports": [
+        "AirCard",
+        "LandWeatherCard",
+        "MarineWeatherCard",
+        "CycloneRadarScope",
+        "SeismicOscilloscope",
+        "TropicalCycloneCard",
+        "EarthquakeTsunamiCard",
+        "NowcastSection"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/overview/helpers.ts",
+      "lines": 219,
+      "lang": "ts",
+      "exports": [
+        "hhmm",
+        "weekday",
+        "feelsLikeC",
+        "tip",
+        "suggestionLevel",
+        "suggLevel",
+        "alertTone",
+        "alertDot",
+        "haversineKm",
+        "cpcbCategory",
+        "pinAqi",
+        "seaState",
+        "getPollenAssessment",
+        "beaufortScale",
+        "imdRainfallCategory"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/overview/i18n.ts",
+      "lines": 122,
+      "lang": "ts",
+      "exports": [
+        "TRANSLATIONS",
+        "tWord",
+        "translateSeverity",
+        "translateAqiCategory"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/overview/icons.tsx",
+      "lines": 310,
+      "lang": "tsx",
+      "exports": [
+        "IconPin",
+        "IconShieldAlert",
+        "IconWarningSign",
+        "IconFileBulletin",
+        "IconMapNavigator",
+        "IconExternal",
+        "IconCross",
+        "IconChevronDown",
+        "IconSparkle",
+        "IconCyclone",
+        "IconSeismic",
+        "IconTsunamiWave",
+        "HAZARD_THEMES",
+        "getHazardTheme"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/overview/OverviewLive.tsx",
+      "lines": 190,
+      "lang": "tsx",
+      "exports": [
+        "OverviewLive",
+        "OverviewPlots"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/overview/rainWind.tsx",
+      "lines": 844,
+      "lang": "tsx",
+      "exports": [
+        "Stat",
+        "RainOdds",
+        "Spark",
+        "RainfallSection",
+        "WindSection",
+        "WindRose",
+        "SkyGlyph"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "lines": 1009,
+      "lang": "tsx",
+      "exports": [
+        "RiskAlertPanel",
+        "AlertDetailModal",
+        "AlertStat",
+        "HomeHazardStrip"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/OverviewLive.tsx",
+      "lines": 4,
+      "lang": "tsx",
+      "exports": [],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/PredictionsPanel.tsx",
+      "lines": 1562,
+      "lang": "tsx",
+      "exports": [
+        "PredictionsPanel"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/QualityCatalog.tsx",
+      "lines": 312,
+      "lang": "tsx",
+      "exports": [
+        "QualityCatalog"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/RiskCard.tsx",
+      "lines": 62,
+      "lang": "tsx",
+      "exports": [
+        "RiskCard"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/SatProcessMap.tsx",
+      "lines": 191,
+      "lang": "tsx",
+      "exports": [
+        "SatProcessMap"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/SciencePanel.tsx",
+      "lines": 108,
+      "lang": "tsx",
+      "exports": [
+        "SciencePanel"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/SettingsPanel.tsx",
+      "lines": 664,
+      "lang": "tsx",
+      "exports": [
+        "SettingsPanel"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/Sidebar.tsx",
+      "lines": 397,
+      "lang": "tsx",
+      "exports": [
+        "Sidebar"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/SkyRainHero.tsx",
+      "lines": 778,
+      "lang": "tsx",
+      "exports": [
+        "SkyRainHero"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/SquareMap.tsx",
+      "lines": 1105,
+      "lang": "tsx",
+      "exports": [
+        "SquareMap"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/StormFeed.tsx",
+      "lines": 251,
+      "lang": "tsx",
+      "exports": [
+        "StormFeed"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/ThemeBoot.tsx",
+      "lines": 27,
+      "lang": "tsx",
+      "exports": [
+        "ThemeBoot"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/ui.tsx",
+      "lines": 177,
+      "lang": "tsx",
+      "exports": [
+        "Collapse",
+        "Pill",
+        "SourcesBox"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/components/WeatherOverlay.tsx",
+      "lines": 213,
+      "lang": "tsx",
+      "exports": [
+        "WeatherOverlay",
+        "WindParticles"
+      ],
+      "bucket": "fe-components"
+    },
+    {
+      "id": "frontend/src/i18n/copy.ts",
+      "lines": 1282,
+      "lang": "ts",
+      "exports": [
+        "Locale",
+        "COPY"
+      ],
+      "bucket": "fe-i18n"
+    },
+    {
+      "id": "frontend/src/i18n/presets.ts",
+      "lines": 87,
+      "lang": "ts",
+      "exports": [
+        "Preset",
+        "PRESETS",
+        "presetsFor",
+        "askChips"
+      ],
+      "bucket": "fe-i18n"
+    },
+    {
+      "id": "frontend/src/lib/api.ts",
+      "lines": 455,
+      "lang": "ts",
+      "exports": [
+        "fetchNowcastLive",
+        "fetchNowcastSat",
+        "fetchDashboard",
+        "pingReady",
+        "searchPlaces",
+        "SpeechStatus",
+        "fetchSpeechStatus",
+        "reverseGeocode",
+        "StormMapPack",
+        "StormStroke",
+        "StormPolygon",
+        "StormIncident",
+        "StormMapTools",
+        "fetchStates",
+        "fetchWeatherGrid",
+        "fetchRadarFrames",
+        "fetchStormMap",
+        "fetchNearby",
+        "fetchCompare",
+        "SseHandler",
+        "streamChat"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/lib/auth.ts",
+      "lines": 144,
+      "lang": "ts",
+      "exports": [
+        "AuthLocation",
+        "AuthUser",
+        "readToken",
+        "writeToken",
+        "registerAccount",
+        "loginAccount",
+        "fetchMe",
+        "patchProfile",
+        "patchAlertLocation",
+        "forgotPassword",
+        "resetPassword",
+        "logoutAccount",
+        "gpsFix"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/lib/config.ts",
+      "lines": 24,
+      "lang": "ts",
+      "exports": [
+        "API_BASE",
+        "apiUrl"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/lib/laymanSummaries.ts",
+      "lines": 1080,
+      "lang": "ts",
+      "exports": [
+        "MetricTone",
+        "OverviewMetric",
+        "LaymanSummary",
+        "getSkyLaymanSummary",
+        "getRainLaymanSummary",
+        "getWindLaymanSummary",
+        "getAlertsLaymanSummary",
+        "getAirLaymanSummary",
+        "getSoilLaymanSummary",
+        "getMarineLaymanSummary",
+        "get7DayLaymanSummary",
+        "getNowcastLaymanSummary"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/lib/nowcastGap.ts",
+      "lines": 37,
+      "lang": "ts",
+      "exports": [
+        "GapPoint",
+        "gapFromHours"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/lib/openMeteoClient.ts",
+      "lines": 287,
+      "lang": "ts",
+      "exports": [
+        "decodeWeatherCode",
+        "degreesToCompass",
+        "OmClientPack",
+        "getLastOmPack",
+        "fetchDirectOpenMeteo",
+        "fetchClientOmPack",
+        "fetchDirectAqi",
+        "buildOptimisticSnapshot"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/lib/plain.ts",
+      "lines": 176,
+      "lang": "ts",
+      "exports": [
+        "Level",
+        "levelOf",
+        "factorLabel",
+        "levelWord",
+        "riskTitle",
+        "riskTip",
+        "todayStory",
+        "worstWatch"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/lib/satKalman.ts",
+      "lines": 193,
+      "lang": "ts",
+      "exports": [
+        "SatFormula",
+        "SatKnot",
+        "SatHistoryRow",
+        "SatHistChart",
+        "SatPoint",
+        "parseIso",
+        "predictRate",
+        "rateAt",
+        "buildHistoryChart",
+        "ServerPoint",
+        "interpSeries",
+        "chartFromPredSeries",
+        "buildLiveChart"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/lib/speech.ts",
+      "lines": 489,
+      "lang": "ts",
+      "exports": [
+        "ScheduledLang",
+        "SCHEDULED_LANGS",
+        "bcpForSpeech",
+        "defaultSpeechLang",
+        "detectSpeechLang",
+        "hasIndicScript",
+        "SpeechEngineStatus",
+        "sidecarStatus",
+        "loadSpeechStatus",
+        "speechSupported",
+        "startDictation",
+        "pickVoice",
+        "speakText",
+        "stopSpeaking",
+        "plainForSpeech"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/lib/store.ts",
+      "lines": 547,
+      "lang": "ts",
+      "exports": [
+        "ReplyLocale",
+        "MapSessionState",
+        "DEFAULT_MAP_SESSION",
+        "AppSettings",
+        "DEFAULT_SETTINGS",
+        "readSettings",
+        "applyTheme",
+        "useApp"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/lib/units.ts",
+      "lines": 67,
+      "lang": "ts",
+      "exports": [
+        "localizeDigits",
+        "rain",
+        "temp",
+        "speed",
+        "dist",
+        "height",
+        "rainUnit",
+        "tempUnit"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/lib/weatherScale.ts",
+      "lines": 167,
+      "lang": "ts",
+      "exports": [
+        "WxLayer",
+        "WeatherGrid",
+        "WX_LAYERS",
+        "fieldKey",
+        "unitOf",
+        "colorAt",
+        "legendStops",
+        "sampleGrid"
+      ],
+      "bucket": "fe-lib"
+    },
+    {
+      "id": "frontend/src/types/dashboard.ts",
+      "lines": 918,
+      "lang": "ts",
+      "exports": [
+        "Location",
+        "Factor",
+        "RiskCard",
+        "TimePoint",
+        "EarlyWarning",
+        "WindHour",
+        "LiveWatch",
+        "Prescription",
+        "HourlySlot",
+        "OutlookDay",
+        "DashboardSnapshot",
+        "NowcastHour",
+        "NowcastPack",
+        "ConvectivePack",
+        "SatLivePack",
+        "SatKalmanPack",
+        "SatHistoryPoint",
+        "SatHistoryPack",
+        "ChatTranslation",
+        "ChatBlock",
+        "UiAction",
+        "ChatSuggestion",
+        "ChatMsg",
+        "TabId",
+        "TAB_ALIAS",
+        "resolveTab",
+        "ThemeId",
+        "UnitSys",
+        "Density",
+        "PredDay",
+        "PredictionPack",
+        "VeraFrame",
+        "VeraParameterHead",
+        "VeraPack"
+      ],
+      "bucket": "fe-types"
+    },
+    {
+      "id": "mobile/App.tsx",
+      "lines": 219,
+      "lang": "tsx",
+      "exports": [],
+      "bucket": "mobile"
+    },
+    {
+      "id": "mobile/babel.config.js",
+      "lines": 4,
+      "lang": "js",
+      "exports": [],
+      "bucket": "mobile"
+    },
+    {
+      "id": "mobile/metro.config.js",
+      "lines": 18,
+      "lang": "js",
+      "exports": [],
+      "bucket": "mobile"
+    },
+    {
+      "id": "mobile/src/api.ts",
+      "lines": 8,
+      "lang": "ts",
+      "exports": [
+        "apiBase",
+        "api"
+      ],
+      "bucket": "mobile"
+    }
+  ],
+  "edges": [
+    {
+      "from": "backend/app/agents/binder.py",
+      "to": "backend/app/i18n/number_lock.py"
+    },
+    {
+      "from": "backend/app/agents/binder.py",
+      "to": "backend/app/schemas/answer.py"
+    },
+    {
+      "from": "backend/app/agents/claims.py",
+      "to": "backend/app/agents/binder.py"
+    },
+    {
+      "from": "backend/app/agents/claims.py",
+      "to": "backend/app/i18n/number_lock.py"
+    },
+    {
+      "from": "backend/app/agents/data_tool.py",
+      "to": "backend/app/agents/dates.py"
+    },
+    {
+      "from": "backend/app/agents/data_tool.py",
+      "to": "backend/app/agents/views.py"
+    },
+    {
+      "from": "backend/app/agents/data_tool.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/agents/data_tool.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/agents/dates.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/agents/dimensions.py",
+      "to": "backend/app/agents/dates.py"
+    },
+    {
+      "from": "backend/app/agents/dimensions.py",
+      "to": "backend/app/data/india_districts.py"
+    },
+    {
+      "from": "backend/app/agents/dimensions.py",
+      "to": "backend/app/data/india_towns.py"
+    },
+    {
+      "from": "backend/app/agents/dimensions.py",
+      "to": "backend/app/science/vernacular.py"
+    },
+    {
+      "from": "backend/app/agents/eval_llm.py",
+      "to": "backend/app/agents/facts.py"
+    },
+    {
+      "from": "backend/app/agents/eval_llm.py",
+      "to": "backend/app/i18n/number_lock.py"
+    },
+    {
+      "from": "backend/app/agents/facts.py",
+      "to": "backend/app/agents/utterance.py"
+    },
+    {
+      "from": "backend/app/agents/facts.py",
+      "to": "backend/app/i18n/number_lock.py"
+    },
+    {
+      "from": "backend/app/agents/insight_compiler.py",
+      "to": "backend/app/agents/views.py"
+    },
+    {
+      "from": "backend/app/agents/insight_compiler.py",
+      "to": "backend/app/providers/datagov.py"
+    },
+    {
+      "from": "backend/app/agents/insight_compiler.py",
+      "to": "backend/app/schemas/insight.py"
+    },
+    {
+      "from": "backend/app/agents/insight_compiler.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/agents/insight_compiler.py",
+      "to": "backend/app/services/snapshot.py"
+    },
+    {
+      "from": "backend/app/agents/intent_router.py",
+      "to": "backend/app/agents/dimensions.py"
+    },
+    {
+      "from": "backend/app/agents/layer1_parser.py",
+      "to": "backend/app/agents/dates.py"
+    },
+    {
+      "from": "backend/app/agents/layer1_parser.py",
+      "to": "backend/app/agents/dimensions.py"
+    },
+    {
+      "from": "backend/app/agents/layer1_parser.py",
+      "to": "backend/app/data/closed_class.py"
+    },
+    {
+      "from": "backend/app/agents/layer1_parser.py",
+      "to": "backend/app/data/india_districts.py"
+    },
+    {
+      "from": "backend/app/agents/layer1_parser.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/agents/memory.py",
+      "to": "backend/app/agents/dimensions.py"
+    },
+    {
+      "from": "backend/app/agents/orch_locale.py",
+      "to": "backend/app/agents/binder.py"
+    },
+    {
+      "from": "backend/app/agents/orch_locale.py",
+      "to": "backend/app/agents/facts.py"
+    },
+    {
+      "from": "backend/app/agents/orch_locale.py",
+      "to": "backend/app/i18n/detect.py"
+    },
+    {
+      "from": "backend/app/agents/orch_locale.py",
+      "to": "backend/app/i18n/mt.py"
+    },
+    {
+      "from": "backend/app/agents/orch_locale.py",
+      "to": "backend/app/i18n/number_lock.py"
+    },
+    {
+      "from": "backend/app/agents/orch_locale.py",
+      "to": "backend/app/llm/__init__.py"
+    },
+    {
+      "from": "backend/app/agents/orch_place.py",
+      "to": "backend/app/agents/dates.py"
+    },
+    {
+      "from": "backend/app/agents/orch_place.py",
+      "to": "backend/app/agents/dimensions.py"
+    },
+    {
+      "from": "backend/app/agents/orch_place.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/binder.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/counterfactual.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/graph.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/ledger.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/post.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/resolved.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/triage.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/claims.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/data_tool.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/dates.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/dimensions.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/data/india_districts.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/facts.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/utterance.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/data/closed_class.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/memory.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/prompts.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/views.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/i18n/detect.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/i18n/gemini_langs.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/i18n/mt.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/i18n/number_lock.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/llm/__init__.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/schemas/chat.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/orch_place.py"
+    },
+    {
+      "from": "backend/app/agents/orchestrator.py",
+      "to": "backend/app/agents/orch_locale.py"
+    },
+    {
+      "from": "backend/app/agents/resolved.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/agents/triage.py",
+      "to": "backend/app/agents/utterance.py"
+    },
+    {
+      "from": "backend/app/agents/utterance.py",
+      "to": "backend/app/agents/dates.py"
+    },
+    {
+      "from": "backend/app/agents/utterance.py",
+      "to": "backend/app/data/blocked_places.py"
+    },
+    {
+      "from": "backend/app/agents/utterance.py",
+      "to": "backend/app/data/closed_class.py"
+    },
+    {
+      "from": "backend/app/agents/utterance.py",
+      "to": "backend/app/data/india_districts.py"
+    },
+    {
+      "from": "backend/app/agents/utterance.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/api/chat.py",
+      "to": "backend/app/agents/orchestrator.py"
+    },
+    {
+      "from": "backend/app/api/chat.py",
+      "to": "backend/app/schemas/chat.py"
+    },
+    {
+      "from": "backend/app/api/chat.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/api/dashboard.py",
+      "to": "backend/app/api/deps.py"
+    },
+    {
+      "from": "backend/app/api/dashboard.py",
+      "to": "backend/app/providers/__init__.py"
+    },
+    {
+      "from": "backend/app/api/dashboard.py",
+      "to": "backend/app/schemas/dashboard.py"
+    },
+    {
+      "from": "backend/app/api/dashboard.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/api/dashboard.py",
+      "to": "backend/app/services/compare.py"
+    },
+    {
+      "from": "backend/app/api/dashboard.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/api/dashboard.py",
+      "to": "backend/app/services/scan.py"
+    },
+    {
+      "from": "backend/app/api/dashboard.py",
+      "to": "backend/app/services/snapshot.py"
+    },
+    {
+      "from": "backend/app/api/dashboard.py",
+      "to": "backend/app/tools/__init__.py"
+    },
+    {
+      "from": "backend/app/api/deps.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/api/deps.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/api/geo.py",
+      "to": "backend/app/http_urls.py"
+    },
+    {
+      "from": "backend/app/api/geo.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/api/llm_worker.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/api/llm_worker.py",
+      "to": "backend/app/llm/worker_hub.py"
+    },
+    {
+      "from": "backend/app/api/meta.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/api/meta.py",
+      "to": "backend/app/llm/__init__.py"
+    },
+    {
+      "from": "backend/app/api/meta.py",
+      "to": "backend/app/llm/worker_hub.py"
+    },
+    {
+      "from": "backend/app/api/meta.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/api/speech.py",
+      "to": "backend/app/services/__init__.py"
+    },
+    {
+      "from": "backend/app/api/surfaces.py",
+      "to": "backend/app/api/__init__.py"
+    },
+    {
+      "from": "backend/app/api/surfaces.py",
+      "to": "backend/app/auth/router.py"
+    },
+    {
+      "from": "backend/app/auth/alerts_job.py",
+      "to": "backend/app/auth/__init__.py"
+    },
+    {
+      "from": "backend/app/auth/alerts_job.py",
+      "to": "backend/app/auth/sms.py"
+    },
+    {
+      "from": "backend/app/auth/alerts_job.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/auth/alerts_job.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/auth/alerts_job.py",
+      "to": "backend/app/services/snapshot.py"
+    },
+    {
+      "from": "backend/app/auth/db.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/auth/router.py",
+      "to": "backend/app/auth/__init__.py"
+    },
+    {
+      "from": "backend/app/auth/router.py",
+      "to": "backend/app/auth/schemas.py"
+    },
+    {
+      "from": "backend/app/auth/router.py",
+      "to": "backend/app/auth/sms.py"
+    },
+    {
+      "from": "backend/app/auth/router.py",
+      "to": "backend/app/api/deps.py"
+    },
+    {
+      "from": "backend/app/auth/router.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/auth/router.py",
+      "to": "backend/app/auth/security.py"
+    },
+    {
+      "from": "backend/app/auth/router.py",
+      "to": "backend/app/data/india_mask.py"
+    },
+    {
+      "from": "backend/app/auth/router.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/auth/security.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/auth/sms.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/auth/sms_compose.py",
+      "to": "backend/app/auth/sms.py"
+    },
+    {
+      "from": "backend/app/auth/sms_compose.py",
+      "to": "backend/app/i18n/number_lock.py"
+    },
+    {
+      "from": "backend/app/auth/sms_compose.py",
+      "to": "backend/app/llm/__init__.py"
+    },
+    {
+      "from": "backend/app/auth/sms_compose.py",
+      "to": "backend/app/schemas/dashboard.py"
+    },
+    {
+      "from": "backend/app/data/closed_class.py",
+      "to": "backend/app/data/fuzzy.py"
+    },
+    {
+      "from": "backend/app/http_urls.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/i18n/gemini_langs.py",
+      "to": "backend/app/i18n/detect.py"
+    },
+    {
+      "from": "backend/app/i18n/mt.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/i18n/mt.py",
+      "to": "backend/app/i18n/detect.py"
+    },
+    {
+      "from": "backend/app/i18n/mt.py",
+      "to": "backend/app/i18n/number_lock.py"
+    },
+    {
+      "from": "backend/app/i18n/mt.py",
+      "to": "backend/app/providers/__init__.py"
+    },
+    {
+      "from": "backend/app/ingest/cycle.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/ingest/cycle.py",
+      "to": "backend/app/store/__init__.py"
+    },
+    {
+      "from": "backend/app/ingest/cycle.py",
+      "to": "backend/app/store/hazard_events.py"
+    },
+    {
+      "from": "backend/app/ingest/cycle.py",
+      "to": "backend/app/store/sat_frames.py"
+    },
+    {
+      "from": "backend/app/ingest/cycle.py",
+      "to": "backend/app/store/time.py"
+    },
+    {
+      "from": "backend/app/ingest/worker.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/llm/ollama_client.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/llm/ollama_client.py",
+      "to": "backend/app/llm/__init__.py"
+    },
+    {
+      "from": "backend/app/llm/ollama_client.py",
+      "to": "backend/app/llm/worker_hub.py"
+    },
+    {
+      "from": "backend/app/llm/providers.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/main.py",
+      "to": "backend/app/api/meta.py"
+    },
+    {
+      "from": "backend/app/main.py",
+      "to": "backend/app/api/surfaces.py"
+    },
+    {
+      "from": "backend/app/main.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/main.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/ml/anomaly.py",
+      "to": "backend/app/schemas/dashboard.py"
+    },
+    {
+      "from": "backend/app/ml/blend.py",
+      "to": "backend/app/ml/hybrid_blend.py"
+    },
+    {
+      "from": "backend/app/ml/hybrid_blend.py",
+      "to": "backend/app/ml/features.py"
+    },
+    {
+      "from": "backend/app/ml/outlook.py",
+      "to": "backend/app/science/hysteresis.py"
+    },
+    {
+      "from": "backend/app/ml/prescribe.py",
+      "to": "backend/app/schemas/risk.py"
+    },
+    {
+      "from": "backend/app/ml/risk.py",
+      "to": "backend/app/schemas/risk.py"
+    },
+    {
+      "from": "backend/app/ml/train/eqrn.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/ml/train/eqrn.py",
+      "to": "backend/app/ml/vera/fusion.py"
+    },
+    {
+      "from": "backend/app/ml/train/pretrain_sat.py",
+      "to": "backend/app/ml/vera/cv_branch.py"
+    },
+    {
+      "from": "backend/app/ml/train/swin_unet.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/ml/train/train_gate.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/ml/train/train_gate.py",
+      "to": "backend/app/ml/vera/mlops.py"
+    },
+    {
+      "from": "backend/app/ml/vera/__init__.py",
+      "to": "backend/app/ml/vera/pipeline.py"
+    },
+    {
+      "from": "backend/app/ml/vera/cv_branch.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/ml/vera/cv_branch.py",
+      "to": "backend/app/science/sat_cv.py"
+    },
+    {
+      "from": "backend/app/ml/vera/extremes.py",
+      "to": "backend/app/ml/hybrid_blend.py"
+    },
+    {
+      "from": "backend/app/ml/vera/fusion.py",
+      "to": "backend/app/ml/hybrid_blend.py"
+    },
+    {
+      "from": "backend/app/ml/vera/gate.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/ml/vera/heads.py",
+      "to": "backend/app/ml/vera/fusion.py"
+    },
+    {
+      "from": "backend/app/ml/vera/historical.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/ml/vera/hourly.py",
+      "to": "backend/app/science/wbgt.py"
+    },
+    {
+      "from": "backend/app/ml/vera/intra_hour.py",
+      "to": "backend/app/science/wbgt.py"
+    },
+    {
+      "from": "backend/app/ml/vera/issue_store.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/ml/vera/leads.py",
+      "to": "backend/app/ml/hybrid_blend.py"
+    },
+    {
+      "from": "backend/app/ml/vera/mlops.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/ml/vera/pipeline.py",
+      "to": "backend/app/ml/vera/__init__.py"
+    },
+    {
+      "from": "backend/app/ml/vera/pipeline.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/ml/vera/pipeline.py",
+      "to": "backend/app/providers/__init__.py"
+    },
+    {
+      "from": "backend/app/ml/vera/regime.py",
+      "to": "backend/app/science/residual.py"
+    },
+    {
+      "from": "backend/app/ml/vera/verify.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/aikosh.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/aikosh.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/cwc.py",
+      "to": "backend/app/data/cwc_wb.py"
+    },
+    {
+      "from": "backend/app/providers/datagov.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/datagov.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/firms.py",
+      "to": "backend/app/data/india_districts.py"
+    },
+    {
+      "from": "backend/app/providers/firms.py",
+      "to": "backend/app/data/india_mask.py"
+    },
+    {
+      "from": "backend/app/providers/firms.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/gdacs.py",
+      "to": "backend/app/data/india_mask.py"
+    },
+    {
+      "from": "backend/app/providers/gdacs.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/gibs_ir.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/gpm_imerg.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/graphcast_run.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/hazards.py",
+      "to": "backend/app/data/india_mask.py"
+    },
+    {
+      "from": "backend/app/providers/hazards.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/http.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/imd.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/imd.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/imd_gridded.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/imd_insat.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/lightning_feed.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/lightning_feed.py",
+      "to": "backend/app/providers/__init__.py"
+    },
+    {
+      "from": "backend/app/providers/lightning_feed.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/mosdac.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/nasa_power.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/om_thunder.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/open_meteo.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/open_meteo.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/openaq.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/openweather_air.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/openweather_air.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/port_signal.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/sachet.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/sat_obs.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/sat_obs.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/providers/waqi.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/waqi.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/weather_grid.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/providers/weatherbit_lightning.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/providers/weatherbit_lightning.py",
+      "to": "backend/app/providers/http.py"
+    },
+    {
+      "from": "backend/app/schemas/__init__.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/schemas/__init__.py",
+      "to": "backend/app/schemas/risk.py"
+    },
+    {
+      "from": "backend/app/schemas/__init__.py",
+      "to": "backend/app/schemas/dashboard.py"
+    },
+    {
+      "from": "backend/app/schemas/__init__.py",
+      "to": "backend/app/schemas/chat.py"
+    },
+    {
+      "from": "backend/app/schemas/chat.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/schemas/dashboard.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/schemas/dashboard.py",
+      "to": "backend/app/schemas/risk.py"
+    },
+    {
+      "from": "backend/app/science/__init__.py",
+      "to": "backend/app/science/__init__.py"
+    },
+    {
+      "from": "backend/app/science/__init__.py",
+      "to": "backend/app/science/live.py"
+    },
+    {
+      "from": "backend/app/science/alert_head.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/science/convective.py",
+      "to": "backend/app/data/physiography.py"
+    },
+    {
+      "from": "backend/app/science/convective.py",
+      "to": "backend/app/science/__init__.py"
+    },
+    {
+      "from": "backend/app/science/convective.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/science/cv_memory.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/science/cv_nowcast.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/science/cv_nowcast.py",
+      "to": "backend/app/data/physiography.py"
+    },
+    {
+      "from": "backend/app/science/cv_nowcast.py",
+      "to": "backend/app/science/__init__.py"
+    },
+    {
+      "from": "backend/app/science/cv_nowcast.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/science/env_hazards.py",
+      "to": "backend/app/data/physiography.py"
+    },
+    {
+      "from": "backend/app/science/env_hazards.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/science/env_hazards.py",
+      "to": "backend/app/science/wbgt.py"
+    },
+    {
+      "from": "backend/app/science/landslide.py",
+      "to": "backend/app/data/physiography.py"
+    },
+    {
+      "from": "backend/app/science/landslide.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/science/live.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/science/live.py",
+      "to": "backend/app/data/physiography.py"
+    },
+    {
+      "from": "backend/app/science/live.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/science/monsoon.py",
+      "to": "backend/app/science/residual.py"
+    },
+    {
+      "from": "backend/app/science/nowcast.py",
+      "to": "backend/app/data/physiography.py"
+    },
+    {
+      "from": "backend/app/science/nowcast.py",
+      "to": "backend/app/science/residual.py"
+    },
+    {
+      "from": "backend/app/science/nowcast.py",
+      "to": "backend/app/science/vernacular.py"
+    },
+    {
+      "from": "backend/app/science/rain_field.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/science/rain_field.py",
+      "to": "backend/app/science/sat_cv.py"
+    },
+    {
+      "from": "backend/app/science/regret.py",
+      "to": "backend/app/ml/prescribe.py"
+    },
+    {
+      "from": "backend/app/science/sat_cv.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/science/sat_kalman.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/science/sat_kalman.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/science/sat_live.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/science/sat_live.py",
+      "to": "backend/app/science/__init__.py"
+    },
+    {
+      "from": "backend/app/science/sat_phys.py",
+      "to": "backend/app/science/live.py"
+    },
+    {
+      "from": "backend/app/science/sat_phys.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/science/storm_map.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/science/storm_map.py",
+      "to": "backend/app/data/india_capitals.py"
+    },
+    {
+      "from": "backend/app/science/storm_map.py",
+      "to": "backend/app/data/india_districts.py"
+    },
+    {
+      "from": "backend/app/science/storm_map.py",
+      "to": "backend/app/data/india_mask.py"
+    },
+    {
+      "from": "backend/app/science/storm_map.py",
+      "to": "backend/app/science/__init__.py"
+    },
+    {
+      "from": "backend/app/science/thunder_predict.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/science/thunder_predict.py",
+      "to": "backend/app/data/india_mask.py"
+    },
+    {
+      "from": "backend/app/science/thunder_predict.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/science/thunder_predict.py",
+      "to": "backend/app/science/__init__.py"
+    },
+    {
+      "from": "backend/app/services/alert_scan.py",
+      "to": "backend/app/data/india_capitals.py"
+    },
+    {
+      "from": "backend/app/services/alert_scan.py",
+      "to": "backend/app/providers/__init__.py"
+    },
+    {
+      "from": "backend/app/services/alerts.py",
+      "to": "backend/app/data/india_mask.py"
+    },
+    {
+      "from": "backend/app/services/alerts.py",
+      "to": "backend/app/providers/__init__.py"
+    },
+    {
+      "from": "backend/app/services/alerts.py",
+      "to": "backend/app/schemas/dashboard.py"
+    },
+    {
+      "from": "backend/app/services/alerts.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/services/alerts.py",
+      "to": "backend/app/services/locality.py"
+    },
+    {
+      "from": "backend/app/services/compare.py",
+      "to": "backend/app/ml/outlook.py"
+    },
+    {
+      "from": "backend/app/services/compare.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/services/compare.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/services/compare.py",
+      "to": "backend/app/services/snapshot.py"
+    },
+    {
+      "from": "backend/app/services/locality.py",
+      "to": "backend/app/data/india_districts.py"
+    },
+    {
+      "from": "backend/app/services/locality.py",
+      "to": "backend/app/data/physiography.py"
+    },
+    {
+      "from": "backend/app/services/locality.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/services/location_svc.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/services/location_svc.py",
+      "to": "backend/app/data/blocked_places.py"
+    },
+    {
+      "from": "backend/app/services/location_svc.py",
+      "to": "backend/app/data/india_capitals.py"
+    },
+    {
+      "from": "backend/app/services/location_svc.py",
+      "to": "backend/app/data/india_districts.py"
+    },
+    {
+      "from": "backend/app/services/location_svc.py",
+      "to": "backend/app/data/india_towns.py"
+    },
+    {
+      "from": "backend/app/services/location_svc.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/services/rain_window.py",
+      "to": "backend/app/providers/__init__.py"
+    },
+    {
+      "from": "backend/app/services/rain_window.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/services/rain_window.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/services/scan.py",
+      "to": "backend/app/data/india_districts.py"
+    },
+    {
+      "from": "backend/app/services/scan.py",
+      "to": "backend/app/providers/__init__.py"
+    },
+    {
+      "from": "backend/app/services/snapshot.py",
+      "to": "backend/app/i18n/templates.py"
+    },
+    {
+      "from": "backend/app/services/snapshot.py",
+      "to": "backend/app/schemas/dashboard.py"
+    },
+    {
+      "from": "backend/app/services/snapshot.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/services/snapshot.py",
+      "to": "backend/app/services/snapshot_obs.py"
+    },
+    {
+      "from": "backend/app/services/snapshot.py",
+      "to": "backend/app/services/snapshot_live.py"
+    },
+    {
+      "from": "backend/app/services/snapshot.py",
+      "to": "backend/app/services/snapshot_assemble.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/ml/anomaly.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/ml/features.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/ml/blend.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/ml/hybrid_blend.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/ml/outlook.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/ml/prescribe.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/ml/risk.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/ml/hazards_outlook.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/science/__init__.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/science/nowcast.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/science/regret.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/science/pollen_in.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/services/alerts.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/data/india_coast.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/providers/__init__.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/schemas/dashboard.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/schemas/risk.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/services/snapshot_obs.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_assemble.py",
+      "to": "backend/app/services/snapshot_live.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_live.py",
+      "to": "backend/app/ml/sky.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_live.py",
+      "to": "backend/app/schemas/dashboard.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_live.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_obs.py",
+      "to": "backend/app/data/india_coast.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_obs.py",
+      "to": "backend/app/providers/__init__.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_obs.py",
+      "to": "backend/app/science/astro.py"
+    },
+    {
+      "from": "backend/app/services/snapshot_obs.py",
+      "to": "backend/app/schemas/location.py"
+    },
+    {
+      "from": "backend/app/services/speech.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/store/hazard_events.py",
+      "to": "backend/app/store/__init__.py"
+    },
+    {
+      "from": "backend/app/store/hazard_events.py",
+      "to": "backend/app/store/time.py"
+    },
+    {
+      "from": "backend/app/store/ingest_status.py",
+      "to": "backend/app/store/__init__.py"
+    },
+    {
+      "from": "backend/app/store/ingest_status.py",
+      "to": "backend/app/store/time.py"
+    },
+    {
+      "from": "backend/app/store/sat_frames.py",
+      "to": "backend/app/store/__init__.py"
+    },
+    {
+      "from": "backend/app/store/sat_frames.py",
+      "to": "backend/app/store/time.py"
+    },
+    {
+      "from": "backend/app/store/sat_mongo.py",
+      "to": "backend/app/config.py"
+    },
+    {
+      "from": "backend/app/tools/__init__.py",
+      "to": "backend/app/agents/views.py"
+    },
+    {
+      "from": "backend/app/tools/__init__.py",
+      "to": "backend/app/data/india_districts.py"
+    },
+    {
+      "from": "backend/app/tools/__init__.py",
+      "to": "backend/app/rag/__init__.py"
+    },
+    {
+      "from": "backend/app/tools/__init__.py",
+      "to": "backend/app/schemas/dashboard.py"
+    },
+    {
+      "from": "backend/app/tools/__init__.py",
+      "to": "backend/app/services/location_svc.py"
+    },
+    {
+      "from": "backend/app/tools/__init__.py",
+      "to": "backend/app/tools/registry.py"
+    },
+    {
+      "from": "clients/js/src/index.ts",
+      "to": "clients/js/src/../clients/js/src"
+    },
+    {
+      "from": "clients/js/src/index.ts",
+      "to": "clients/js/src/config.ts"
+    },
+    {
+      "from": "clients/js/src/index.ts",
+      "to": "clients/js/src/sse.ts"
+    },
+    {
+      "from": "clients/js/src/index.ts",
+      "to": "clients/js/src/types.ts"
+    },
+    {
+      "from": "frontend/src/app/layout.tsx",
+      "to": "frontend/src/app/globals.css"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/ChatDock.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/DistrictSearch.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/EarlyWarnings.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/ForecastCharts.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/NowcastLive.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/OverviewLive.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/MandiPanel.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/OutlookTable.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/PredictionsPanel.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/RiskCard.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/SciencePanel.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/SettingsPanel.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/AuthModal.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/Sidebar.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/SquareMap.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/ThemeBoot.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/ui.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/lib/api.ts"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/ChatFloat.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/components/QualityCatalog.tsx"
+    },
+    {
+      "from": "frontend/src/app/page.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/AuthModal.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/AuthModal.tsx",
+      "to": "frontend/src/lib/auth.ts"
+    },
+    {
+      "from": "frontend/src/components/AuthModal.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/AuthModal.tsx",
+      "to": "frontend/src/components/Icons.tsx"
+    },
+    {
+      "from": "frontend/src/components/ChatBlocks.tsx",
+      "to": "frontend/src/components/Markdown.tsx"
+    },
+    {
+      "from": "frontend/src/components/ChatBlocks.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/ChatDock.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/ChatDock.tsx",
+      "to": "frontend/src/lib/api.ts"
+    },
+    {
+      "from": "frontend/src/components/ChatDock.tsx",
+      "to": "frontend/src/lib/speech.ts"
+    },
+    {
+      "from": "frontend/src/components/ChatDock.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/ChatDock.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/ChatDock.tsx",
+      "to": "frontend/src/components/ChatBlocks.tsx"
+    },
+    {
+      "from": "frontend/src/components/ChatDock.tsx",
+      "to": "frontend/src/components/Icons.tsx"
+    },
+    {
+      "from": "frontend/src/components/ChatFloat.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/ChatFloat.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/ChatFloat.tsx",
+      "to": "frontend/src/components/ChatDock.tsx"
+    },
+    {
+      "from": "frontend/src/components/ChatFloat.tsx",
+      "to": "frontend/src/components/Icons.tsx"
+    },
+    {
+      "from": "frontend/src/components/DistrictSearch.tsx",
+      "to": "frontend/src/lib/api.ts"
+    },
+    {
+      "from": "frontend/src/components/DistrictSearch.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/DistrictSearch.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/DistrictSearch.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/EarlyWarnings.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/EarlyWarnings.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/Forecast7DayDeck.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/Forecast7DayDeck.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/Forecast7DayDeck.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/components/Forecast7DayDeck.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/Forecast7DayDeck.tsx",
+      "to": "frontend/src/components/LaymanSummaryView.tsx"
+    },
+    {
+      "from": "frontend/src/components/Forecast7DayDeck.tsx",
+      "to": "frontend/src/lib/laymanSummaries.ts"
+    },
+    {
+      "from": "frontend/src/components/ForecastCharts.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/ForecastCharts.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/ForecastCharts.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/ForecastCharts.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/components/HourlyForecast.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/HourlyForecast.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/HourlyForecast.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/components/HourlyForecast.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/LaymanSummaryView.tsx",
+      "to": "frontend/src/lib/laymanSummaries.ts"
+    },
+    {
+      "from": "frontend/src/components/LensGrid.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/LensGrid.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/LensGrid.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/MandiPanel.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/MandiPanel.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/MapView.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/MapView.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/MapView.tsx",
+      "to": "frontend/src/lib/api.ts"
+    },
+    {
+      "from": "frontend/src/components/MapView.tsx",
+      "to": "frontend/src/components/WeatherOverlay.tsx"
+    },
+    {
+      "from": "frontend/src/components/MapView.tsx",
+      "to": "frontend/src/lib/weatherScale.ts"
+    },
+    {
+      "from": "frontend/src/components/MapWrap.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/MapWrap.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/MapWrap.tsx",
+      "to": "frontend/src/lib/api.ts"
+    },
+    {
+      "from": "frontend/src/components/MapWrap.tsx",
+      "to": "frontend/src/lib/weatherScale.ts"
+    },
+    {
+      "from": "frontend/src/components/NowcastLive.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/NowcastLive.tsx",
+      "to": "frontend/src/components/NowcastSat.tsx"
+    },
+    {
+      "from": "frontend/src/components/NowcastLive.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/NowcastLive.tsx",
+      "to": "frontend/src/lib/api.ts"
+    },
+    {
+      "from": "frontend/src/components/NowcastLive.tsx",
+      "to": "frontend/src/lib/nowcastGap.ts"
+    },
+    {
+      "from": "frontend/src/components/NowcastLive.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/components/NowcastLive.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/NowcastSat.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/NowcastSat.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/NowcastSat.tsx",
+      "to": "frontend/src/lib/api.ts"
+    },
+    {
+      "from": "frontend/src/components/NowcastSat.tsx",
+      "to": "frontend/src/lib/satKalman.ts"
+    },
+    {
+      "from": "frontend/src/components/NowcastSat.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/OutlookTable.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/OutlookTable.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/OutlookTable.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/components/OutlookTable.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/OutlookTable.tsx",
+      "to": "frontend/src/components/Forecast7DayDeck.tsx"
+    },
+    {
+      "from": "frontend/src/components/overview/alertModel.ts",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/alertModel.ts",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/alertModel.ts",
+      "to": "frontend/src/components/overview/helpers.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/alertModel.ts",
+      "to": "frontend/src/components/overview/icons.tsx"
+    },
+    {
+      "from": "frontend/src/components/overview/cards.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/cards.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/cards.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/cards.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/cards.tsx",
+      "to": "frontend/src/components/overview/../LaymanSummaryView.tsx"
+    },
+    {
+      "from": "frontend/src/components/overview/cards.tsx",
+      "to": "frontend/src/lib/laymanSummaries.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/cards.tsx",
+      "to": "frontend/src/components/overview/i18n.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/cards.tsx",
+      "to": "frontend/src/components/overview/helpers.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/cards.tsx",
+      "to": "frontend/src/components/overview/icons.tsx"
+    },
+    {
+      "from": "frontend/src/components/overview/helpers.ts",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/i18n.ts",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/OverviewLive.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/OverviewLive.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/OverviewLive.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/OverviewLive.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/OverviewLive.tsx",
+      "to": "frontend/src/components/overview/../Forecast7DayDeck.tsx"
+    },
+    {
+      "from": "frontend/src/components/overview/OverviewLive.tsx",
+      "to": "frontend/src/components/overview/../SkyRainHero.tsx"
+    },
+    {
+      "from": "frontend/src/components/overview/OverviewLive.tsx",
+      "to": "frontend/src/components/overview/helpers.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/OverviewLive.tsx",
+      "to": "frontend/src/components/overview/RiskAlertPanel.tsx"
+    },
+    {
+      "from": "frontend/src/components/overview/OverviewLive.tsx",
+      "to": "frontend/src/components/overview/rainWind.tsx"
+    },
+    {
+      "from": "frontend/src/components/overview/rainWind.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/rainWind.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/rainWind.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/rainWind.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/rainWind.tsx",
+      "to": "frontend/src/components/overview/../LaymanSummaryView.tsx"
+    },
+    {
+      "from": "frontend/src/components/overview/rainWind.tsx",
+      "to": "frontend/src/lib/laymanSummaries.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/rainWind.tsx",
+      "to": "frontend/src/components/overview/i18n.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/rainWind.tsx",
+      "to": "frontend/src/components/overview/helpers.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/lib/api.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/lib/plain.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/components/overview/../LaymanSummaryView.tsx"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/lib/laymanSummaries.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/components/overview/i18n.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/components/overview/helpers.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/components/overview/alertModel.ts"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/components/overview/icons.tsx"
+    },
+    {
+      "from": "frontend/src/components/overview/RiskAlertPanel.tsx",
+      "to": "frontend/src/components/overview/cards.tsx"
+    },
+    {
+      "from": "frontend/src/components/OverviewLive.tsx",
+      "to": "frontend/src/components/overview/OverviewLive.tsx"
+    },
+    {
+      "from": "frontend/src/components/OverviewLive.tsx",
+      "to": "frontend/src/components/overview/alertModel.ts"
+    },
+    {
+      "from": "frontend/src/components/PredictionsPanel.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/PredictionsPanel.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/QualityCatalog.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/QualityCatalog.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/RiskCard.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/RiskCard.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/RiskCard.tsx",
+      "to": "frontend/src/lib/plain.ts"
+    },
+    {
+      "from": "frontend/src/components/RiskCard.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/components/RiskCard.tsx",
+      "to": "frontend/src/components/ui.tsx"
+    },
+    {
+      "from": "frontend/src/components/SatProcessMap.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/SatProcessMap.tsx",
+      "to": "frontend/src/lib/config.ts"
+    },
+    {
+      "from": "frontend/src/components/SciencePanel.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/SciencePanel.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/SettingsPanel.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/SettingsPanel.tsx",
+      "to": "frontend/src/lib/config.ts"
+    },
+    {
+      "from": "frontend/src/components/SettingsPanel.tsx",
+      "to": "frontend/src/lib/auth.ts"
+    },
+    {
+      "from": "frontend/src/components/SettingsPanel.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/SettingsPanel.tsx",
+      "to": "frontend/src/components/DistrictSearch.tsx"
+    },
+    {
+      "from": "frontend/src/components/SettingsPanel.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/Sidebar.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/Sidebar.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/Sidebar.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/Sidebar.tsx",
+      "to": "frontend/src/components/Icons.tsx"
+    },
+    {
+      "from": "frontend/src/components/SkyRainHero.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/SkyRainHero.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/SkyRainHero.tsx",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/components/SkyRainHero.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/SkyRainHero.tsx",
+      "to": "frontend/src/components/LaymanSummaryView.tsx"
+    },
+    {
+      "from": "frontend/src/components/SkyRainHero.tsx",
+      "to": "frontend/src/lib/laymanSummaries.ts"
+    },
+    {
+      "from": "frontend/src/components/SquareMap.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/SquareMap.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/SquareMap.tsx",
+      "to": "frontend/src/lib/api.ts"
+    },
+    {
+      "from": "frontend/src/components/SquareMap.tsx",
+      "to": "frontend/src/components/MapWrap.tsx"
+    },
+    {
+      "from": "frontend/src/components/SquareMap.tsx",
+      "to": "frontend/src/components/StormFeed.tsx"
+    },
+    {
+      "from": "frontend/src/components/SquareMap.tsx",
+      "to": "frontend/src/lib/weatherScale.ts"
+    },
+    {
+      "from": "frontend/src/components/SquareMap.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/StormFeed.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/StormFeed.tsx",
+      "to": "frontend/src/lib/api.ts"
+    },
+    {
+      "from": "frontend/src/components/ThemeBoot.tsx",
+      "to": "frontend/src/lib/store.ts"
+    },
+    {
+      "from": "frontend/src/components/ui.tsx",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/components/ui.tsx",
+      "to": "frontend/src/lib/plain.ts"
+    },
+    {
+      "from": "frontend/src/components/ui.tsx",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/components/WeatherOverlay.tsx",
+      "to": "frontend/src/lib/weatherScale.ts"
+    },
+    {
+      "from": "frontend/src/i18n/presets.ts",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/lib/api.ts",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/lib/api.ts",
+      "to": "frontend/src/lib/config.ts"
+    },
+    {
+      "from": "frontend/src/lib/api.ts",
+      "to": "frontend/src/lib/openMeteoClient.ts"
+    },
+    {
+      "from": "frontend/src/lib/auth.ts",
+      "to": "frontend/src/lib/config.ts"
+    },
+    {
+      "from": "frontend/src/lib/laymanSummaries.ts",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/lib/laymanSummaries.ts",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/lib/laymanSummaries.ts",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/lib/laymanSummaries.ts",
+      "to": "frontend/src/lib/plain.ts"
+    },
+    {
+      "from": "frontend/src/lib/openMeteoClient.ts",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/lib/plain.ts",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/lib/plain.ts",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/lib/plain.ts",
+      "to": "frontend/src/lib/units.ts"
+    },
+    {
+      "from": "frontend/src/lib/speech.ts",
+      "to": "frontend/src/lib/config.ts"
+    },
+    {
+      "from": "frontend/src/lib/store.ts",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/lib/store.ts",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "frontend/src/lib/store.ts",
+      "to": "frontend/src/lib/api.ts"
+    },
+    {
+      "from": "frontend/src/lib/store.ts",
+      "to": "frontend/src/lib/auth.ts"
+    },
+    {
+      "from": "frontend/src/lib/store.ts",
+      "to": "frontend/src/lib/openMeteoClient.ts"
+    },
+    {
+      "from": "frontend/src/lib/store.ts",
+      "to": "frontend/src/lib/weatherScale.ts"
+    },
+    {
+      "from": "frontend/src/lib/units.ts",
+      "to": "frontend/src/types/dashboard.ts"
+    },
+    {
+      "from": "frontend/src/lib/units.ts",
+      "to": "frontend/src/i18n/copy.ts"
+    },
+    {
+      "from": "mobile/App.tsx",
+      "to": "mobile/src/api.ts"
+    },
+    {
+      "from": "mobile/src/api.ts",
+      "to": "mobile/src/../../clients/js/src/index.ts"
+    }
+  ]
+}

@@ -1,0 +1,725 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+from app.ml.anomaly import compute as compute_anomalies
+from app.ml.features import extract
+from app.ml.blend import build_dual_predictions
+from app.ml.hybrid_blend import member_daily_from_om
+from app.ml.outlook import build_hourly_7d, build_outlook
+from app.ml.prescribe import recommend
+from app.ml.risk import all_risks
+from app.ml.hazards_outlook import build_hazard_forecast
+from app.science import build_science, enrich_features
+from app.science.nowcast import fetch_neighbors
+from app.science.regret import evaluate as evaluate_regret
+from app.science.pollen_in import estimate as pollen_india
+from app.ml.sky import compass, sky_label
+from app.services.location_svc import nearby as nearby_districts
+from app.services.alerts import assemble_warnings
+from app.data.india_coast import nearest_coast
+from app.providers import hazards, imd
+from app.schemas.dashboard import (
+    EarlyWarning,
+    CurrentConditions,
+    DashboardSnapshot,
+    Descriptive,
+    Diagnostic,
+    DiagnosticStory,
+    MapState,
+    Predictive,
+    Prescriptive,
+)
+from app.schemas.location import Location
+from app.schemas.risk import Prescription, TimePoint
+from app.services.snapshot_obs import gather_observations
+from app.services.snapshot_live import _build_live, _quake_display, _vera_pack, _vegetation, _vis_km
+import asyncio
+
+def _series(times: list, values: list, unit: str, source: str) -> list[TimePoint]:
+    out: list[TimePoint] = []
+    for t, v in zip(times, values):
+        try:
+            out.append(TimePoint(t=str(t), value=float(v), unit=unit, source=source))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _n(v: Any, default: float | None = None) -> float | None:
+    if v is None or v == "":
+        return default
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return default
+    if x != x:
+        return default
+    return x
+
+def _finalize_quality(q: dict[str, Any]) -> dict[str, Any]:
+    marine = q.get("marine") or {}
+    if isinstance(marine, dict):
+        if marine.get("wave_peak_period_s") is None and marine.get("wave_period_s") is not None:
+            marine["wave_peak_period_s"] = marine["wave_period_s"]
+        if marine.get("wind_wave_peak_period_s") is None and marine.get("wind_wave_period_s") is not None:
+            marine["wind_wave_peak_period_s"] = marine["wind_wave_period_s"]
+        if marine.get("swell_peak_period_s") is None and marine.get("swell_period_s") is not None:
+            marine["swell_peak_period_s"] = marine["swell_period_s"]
+        if marine.get("swell3_height_m") is None:
+            h = marine.get("wave_height_m")
+            s = float(marine.get("swell_height_m") or 0)
+            w = float(marine.get("wind_wave_height_m") or 0)
+            s2 = float(marine.get("swell2_height_m") or 0)
+            if h is not None:
+                resid2 = float(h) ** 2 - s * s - w * w - s2 * s2
+                if resid2 > 0.0025:
+                    marine["swell3_height_m"] = round(resid2 ** 0.5, 3)
+                elif s2 > 0:
+                    marine["swell3_height_m"] = round(s2 * 0.42, 3)
+            if marine.get("swell3_height_m") is not None:
+                p2 = marine.get("swell2_period_s") or marine.get("swell_period_s")
+                if p2 is not None:
+                    marine["swell3_period_s"] = round(float(p2) * 1.08, 2)
+                d2 = marine.get("swell2_dir_deg")
+                if d2 is None:
+                    d2 = marine.get("swell_dir_deg")
+                if d2 is not None:
+                    marine["swell3_dir_deg"] = round((float(d2) + 32) % 360, 1)
+        q["marine"] = marine
+    q["seismic"] = [_quake_display(q.get("seismic") or [])]
+    ts = q.get("tsunami") or []
+    if not ts:
+        q["tsunami"] = [
+            {
+                "title": "Tsunami Threat does not exist for India",
+                "body": "INCOIS ITEWS default when the catalog has no regional warning.",
+                "threat": False,
+                "source": "INCOIS ITEWS",
+            }
+        ]
+    return q
+
+def _low_elev(lat: float, lon: float) -> bool:
+    # Gangetic / coastal proxy — not a DEM. Documented as elevation_proxy.
+    return lat < 27.5 and lon > 80
+def _warnings(
+    loc: Location,
+    caps: list[dict],
+    flood_score: int,
+    f: dict,
+    quakes: list[dict],
+    tsunami: list[dict],
+    naqi: dict | None,
+    **kwargs: Any,
+) -> list[EarlyWarning]:
+    return assemble_warnings(loc, caps, flood_score, f, quakes, tsunami, naqi, **kwargs)
+
+async def _assemble_snapshot(
+    loc: Location,
+    locale: str = "en",
+    *,
+    enrich: bool = True,
+    disabled: set[str] | None = None,
+) -> DashboardSnapshot:
+    disabled = disabled or set()
+    obs = await gather_observations(loc, enrich=enrich, disabled=disabled)
+    f = extract(obs["om"], obs["flood"], obs["nasa_precip"], obs["aqi"], obs.get("marine") or {})
+    inland = bool(f.get("marine_inland"))
+    coast_km = f.get("coast_km")
+    obs["quakes"] = hazards.filter_quakes_for_pin(obs.get("quakes") or [], loc.lat, loc.lon)
+    obs["tsunami"] = hazards.filter_tsunami_for_pin(
+        obs.get("tsunami") or [],
+        coast_km=float(coast_km) if coast_km is not None else None,
+        inland=inland,
+    )
+    raw_models = dict(obs.get("om_models") or {})
+    if not raw_models and isinstance(obs.get("om"), dict) and (obs["om"].get("daily") or obs["om"].get("hourly")):
+        # Open-Meteo member quota often 429s; still blend on the cached best-match series.
+        raw_models = {"best_match": obs["om"]}
+        obs.setdefault("status", {})["open-meteo-models"] = "fallback-best-match"
+    f["members"] = {
+        sid: member_daily_from_om(raw)
+        for sid, raw in raw_models.items()
+        if isinstance(raw, dict) and (raw.get("daily") or raw.get("hourly"))
+    }
+    if obs.get("naqi"):
+        f["naqi"] = obs["naqi"].get("value")
+        f["naqi_category"] = obs["naqi"].get("category")
+        f["naqi_dominant"] = obs["naqi"].get("dominant_pollutant")
+        f["naqi_pollutants"] = obs["naqi"].get("pollutants") or {}
+    marine_obs = obs.get("marine") or {}
+    f["coast_km"] = marine_obs.get("coast_km")
+    if f.get("coast_km") is None:
+        f["coast_km"] = nearest_coast(loc.lat, loc.lon)["km"]
+    local_caps = imd.alerts_for_location(obs["caps"], loc)
+    cap_hit = bool(local_caps)
+    pre = enrich_features(f, loc, obs.get("mandi") or [])
+    pre["neighbors"] = []
+    if enrich and "science" not in disabled and "open-meteo" not in disabled:
+        try:
+            pre["neighbors"] = await fetch_neighbors(loc, limit=2)
+        except Exception:
+            pre["neighbors"] = []
+    rg0 = evaluate_regret(
+        f,
+        plot_m2=loc.plot_m2,
+        crop_stage=float(f.get("crop_stage") or 0.55),
+        runoff_3d_mm=float(f.get("hy_runoff_3d_mm") or 0),
+    ) if "regret" not in disabled else {"action": "disabled", "regret_hold_mm": 0, "regret_apply_mm": 0, "method": "disabled"}
+    f["regret"] = rg0
+    f["regret_apply_mm"] = rg0["regret_apply_mm"]
+    risks = all_risks(
+        f,
+        cap_hit=cap_hit,
+        low_elev=_low_elev(loc.lat, loc.lon),
+        quakes=obs.get("quakes") or [],
+        tsunami=obs.get("tsunami") or [],
+    ) if "risks" not in disabled else []
+    flood = next((r for r in risks if r.id == "flood"), None)
+    flood_score = flood.score_pct if flood else 10
+    live_sat: dict[str, Any] = {"ok": False, "status": "shell"}
+    if enrich and "sat_live" not in disabled:
+        try:
+            from app.science.sat_live import fetch as fetch_sat_live
+
+            live_sat = await asyncio.wait_for(fetch_sat_live(loc), timeout=2.5)
+        except Exception:
+            live_sat = {"ok": False, "status": "error"}
+    science = build_science(
+        f,
+        loc,
+        pre=pre,
+        flood_score=flood_score,
+        cap_hit=cap_hit,
+        plot_m2=loc.plot_m2,
+        caps=local_caps,
+        live_sat=live_sat,
+    ) if "science" not in disabled else {
+        "hysteresis": pre.get("hysteresis", {}),
+        "phenology": pre.get("phenology", {}),
+        "regret": rg0,
+        "livelihood": {"score_pct": 0, "task": "normal", "closed_days": []},
+        "blindspot": {"level": "clear"},
+        "vernacular": {},
+        "budget": {},
+        "nowcast": {},
+        "bandit": {},
+    }
+    anomalies, drivers, stories = compute_anomalies(f, obs["nasa_precip"]) if "anomalies" not in disabled else ([], [], [])
+    if science["hysteresis"]["flip"] == "runoff":
+        drivers.append("hysteresis on runoff limb")
+        stories.append(
+            DiagnosticStory(
+                id="hysteresis",
+                title="Soil is on the runoff limb",
+                why="The same rain now sheds more water because the wetting limb is already charged.",
+                evidence=f"memory {science['hysteresis']['memory']}; 3-day runoff {science['hysteresis']['runoff_3d_mm']} mm.",
+                implication="Flood risk is path-dependent — not just today's millimetres.",
+            )
+        )
+    if science["livelihood"]["score_pct"] >= 40:
+        drivers.append("livelihood interruption watch")
+        stories.append(
+            DiagnosticStory(
+                id="livelihood",
+                title="Seasonal task may be blocked",
+                why="Compound heat, air, flood or access — not a single hazard card.",
+                evidence=f"score {science['livelihood']['score_pct']}%; task {science['livelihood']['task']}; closed {science['livelihood']['closed_days'][:3]}.",
+                implication="Protect the window (transplant / CRI / harvest), not only the plot.",
+            )
+        )
+    if science["blindspot"]["level"] != "clear":
+        drivers.append("unobserved hydrology watch")
+        why = (science["blindspot"].get("drivers") or ["Unobserved hydrology"])[0]
+        stories.append(
+            DiagnosticStory(
+                id="blindspot",
+                title="Model blind spot",
+                why=why,
+                evidence=f"blind-spot {science['blindspot']['score_pct']}% ({science['blindspot']['level']}).",
+                implication="A quiet flood card is not proof the village is dry.",
+            )
+        )
+    nc = science.get("nowcast") or {}
+    if (nc.get("kal") or {}).get("level") == "watch":
+        drivers.append("Kal Baisakhi / squall watch")
+        stories.append(
+            DiagnosticStory(
+                id="nowcast_kal",
+                title="Pre-monsoon / squall watch (next 2 h)",
+                why="Cloud, wind-shift and afternoon heating line up. This is a watch, not lightning.",
+                evidence=f"kal {nc['kal'].get('score_pct')}%; regime { (nc.get('regime') or {}).get('name') }.",
+                implication="Do not stay on the bund. Millimetres stay on the nowcast hours.",
+            )
+        )
+    if (nc.get("pump") or {}).get("action") == "hold":
+        drivers.append("pump-set interrupt watch")
+        stories.append(
+            DiagnosticStory(
+                id="nowcast_pump",
+                title="A 90-minute pump set may be interrupted",
+                why="The 0–2 h nowcast puts rain on the plot before a set would finish.",
+                evidence=f"P(interrupt) {nc['pump'].get('p_interrupt_90m')}; {nc['pump'].get('liters_at_risk')} L at risk.",
+                implication="Hold the set. This is not the 3-day irrigation card.",
+            )
+        )
+    if (nc.get("tide") or {}).get("drain_blocked"):
+        drivers.append("tide-rain drain block")
+        stories.append(
+            DiagnosticStory(
+                id="nowcast_tide",
+                title="Coastal drain may be blocked",
+                why="Harmonic high-tide proxy plus 3-hour rain. Not a tide gauge.",
+                evidence=f"rain 3h {nc['tide'].get('rain_3h_mm')} mm; coast {f.get('coast_km')} km.",
+                implication="Stay off the ghat. Plot ponding is separate from the river card.",
+            )
+        )
+    if (nc.get("neighbor_storm") or {}).get("flag"):
+        drivers.append("upstream rain, dry at home")
+        stories.append(
+            DiagnosticStory(
+                id="nowcast_mesh",
+                title="Neighbours are wet while this point is dry",
+                why="Gazetteer optical flow sees rain upstream. Home millimetres are not invented.",
+                evidence=f"wet neighbours {nc['neighbor_storm'].get('wet_neighbors')}; home {nc['neighbor_storm'].get('home_mm')} mm.",
+                implication="Watch onset, do not treat 0.0 mm as proof the cell will miss you.",
+            )
+        )
+    actions = recommend(f, risks, plot_m2=loc.plot_m2, crop=loc.crop_hint)
+    for a in nc.get("actions") or []:
+        if a.get("verb") not in {"do_not_start", "take_cover", "stay_off"}:
+            continue
+        actions.insert(
+            0,
+            Prescription(
+                id=str(a.get("id") or "nowcast"),
+                priority=int(a.get("priority") or 0),
+                action=str(a.get("action") or ""),
+                rationale_codes=["nowcast_0_6h"],
+                confidence_pct=72,
+                template_id=a.get("template_id"),
+                slots=a.get("slots") or {},
+                why="0–6 h decision nowcast (locked numbers).",
+                when=str(a.get("when") or "next 2 h"),
+                who=str(a.get("who") or "household / farm"),
+            ),
+        )
+    from app.services.locality import port_relevant
+
+    port = obs.get("port") or {}
+    warnings: list[EarlyWarning] = []
+    if port_relevant(loc):
+        science["port"] = {**(port or {}), "relevant": True}
+    else:
+        science["port"] = {"relevant": False, "active": False, "signal": None, "source": "imd-coastal-bulletin"}
+    science["sachet_n"] = len(obs.get("sachet") or [])
+
+    hourly_t = f.get("hourly_times") or []
+    daily_t = f.get("daily_times") or []
+    i0 = int(f.get("hourly_now_i") or 0)
+    aqi_i0 = int(f.get("hourly_aqi_now_i") or 0)
+    wave_i0 = int(f.get("hourly_wave_now_i") or 0)
+    outlook = build_outlook(f)
+    try:
+        f["hist_rows"] = nasa_power.dated_precip(obs.get("nasa_clim") or {})
+    except Exception:
+        f["hist_rows"] = []
+    f["era5"] = obs.get("era5") or {}
+    f["mosdac"] = obs.get("mosdac") or {}
+    f["gdacs"] = obs.get("gdacs") or []
+    f["waqi"] = obs.get("waqi")
+    f["ow_air"] = obs.get("ow_air")
+    f["imerg"] = obs.get("imerg") or {}
+    if isinstance(live_sat, dict):
+        f["lightning"] = (live_sat.get("lightning") or live_sat.get("convective") or {}).get("n_strokes") or live_sat.get("n_strokes")
+        f["insat_channels"] = live_sat.get("channels")
+    if isinstance(live_sat, dict) and obs.get("imerg"):
+        live_sat = {**live_sat, "imerg": obs.get("imerg")}
+    vera = (
+        _vera_pack(f, loc, live_sat)
+        if (enrich and "vera" not in disabled)
+        else {"name": "VERA-MoE", "guidance_only": True, "disabled": True}
+    )
+    f["vera_gate_weights"] = (vera.get("gate") or {}).get("weights") or {}
+    scan_hits: list[dict] = []
+    if enrich and "open-meteo" not in disabled and "risks" not in disabled:
+        try:
+            from app.services.alert_scan import capital_warning_hits
+
+            scan_hits = await capital_warning_hits()
+        except Exception:
+            scan_hits = []
+    conv = ((science.get("nowcast") or {}).get("convective") or {})
+    if not isinstance(conv, dict):
+        conv = {}
+    warnings = _warnings(
+        loc,
+        obs["caps"],
+        flood_score,
+        f,
+        obs.get("quakes") or [],
+        obs.get("tsunami") or [],
+        obs.get("naqi"),
+        gdacs_rows=obs.get("gdacs") or [],
+        sachet_rows=obs.get("sachet") or [],
+        port=port,
+        risks=risks,
+        vera=vera,
+        nowcast=nc,
+        convective=conv,
+        scan_hits=scan_hits,
+        fires=obs.get("firms_fires") or f.get("firms_fires") or [],
+    )
+    risks_india: list[dict] = []
+    for a in warnings:
+        if a.source in {"imd-cap", "IMD CAP"} or "imd" in (a.source or "").lower():
+            act = next((x for x in actions if x.template_id and str(x.template_id).startswith("nowcast_")), None)
+            extra = ""
+            if act:
+                extra = f" Do: {act.action}"
+            a.body = (a.body or "") + extra
+    dual = build_dual_predictions(f)
+    sources = [k for k, v in obs["status"].items() if v == "ok"]
+    sources.append("local-ml-v2")
+    sources.append("prithvi-ai-science-v1")
+    sources.append("prithvi-ai-nowcast-v1")
+
+    veg = _vegetation(f)
+    neighbors = [n.model_dump() for n in nearby_districts(loc.lat, loc.lon, limit=6)]
+    sky_name, sky_kind = sky_label(f.get("weather_code"))
+    vis_km = _vis_km(f.get("visibility_m"))
+    is_day = f.get("is_day")
+    generated_at = datetime.now(timezone.utc).isoformat()
+    science["provenance"] = {
+        "rain": "open-meteo multi-model daily (IFS/AIFS/GFS/GraphCast/ICON) Vincentized q50; not a gauge.",
+        "nowcast_mm": "locked hours; speech/CAP do not write mm",
+        "live_graph": "1-min gap integrates to locked hour; 1 Hz is playhead/tide",
+        "sat_rate": "Kalman between OM hours (MOSDAC HEM only if a file is cached); does not rewrite locked mm",
+        "aqi": "CPCB station if local, else nearest city",
+        "tide": "Hugli harmonic prior until SOI gauge",
+        "as_of": generated_at,
+    }
+    cpcb_pols = ((obs.get("naqi") or {}).get("pollutants") or {})
+    air_nh3 = f.get("om_nh3")
+    if air_nh3 is None:
+        air_nh3 = cpcb_pols.get("NH3") or cpcb_pols.get("AMMONIA")
+    if air_nh3 is None:
+        for row in reversed(obs.get("aq_hist") or []):
+            if str(row.get("parameter") or "").lower() in {"nh3", "ammonia"}:
+                air_nh3 = row.get("value")
+                break
+    pollen_pack = pollen_india(loc.lat, loc.lon, f)
+    for k, v in (f.get("pollen") or {}).items():
+        if v is not None and k in pollen_pack:
+            pollen_pack[k] = v
+
+    current = CurrentConditions(
+        temp_c=f.get("temp_now"),
+        precip_1h_mm=f.get("precip_now"),
+        humidity_pct=f.get("rh_now"),
+        wind_ms=(f.get("wind_now") or 0) / 3.6 if f.get("wind_now") is not None else None,
+        wind_dir_deg=f.get("wind_dir_now"),
+        wind_compass=compass(f.get("wind_dir_now")),
+        soil_moisture_m3m3=f.get("soil_m3m3"),
+        et0_mm=f.get("et0_today"),
+        weather_code=f.get("weather_code"),
+        cloud_cover_pct=f.get("cloud_now"),
+        visibility_km=vis_km,
+        is_day=bool(is_day) if is_day is not None else None,
+        sky_label=sky_name,
+        sky_kind=sky_kind,
+        aqi=f.get("naqi"),
+        aqi_category=f.get("naqi_category"),
+        aqi_station=(obs.get("naqi") or {}).get("station"),
+        aqi_pollutant=f.get("naqi_dominant"),
+        wave_height_m=f.get("wave_height_m"),
+        wave_period_s=f.get("wave_period_s"),
+        wave_dir_deg=f.get("wave_dir_deg"),
+        wave_compass=compass(f.get("wave_dir_deg")) if f.get("wave_dir_deg") is not None else None,
+        om_us_aqi=int(f["us_aqi"]) if f.get("us_aqi") is not None else None,
+        om_eu_aqi=int(f["eu_aqi"]) if f.get("eu_aqi") is not None else None,
+        om_pm25=f.get("om_pm25"),
+        apparent_temp_c=f.get("apparent_temp_c"),
+        dew_point_c=f.get("dew_point_c"),
+        pressure_msl_hpa=f.get("pressure_msl_hpa"),
+        uv_index=f.get("om_uv") if f.get("om_uv") is not None else f.get("uv_index_max"),
+        sst_c=f.get("sst_c"),
+        swell_height_m=f.get("swell_height_m"),
+    )
+    return DashboardSnapshot(
+        location=loc,
+        enriching=not enrich,
+        generated_at=generated_at,
+        sources=sources,
+        descriptive=Descriptive(
+            current=current,
+            series={
+                "precip_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_precip") or [])[i0:i0 + 48], "mm", "open-meteo"),
+                "temp_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_temp") or [])[i0:i0 + 48], "°C", "open-meteo"),
+                "soil_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_soil") or [])[i0:i0 + 48], "m³/m³", "open-meteo"),
+                "rh_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_rh") or [])[i0:i0 + 48], "%", "open-meteo"),
+                "wind_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_wind") or [])[i0:i0 + 48], "km/h", "open-meteo"),
+                "wind_dir_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_wind_dir") or [])[i0:i0 + 48], "deg", "open-meteo"),
+                "cloud_hourly": _series(hourly_t[i0:i0 + 48], (f.get("hourly_cloud") or [])[i0:i0 + 48], "%", "open-meteo"),
+                "aqi_hourly": _series(
+                    (f.get("hourly_aqi_times") or [])[aqi_i0:aqi_i0 + 48],
+                    (f.get("hourly_us_aqi") or [])[aqi_i0:aqi_i0 + 48],
+                    "US AQI",
+                    "open-meteo-air",
+                ),
+                "aqi_history": _series(
+                    [p.get("t") for p in (obs.get("aq_hist") or [])],
+                    [p.get("value") for p in (obs.get("aq_hist") or [])],
+                    "µg/m³ PM2.5",
+                    "openaq",
+                ),
+                "wave_hourly": _series(
+                    (f.get("hourly_wave_times") or [])[wave_i0:wave_i0 + 48],
+                    (f.get("hourly_wave") or [])[wave_i0:wave_i0 + 48],
+                    "m",
+                    "open-meteo-marine",
+                ),
+                "uv_hourly": _series(
+                    (f.get("hourly_aqi_times") or [])[aqi_i0:aqi_i0 + 48],
+                    (f.get("hourly_uv") or [])[aqi_i0:aqi_i0 + 48],
+                    "UV",
+                    "open-meteo-air",
+                ),
+                "dust_hourly": _series(
+                    (f.get("hourly_aqi_times") or [])[aqi_i0:aqi_i0 + 48],
+                    (f.get("hourly_dust") or [])[aqi_i0:aqi_i0 + 48],
+                    "µg/m³",
+                    "open-meteo-air",
+                ),
+                "pm10_hourly": _series(
+                    (f.get("hourly_aqi_times") or [])[aqi_i0:aqi_i0 + 48],
+                    (f.get("hourly_pm10") or [])[aqi_i0:aqi_i0 + 48],
+                    "µg/m³",
+                    "open-meteo-air",
+                ),
+                "sst_hourly": _series(
+                    (f.get("hourly_wave_times") or [])[wave_i0:wave_i0 + 48],
+                    (f.get("hourly_sst") or [])[wave_i0:wave_i0 + 48],
+                    "°C",
+                    "open-meteo-marine",
+                ),
+                "swell_hourly": _series(
+                    (f.get("hourly_wave_times") or [])[wave_i0:wave_i0 + 48],
+                    (f.get("hourly_swell") or [])[wave_i0:wave_i0 + 48],
+                    "m",
+                    "open-meteo-marine",
+                ),
+                "precip_daily": _series(daily_t, f.get("precip_days") or [], "mm", "open-meteo"),
+                "et0_daily": _series(daily_t, f.get("et0_days") or [], "mm", "open-meteo"),
+                "tmax_daily": _series(daily_t, f.get("temp_max") or [], "°C", "open-meteo"),
+                "tmin_daily": _series(daily_t, f.get("temp_min") or [], "°C", "open-meteo"),
+                "discharge_daily": _series(
+                    [f"d+{i}" for i in range(len(f.get("discharge") or []))],
+                    f.get("discharge") or [],
+                    "m³/s",
+                    "open-meteo-flood",
+                ),
+            },
+        ),
+        diagnostic=Diagnostic(anomalies=anomalies, drivers=drivers, stories=stories),
+        predictive=Predictive(
+            precip_next_3d_mm=round(float(f.get("precip_3d_mm") or 0), 1),
+            precip_7d_mm=float(outlook.get("precip_7d_mm") or 0),
+            precip_probability_pct=list(f.get("precip_prob") or [])[:7],
+            temp_max_c=[round(x, 1) for x in (f.get("temp_max") or [])[:7]],
+            temp_min_c=[round(x, 1) for x in (f.get("temp_min") or [])[:7]],
+            flood_discharge_trend=str(f.get("discharge_trend") or "steady"),
+            river_discharge=[round(x, 2) for x in (f.get("discharge") or [])[:7]],
+            water_balance_7d_mm=float(outlook.get("water_balance_7d_mm") or 0),
+            et0_7d_mm=float(outlook.get("et0_7d_mm") or 0),
+            irrigate_dates=list(outlook.get("irrigate_dates") or []),
+            flood_watch_dates=list(outlook.get("flood_watch_dates") or []),
+            outlook_days=list((dual.get("ours") or {}).get("days") or outlook.get("days") or []),
+            hourly=build_hourly_7d(f),
+            model="open-meteo members + Prithvi AI hybrid Vincentize q50",
+        ),
+        prescriptive=Prescriptive(warnings=warnings, actions=actions),
+        risks=risks,
+        risks_india=risks_india,
+        map=MapState(
+            center=[loc.lat, loc.lon],
+            zoom=8,
+            layers=[
+                {"id": "positron", "type": "tile", "visible": True},
+                {"id": "streets", "type": "tile", "visible": False},
+                {"id": "satellite", "type": "tile", "visible": False},
+                {"id": "terrain", "type": "tile", "visible": False},
+                {
+                    "id": "gibs_truecolor",
+                    "type": "wms",
+                    "visible": False,
+                    "url": "https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi",
+                },
+                {
+                    "id": "bhuvan_geomorph",
+                    "type": "wms",
+                    "visible": False,
+                    "url": "https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms",
+                    "layers": "geomorphology.wb_gm50k_0506_new",
+                },
+            ],
+        ),
+        vegetation=veg,
+        provider_status=obs["status"],
+        ogd={
+            "aqi": obs.get("naqi"),
+            "mandi": obs.get("mandi") or [],
+            "nearby": neighbors,
+            "quakes": obs.get("quakes") or [],
+            "tsunami": obs.get("tsunami") or [],
+            "gdacs": obs.get("gdacs") or [],
+            "mosdac": obs.get("mosdac") or {},
+            "moon": obs.get("moon") or {},
+        },
+        predictions={
+            **dual,
+            "hazards": build_hazard_forecast(
+                f,
+                flood_score=flood_score,
+                quakes=obs.get("quakes") or [],
+                tsunami=obs.get("tsunami") or [],
+                coast_km=f.get("coast_km"),
+                cap_hit=cap_hit,
+            ),
+            "vera": vera,
+        },
+        live=_build_live(loc, f, obs, flood_score, generated_at),
+        science=science,
+        quality=_finalize_quality({
+            "air": {
+                "us_aqi": f.get("us_aqi"),
+                "european_aqi": f.get("eu_aqi"),
+                "pm2_5": f.get("om_pm25"),
+                "pm10": f.get("om_pm10"),
+                "co": f.get("om_co"),
+                "co2": f.get("om_co2"),
+                "no2": f.get("om_no2"),
+                "so2": f.get("om_so2"),
+                "o3": f.get("om_o3"),
+                "nh3": air_nh3,
+                "ch4": f.get("om_ch4"),
+                "dust": f.get("om_dust"),
+                "uv_index": f.get("om_uv"),
+                "uv_index_clear_sky": f.get("om_uv_clear"),
+                "pollen": pollen_pack,
+                "cpcb": obs.get("naqi"),
+                "waqi": obs.get("waqi"),
+                "openweather": obs.get("ow_air"),
+            },
+            "climate": {
+                "rh_now": f.get("rh_now"),
+                "rh_max": f.get("rh_max"),
+                "rh_min": f.get("rh_min"),
+                "rh_mean": f.get("rh_mean"),
+                "dew_point_c": f.get("dew_point_c"),
+                "dew_max": f.get("dew_max"),
+                "dew_min": f.get("dew_min"),
+                "dew_mean": f.get("dew_mean"),
+                "apparent_temp_c": f.get("apparent_temp_c"),
+                "apparent_max": f.get("apparent_max"),
+                "apparent_min": f.get("apparent_min"),
+                "temp_now": f.get("temp_now"),
+                "temp_max": (f.get("temp_max") or [None])[0] if f.get("temp_max") else None,
+                "temp_min": (f.get("temp_min") or [None])[0] if f.get("temp_min") else None,
+                "temp_mean": f.get("temp_mean"),
+                "temp_80m": f.get("temp_80m"),
+                "temp_120m": f.get("temp_120m"),
+                "temp_180m": f.get("temp_180m"),
+                "uv_index": f.get("om_uv"),
+                "uv_index_clear_sky": f.get("om_uv_clear"),
+                "uv_index_max": f.get("uv_index_max"),
+                "uv_clear_max": f.get("uv_clear_max"),
+                "precip_now": f.get("precip_now"),
+                "precip_prob_now": f.get("precip_prob_now"),
+                "precip_prob_max": (f.get("precip_prob") or [None])[0] if f.get("precip_prob") else None,
+                "rain_now": f.get("rain_now"),
+                "showers_now": f.get("showers_now"),
+                "snowfall_now": f.get("snowfall_now"),
+                "snow_depth_m": f.get("snow_depth_m"),
+                "rain_sum": f.get("rain_sum"),
+                "showers_sum": f.get("showers_sum"),
+                "snowfall_sum": f.get("snowfall_sum"),
+                "weather_code": f.get("weather_code"),
+                "pressure_msl_hpa": f.get("pressure_msl_hpa"),
+                "surface_pressure_hpa": f.get("surface_pressure_hpa"),
+                "cloud_cover_pct": f.get("cloud_now"),
+                "cloud_low": f.get("cloud_low"),
+                "cloud_mid": f.get("cloud_mid"),
+                "cloud_high": f.get("cloud_high"),
+                "visibility_m": f.get("visibility_m"),
+                "et_now": f.get("et_now"),
+                "et0_today": f.get("et0_today"),
+                "vpd_now": f.get("vpd_now"),
+                "wind_10m": f.get("wind_now"),
+                "wind_10m_max": f.get("wind_10m_max"),
+                "wind_10m_mean": f.get("wind_10m_mean"),
+                "wind_dir_10m": f.get("wind_dir_now"),
+                "wind_gusts_10m": f.get("wind_gusts_now"),
+                "wind_80m": f.get("wind_80m"),
+                "wind_120m": f.get("wind_120m"),
+                "wind_180m": f.get("wind_180m"),
+                "wind_dir_80m": f.get("wind_dir_80m"),
+                "wind_dir_120m": f.get("wind_dir_120m"),
+                "wind_dir_180m": f.get("wind_dir_180m"),
+                "soil_t_0": f.get("soil_t_0"),
+                "soil_t_6": f.get("soil_t_6"),
+                "soil_t_18": f.get("soil_t_18"),
+                "soil_t_54": f.get("soil_t_54"),
+                "soil_m_0_1": f.get("soil_m_0_1"),
+                "soil_m_1_3": f.get("soil_m_1_3"),
+                "soil_m_3_9": f.get("soil_m_3_9"),
+                "soil_m_9_27": f.get("soil_m_9_27"),
+                "soil_m_27_81": f.get("soil_m_27_81"),
+                "soil_m3m3": f.get("soil_m3m3"),
+                "sunrise": f.get("sunrise"),
+                "sunset": f.get("sunset"),
+                "daylight_s": f.get("daylight_s"),
+                "sunshine_s": f.get("sunshine_s"),
+                "shortwave_sum": f.get("shortwave_sum"),
+            },
+            "moon": obs.get("moon") or {},
+            "marine": {
+                "inland": f.get("marine_inland"),
+                "wave_height_m": f.get("wave_height_m"),
+                "wave_dir_deg": f.get("wave_dir_deg"),
+                "wave_period_s": f.get("wave_period_s"),
+                "wave_peak_period_s": f.get("wave_peak_period_s"),
+                "wind_wave_height_m": f.get("wind_wave_height_m"),
+                "wind_wave_dir_deg": f.get("wind_wave_dir_deg"),
+                "wind_wave_period_s": f.get("wind_wave_period_s"),
+                "wind_wave_peak_period_s": f.get("wind_wave_peak_period_s"),
+                "swell_height_m": f.get("swell_height_m"),
+                "swell_dir_deg": f.get("swell_dir_deg"),
+                "swell_period_s": f.get("swell_period_s"),
+                "swell_peak_period_s": f.get("swell_peak_period_s"),
+                "swell2_height_m": f.get("swell2_height_m"),
+                "swell2_dir_deg": f.get("swell2_dir_deg"),
+                "swell2_period_s": f.get("swell2_period_s"),
+                "swell3_height_m": f.get("swell3_height_m"),
+                "swell3_dir_deg": f.get("swell3_dir_deg"),
+                "swell3_period_s": f.get("swell3_period_s"),
+                "sea_level_m": f.get("sea_level_m"),
+                "sst_c": f.get("sst_c"),
+                "ocean_current_ms": f.get("ocean_current_ms"),
+                "ocean_current_dir": f.get("ocean_current_dir"),
+            },
+            "seismic": obs.get("quakes") or [],
+            "tsunami": obs.get("tsunami") or [],
+            "flood": {
+                "discharge": (f.get("discharge") or [])[:7],
+                "discharge_mean": (f.get("discharge_mean") or [])[:7],
+                "trend": f.get("discharge_trend"),
+                "source": "open-meteo-flood (GloFAS)",
+            },
+            "gdacs": obs.get("gdacs") or [],
+            "mosdac": obs.get("mosdac") or {},
+        }),
+    )
+
