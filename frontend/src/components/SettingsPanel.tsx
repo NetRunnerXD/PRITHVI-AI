@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
-import { API_BASE, apiUrl } from "@/lib/config";
+import { apiUrl, SHOW_DEV } from "@/lib/config";
 import { gpsFix, patchAlertLocation, patchProfile } from "@/lib/auth";
-import { DEFAULT_SETTINGS, useApp } from "@/lib/store";
+import { useApp } from "@/lib/store";
 import { DistrictSearch } from "./DistrictSearch";
 import type { Density, TabId, ThemeId, UnitSys } from "@/types/dashboard";
 
@@ -29,7 +29,6 @@ export function SettingsPanel() {
     setOutputLocale,
     settings,
     setSettings,
-    resetSettings,
     account,
     setAccount,
     setAuthModal,
@@ -175,18 +174,6 @@ export function SettingsPanel() {
         <h3 className="text-sm font-bold">
           {locale === "hi" ? "डेमो SMS" : locale === "bn" ? "ডেমো SMS" : "Demo SMS"}
         </h3>
-        <p className="text-xs text-neo-muted">
-          {locale === "hi"
-            ? "Fast2SMS Quick SMS वायर्ड है लेकिन बैकग्राउंड अलर्ट बंद हैं। पूर्वावलोकन Ollama से; भेजें +91 7439972482 पर।"
-            : locale === "bn"
-            ? "Fast2SMS Quick SMS যুক্ত, ব্যাকগ্রাউন্ড অ্যালার্ট বন্ধ। প্রিভিউ Ollama; পাঠাবে +91 7439972482-এ।"
-            : "Fast2SMS Quick SMS is wired and kept off for background alerts. Preview uses Ollama; Send goes to +91 7439972482."}
-        </p>
-        <p className="font-mono text-[11px] text-neo-muted">
-          {demoSms?.sms
-            ? `enabled=${demoSms.sms.enabled ? "yes" : "no"} · dry_run=${demoSms.sms.dry_run ? "yes" : "no"} · key=${demoSms.sms.has_key ? "yes" : "no"}`
-            : "Fast2SMS route=q · background off"}
-        </p>
         {demoSms?.text ? (
           <pre className="neo-in whitespace-pre-wrap px-3 py-2 text-sm">{demoSms.text}</pre>
         ) : (
@@ -196,7 +183,7 @@ export function SettingsPanel() {
         )}
         {demoSms?.engine ? (
           <p className="text-[11px] text-neo-muted">
-            {demoSms.engine === "ollama" ? "Ollama" : demoSms.engine} · {demoSms.chars || 0}/160 · {demoSms.to || "+91 7439972482"}
+            {demoSms.engine === "ollama" ? "Ollama" : demoSms.engine} · {demoSms.chars || 0}/160
           </p>
         ) : null}
         <div className="flex flex-wrap gap-2">
@@ -261,10 +248,10 @@ export function SettingsPanel() {
                         ? "কী নেই — পাঠানো হয়নি।"
                         : "No API key — not sent."
                       : locale === "hi"
-                      ? "+91 7439972482 पर भेजा।"
+                      ? "SMS भेजा गया।"
                       : locale === "bn"
-                      ? "+91 7439972482-এ পাঠানো হয়েছে।"
-                      : "Sent to +91 7439972482.",
+                      ? "SMS পাঠানো হয়েছে।"
+                      : "SMS sent.",
                   );
                 })
                 .catch((e) => setDemoMsg(String(e)))
@@ -278,10 +265,10 @@ export function SettingsPanel() {
                 ? "পাঠানো হচ্ছে…"
                 : "Sending…"
               : locale === "hi"
-              ? "+91 7439972482 पर भेजें"
+              ? "SMS भेजें"
               : locale === "bn"
-              ? "+91 7439972482-এ পাঠান"
-              : "Send SMS to +91 7439972482"}
+              ? "SMS পাঠান"
+              : "Send SMS"}
           </button>
         </div>
         {demoMsg ? <p className="text-xs font-semibold">{demoMsg}</p> : null}
@@ -391,7 +378,6 @@ export function SettingsPanel() {
             ))}
           </select>
         </label>
-        <p className="text-xs text-neo-muted">{t.advisorModelHint}</p>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -400,7 +386,6 @@ export function SettingsPanel() {
           />
           {t.showEvidence}
         </label>
-        <p className="text-xs text-neo-muted">{t.showEvidenceHint}</p>
         <p className="text-xs text-neo-muted">{t.replyIn}</p>
         <div className="flex gap-2">
           {(["en", "hi", "bn", "auto"] as const).map((l) => (
@@ -466,7 +451,6 @@ export function SettingsPanel() {
           />
           {t.displayNullValues || "Display Null Values"}
         </label>
-        <p className="text-xs text-neo-muted">{t.displayNullValuesHint || "Show weather and sensor metrics with empty or null readings."}</p>
         <label className="flex items-center gap-2 text-sm pt-1">
           <input
             type="checkbox"
@@ -488,164 +472,155 @@ export function SettingsPanel() {
         </p>
       </section>
 
-      <section className="neo space-y-3 p-4">
-        <h3 className="text-sm font-bold">{t.resetSettings}</h3>
-        <p className="text-sm text-neo-muted">{t.resetHint}</p>
-        <button className="neo-btn" onClick={() => resetSettings()}>
-          {t.resetSettings}
-        </button>
-        <p className="font-mono text-[11px] text-neo-muted">
-          {DEFAULT_SETTINGS.theme} · {DEFAULT_SETTINGS.units} · {DEFAULT_SETTINGS.refreshSec}s
-        </p>
-        <p className="text-xs text-neo-muted">{t.apiEndpoint}</p>
-        <p className="break-all font-mono text-[11px] text-neo-muted">{API_BASE || "(same origin /api)"}</p>
-      </section>
 
-      {/* Developer Controls: Individual API & Machine Learning Toggles */}
-      <section className="neo space-y-4 p-4 md:col-span-2 border-t-2 border-neo-accent/30">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] pb-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-base font-bold">🛠️ Developer Telemetry &amp; Process Controls</span>
-              <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400">
-                PRO / DEV
-              </span>
+      {/* Developer Controls: Individual API & Machine Learning Toggles (enabled when SHOW_DEV=True) */}
+      {SHOW_DEV ? (
+        <section className="neo space-y-4 p-4 md:col-span-2 border-t-2 border-neo-accent/30">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-bold">🛠️ Developer Telemetry &amp; Process Controls</span>
+                <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400">
+                  PRO / DEV
+                </span>
+              </div>
+              <p className="text-xs text-neo-muted mt-0.5">
+                Selectively disable or enable upstream data providers and intensive ML pipeline modules to isolate performance bottlenecks or reduce latency.
+              </p>
             </div>
-            <p className="text-xs text-neo-muted mt-0.5">
-              Selectively disable or enable upstream data providers and intensive ML pipeline modules to isolate performance bottlenecks or reduce latency.
-            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="neo-btn text-xs px-2.5 py-1"
+                onClick={() => setSettings({ devDisabledProviders: [] })}
+              >
+                Enable All
+              </button>
+              <button
+                type="button"
+                className="neo-btn text-xs px-2.5 py-1 text-amber-600"
+                onClick={() =>
+                  setSettings({
+                    devDisabledProviders: [
+                      "nasa-power",
+                      "nasa-power-clim",
+                      "data.gov.in-mandi",
+                      "data.gov.in-aqi",
+                      "open-meteo-models",
+                      "openaq-hist",
+                      "science",
+                      "anomalies",
+                    ],
+                  })
+                }
+              >
+                Turbo Mode (Fastest)
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="neo-btn text-xs px-2.5 py-1"
-              onClick={() => setSettings({ devDisabledProviders: [] })}
-            >
-              Enable All
-            </button>
-            <button
-              type="button"
-              className="neo-btn text-xs px-2.5 py-1 text-amber-600"
-              onClick={() =>
-                setSettings({
-                  devDisabledProviders: [
-                    "nasa-power-clim",
-                    "data.gov.in-mandi",
-                    "data.gov.in-aqi",
-                    "open-meteo-models",
-                    "openaq-hist",
-                    "science",
-                    "anomalies",
-                  ],
-                })
-              }
-            >
-              Turbo Mode (Fastest)
-            </button>
-          </div>
-        </div>
 
-        {/* Upstream APIs */}
-        <div className="space-y-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-neo-muted">External Telemetry APIs</h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {[
-              { id: "open-meteo", name: "Open-Meteo Forecast", latency: "~300ms", desc: "Core weather & 7-day outlook" },
-              { id: "open-meteo-models", name: "Open-Meteo 8-Model Blend", latency: "~2.2s", desc: "ECMWF, GFS, ICON ensemble" },
-              { id: "open-meteo-flood", name: "GloFAS Flood API", latency: "~500ms", desc: "River discharge rates" },
-              { id: "open-meteo-air", name: "CAMS Air Quality API", latency: "~400ms", desc: "PM2.5, PM10, gases" },
-              { id: "open-meteo-marine", name: "Marine Waves & SST", latency: "~600ms", desc: "Coastal wave height & swell" },
-              { id: "data.gov.in-aqi", name: "Data.gov.in CPCB AQI", latency: "~1.8s", desc: "National ground sensors" },
-              { id: "data.gov.in-mandi", name: "Data.gov.in Mandi Prices", latency: "~2.4s", desc: "Agmarknet crop arrivals" },
-              { id: "imd-cap", name: "IMD CAP Bulletins", latency: "~900ms", desc: "National early warning XML" },
-              { id: "imd-rest", name: "IMD Official Station REST", latency: "~1.2s", desc: "Local synoptic weather" },
-              { id: "sachet", name: "Sachet NDMA Feeds", latency: "~800ms", desc: "State disaster alerts" },
-              { id: "nasa-power", name: "NASA POWER Daily", latency: "~1.5s", desc: "16-day surface solar & rain" },
-              { id: "nasa-power-clim", name: "NASA POWER 8-Yr Climate", latency: "~2.8s", desc: "Historical matrix for anomalies" },
-              { id: "usgs-seismic", name: "USGS Seismic Feed", latency: "~350ms", desc: "Earthquake events geo-radius" },
-              { id: "incois-tsunami", name: "INCOIS Tsunami Bulletins", latency: "~700ms", desc: "ITEWS Indian Ocean threat" },
-              { id: "openaq-hist", name: "OpenAQ Historical Archive", latency: "~1.1s", desc: "48h pollutant trend records" },
-              { id: "waqi", name: "WAQI Realtime Station", latency: "~300ms", desc: "Alternative IoT AQI sensor" },
-              { id: "mosdac", name: "ISRO MOSDAC Satellite", latency: "~900ms", desc: "INSAT-3D HDF5/thermal feed" },
-              { id: "gdacs", name: "GDACS Disaster Events", latency: "~300ms", desc: "UN/EU global disaster RSS" },
-            ].map((api) => {
-              const disabledList = settings.devDisabledProviders || [];
-              const isOff = disabledList.includes(api.id);
-              return (
-                <div
-                  key={api.id}
-                  onClick={() => {
-                    const next = isOff ? disabledList.filter((x) => x !== api.id) : [...disabledList, api.id];
-                    setSettings({ devDisabledProviders: next });
-                  }}
-                  className={`cursor-pointer rounded-xl border p-2.5 transition-all select-none ${
-                    isOff
-                      ? "bg-red-500/10 border-red-500/30 opacity-70"
-                      : "bg-[var(--card)] border-[var(--line)] hover:border-neo-accent shadow-xs"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold truncate">{api.name}</span>
-                    <span
-                      className={`h-2.5 w-2.5 rounded-full ${
-                        isOff ? "bg-red-500" : "bg-emerald-500 animate-pulse"
-                      }`}
-                    />
+          {/* Upstream APIs */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-neo-muted">External Telemetry APIs</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {[
+                { id: "open-meteo", name: "Open-Meteo Forecast", latency: "~300ms", desc: "Core weather & 7-day outlook" },
+                { id: "open-meteo-models", name: "Open-Meteo 8-Model Blend", latency: "~2.2s", desc: "ECMWF, GFS, ICON ensemble" },
+                { id: "open-meteo-flood", name: "GloFAS Flood API", latency: "~500ms", desc: "River discharge rates" },
+                { id: "open-meteo-air", name: "CAMS Air Quality API", latency: "~400ms", desc: "PM2.5, PM10, gases" },
+                { id: "open-meteo-marine", name: "Marine Waves & SST", latency: "~600ms", desc: "Coastal wave height & swell" },
+                { id: "data.gov.in-aqi", name: "Data.gov.in CPCB AQI", latency: "~1.8s", desc: "National ground sensors" },
+                { id: "data.gov.in-mandi", name: "Data.gov.in Mandi Prices", latency: "~2.4s", desc: "Agmarknet crop arrivals" },
+                { id: "imd-cap", name: "IMD CAP Bulletins", latency: "~900ms", desc: "National early warning XML" },
+                { id: "imd-rest", name: "IMD Official Station REST", latency: "~1.2s", desc: "Local synoptic weather" },
+                { id: "sachet", name: "Sachet NDMA Feeds", latency: "~800ms", desc: "State disaster alerts" },
+                { id: "nasa-power", name: "NASA POWER Daily", latency: "~1.5s", desc: "16-day surface solar & rain (off by default)" },
+                { id: "nasa-power-clim", name: "NASA POWER 8-year climate", latency: "~2.8s", desc: "Historical matrix for anomalies (off by default)" },
+                { id: "usgs-seismic", name: "USGS Seismic Feed", latency: "~350ms", desc: "Earthquake events geo-radius" },
+                { id: "incois-tsunami", name: "INCOIS Tsunami Bulletins", latency: "~700ms", desc: "ITEWS Indian Ocean threat" },
+                { id: "openaq-hist", name: "OpenAQ Historical Archive", latency: "~1.1s", desc: "48h pollutant trend records" },
+                { id: "waqi", name: "WAQI Realtime Station", latency: "~300ms", desc: "Alternative IoT AQI sensor" },
+                { id: "mosdac", name: "ISRO MOSDAC Satellite", latency: "~900ms", desc: "INSAT-3D HDF5/thermal feed" },
+                { id: "gdacs", name: "GDACS Disaster Events", latency: "~300ms", desc: "UN/EU global disaster RSS" },
+              ].map((api) => {
+                const disabledList = settings.devDisabledProviders || [];
+                const isOff = disabledList.includes(api.id);
+                return (
+                  <div
+                    key={api.id}
+                    onClick={() => {
+                      const next = isOff ? disabledList.filter((x) => x !== api.id) : [...disabledList, api.id];
+                      setSettings({ devDisabledProviders: next });
+                    }}
+                    className={`cursor-pointer rounded-xl border p-2.5 transition-all select-none ${
+                      isOff
+                        ? "bg-red-500/10 border-red-500/30 opacity-70"
+                        : "bg-[var(--card)] border-[var(--line)] hover:border-neo-accent shadow-xs"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold truncate">{api.name}</span>
+                      <span
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          isOff ? "bg-red-500" : "bg-emerald-500 animate-pulse"
+                        }`}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] mt-1 text-neo-muted">
+                      <span className="truncate">{api.desc}</span>
+                      <span className="font-mono shrink-0 ml-1">{api.latency}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between text-[10px] mt-1 text-neo-muted">
-                    <span className="truncate">{api.desc}</span>
-                    <span className="font-mono shrink-0 ml-1">{api.latency}</span>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
 
-        {/* Backend Machine Learning & Decision Science Processes */}
-        <div className="space-y-2 pt-2 border-t border-[var(--line)]">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-neo-muted">
-            Backend ML &amp; Decision Science Engines
-          </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {[
-              { id: "science", name: "Decision-Science Pipeline", desc: "Hysteresis, phenology & livelihood" },
-              { id: "anomalies", name: "Climatological Anomaly Engine", desc: "Z-score tail anomaly detection" },
-              { id: "risks", name: "Multi-Hazard Risk Engine", desc: "10-factor weighted linear scores" },
-              { id: "regret", name: "Regret-Theory Irrigation Advice", desc: "Minimax regret water evaluation" },
-              { id: "sat_live", name: "INSAT Computer Vision / Optical Flow", desc: "Live satellite cloud motion" },
-              { id: "vera", name: "VERA-MoE Neural Architecture", desc: "Mixture-of-Experts neural blend" },
-            ].map((proc) => {
-              const disabledList = settings.devDisabledProviders || [];
-              const isOff = disabledList.includes(proc.id);
-              return (
-                <div
-                  key={proc.id}
-                  onClick={() => {
-                    const next = isOff ? disabledList.filter((x) => x !== proc.id) : [...disabledList, proc.id];
-                    setSettings({ devDisabledProviders: next });
-                  }}
-                  className={`cursor-pointer rounded-xl border p-2.5 transition-all select-none ${
-                    isOff
-                      ? "bg-red-500/10 border-red-500/30 opacity-70"
-                      : "bg-[var(--card)] border-[var(--line)] hover:border-neo-accent shadow-xs"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold truncate">{proc.name}</span>
-                    <span
-                      className={`h-2.5 w-2.5 rounded-full ${
-                        isOff ? "bg-red-500" : "bg-emerald-500 animate-pulse"
-                      }`}
-                    />
+          {/* Backend Machine Learning & Decision Science Processes */}
+          <div className="space-y-2 pt-2 border-t border-[var(--line)]">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-neo-muted">
+              Backend ML &amp; Decision Science Engines
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {[
+                { id: "science", name: "Decision-Science Pipeline", desc: "Hysteresis, phenology & livelihood" },
+                { id: "anomalies", name: "Climatological Anomaly Engine", desc: "Z-score tail anomaly detection" },
+                { id: "risks", name: "Multi-Hazard Risk Engine", desc: "10-factor weighted linear scores" },
+                { id: "regret", name: "Regret-Theory Irrigation Advice", desc: "Minimax regret water evaluation" },
+                { id: "sat_live", name: "INSAT Computer Vision / Optical Flow", desc: "Live satellite cloud motion" },
+                { id: "vera", name: "VERA-MoE Neural Architecture", desc: "Mixture-of-Experts neural blend" },
+              ].map((proc) => {
+                const disabledList = settings.devDisabledProviders || [];
+                const isOff = disabledList.includes(proc.id);
+                return (
+                  <div
+                    key={proc.id}
+                    onClick={() => {
+                      const next = isOff ? disabledList.filter((x) => x !== proc.id) : [...disabledList, proc.id];
+                      setSettings({ devDisabledProviders: next });
+                    }}
+                    className={`cursor-pointer rounded-xl border p-2.5 transition-all select-none ${
+                      isOff
+                        ? "bg-red-500/10 border-red-500/30 opacity-70"
+                        : "bg-[var(--card)] border-[var(--line)] hover:border-neo-accent shadow-xs"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold truncate">{proc.name}</span>
+                      <span
+                        className={`h-2.5 w-2.5 rounded-full ${
+                          isOff ? "bg-red-500" : "bg-emerald-500 animate-pulse"
+                        }`}
+                      />
+                    </div>
+                    <div className="text-[10px] mt-1 text-neo-muted truncate">{proc.desc}</div>
                   </div>
-                  <div className="text-[10px] mt-1 text-neo-muted truncate">{proc.desc}</div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
     </div>
   );
 }

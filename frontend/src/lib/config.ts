@@ -22,3 +22,11 @@ export function apiUrl(path: string): string {
   if (!p.startsWith("/api")) p = `/api${p}`;
   return API_BASE ? `${API_BASE}${p}` : p;
 }
+
+export const SHOW_DEV =
+  process.env.NEXT_PUBLIC_SHOW_DEV === "true" ||
+  process.env.NEXT_PUBLIC_SHOW_DEV === "True" ||
+  process.env.SHOW_DEV === "true" ||
+  process.env.SHOW_DEV === "True";
+
+
