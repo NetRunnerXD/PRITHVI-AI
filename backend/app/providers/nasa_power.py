@@ -65,6 +65,14 @@ async def _fetch_and_cache_daily(key: str, lat: float, lon: float, days: int = 1
         _INFLIGHT_DAILY.discard(key)
 
 
+def seed_from_client(lat: float, lon: float, payload: dict[str, Any] | None, days: int = 16) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    key = f"nasa:{round(lat, 2)}:{round(lon, 2)}:{days}"
+    cache.set(key, payload, 12 * 60 * 60, swr_s=48 * 60 * 60)
+    return True
+
+
 async def daily_point(lat: float, lon: float, days: int = 16) -> dict[str, Any]:
     key = f"nasa:{round(lat, 2)}:{round(lon, 2)}:{days}"
     hit = cache.get(key)

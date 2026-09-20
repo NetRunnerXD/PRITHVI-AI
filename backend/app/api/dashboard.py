@@ -51,6 +51,14 @@ async def dashboard_post(body: DashboardPost):
     pack = om.model_dump() if hasattr(om, "model_dump") else om
     if isinstance(pack, dict):
         open_meteo.seed_from_client(loc.lat, loc.lon, pack, body.fetched_at)
+    if body.usgs_csv:
+        from app.providers import hazards as hazards_prov
+
+        hazards_prov.seed_usgs_csv(body.usgs_csv)
+    if isinstance(body.nasa_power, dict):
+        from app.providers import nasa_power as nasa_prov
+
+        nasa_prov.seed_from_client(loc.lat, loc.lon, body.nasa_power)
     disabled_set = {d.strip().lower() for d in (body.disable or "").split(",") if d.strip()} or None
     snap = await build_snapshot(loc, body.locale or "en", full=True, disabled=disabled_set)
     return snap.model_dump()

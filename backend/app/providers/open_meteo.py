@@ -143,8 +143,92 @@ def seed_from_client(
     marine = om.get("marine")
     if isinstance(marine, dict):
         cache.set(_om_key("mr2", lat, lon), marine, 180.0, 900.0)
+    models = om.get("models")
+    if isinstance(models, dict):
+        _seed_models(lat, lon, models)
+    era5 = om.get("era5")
+    if isinstance(era5, dict):
+        _seed_era5(lat, lon, era5)
     cache.set(_om_key("client", lat, lon), True, max_age, 0)
     return True
+
+
+def _seed_models(lat: float, lon: float, models: dict[str, Any]) -> None:
+    """Accept either {sid: {daily, hourly}} or a raw Open-Meteo multi-model payload."""
+    if any(isinstance(v, dict) and (v.get("daily") or v.get("hourly")) for v in models.values()):
+        for sid, pack in models.items():
+            if isinstance(pack, dict) and (pack.get("daily") or pack.get("hourly")):
+                cache.set(f"om:blend:{sid}:{round(lat, 3)}:{round(lon, 3)}", pack, 900)
+        return
+    d_block = models.get("daily") or {}
+    h_block = models.get("hourly") or {}
+    if not isinstance(d_block, dict):
+        return
+    daily_vars = (
+        "precipitation_sum",
+        "precipitation_probability_max",
+        "temperature_2m_max",
+        "temperature_2m_min",
+        "wind_speed_10m_max",
+        "wind_gusts_10m_max",
+        "shortwave_radiation_sum",
+    )
+    hourly_vars = (
+        "precipitation",
+        "temperature_2m",
+        "wind_speed_10m",
+        "wind_gusts_10m",
+        "shortwave_radiation",
+        "visibility",
+        "relative_humidity_2m",
+    )
+    time_d = d_block.get("time") or []
+    time_h = h_block.get("time") or [] if isinstance(h_block, dict) else []
+    for sid, m in BLEND_MODELS:
+        sub_daily = {"time": time_d}
+        has_data = False
+        for v in daily_vars:
+            k = f"{v}_{m}"
+            if k in d_block:
+                sub_daily[v] = d_block[k]
+                has_data = True
+        sub_hourly = {"time": time_h}
+        if isinstance(h_block, dict):
+            for v in hourly_vars:
+                k = f"{v}_{m}"
+                if k in h_block:
+                    sub_hourly[v] = h_block[k]
+        if has_data:
+            cache.set(
+                f"om:blend:{sid}:{round(lat, 3)}:{round(lon, 3)}",
+                {"latitude": lat, "longitude": lon, "daily": sub_daily, "hourly": sub_hourly},
+                900,
+            )
+
+
+def _seed_era5(lat: float, lon: float, era5: dict[str, Any]) -> None:
+    key = f"om:era5:{round(lat, 2)}:{round(lon, 2)}"
+    if era5.get("ok") or era5.get("precip_days") is not None or era5.get("z500_m") is not None:
+        cache.set(key, era5, 6 * 3600)
+        return
+    hourly = era5.get("hourly") or {}
+    daily = era5.get("daily") or {}
+    if not isinstance(hourly, dict):
+        return
+    z = [float(x) for x in (hourly.get("geopotential_height_500hPa") or []) if x is not None]
+    p = [float(x) for x in (daily.get("precipitation_sum") or []) if x is not None] if isinstance(daily, dict) else []
+    cache.set(
+        key,
+        {
+            "ok": True,
+            "source": "open-meteo-era5-archive",
+            "z500_m": round(sum(z) / len(z), 1) if z else None,
+            "z500_std": round((sum((x - sum(z) / len(z)) ** 2 for x in z) / len(z)) ** 0.5, 2) if len(z) > 2 else None,
+            "precip_days": p[-16:],
+            "n_hours": len(hourly.get("time") or []),
+        },
+        6 * 3600,
+    )
 
 
 def _merge_om(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
@@ -219,6 +303,8 @@ async def forecast_models(lat: float, lon: float) -> dict[str, Any]:
             missing = True
 
     if not missing and cached:
+        return cached
+    if cached and client_seeded(lat, lon):
         return cached
     if client_seeded(lat, lon):
         base_fc = cache.get(_om_key("fc4", lat, lon))

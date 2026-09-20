@@ -220,6 +220,13 @@ def parse_usgs_csv(text: str, lat: float, lon: float) -> list[dict[str, Any]]:
     return out
 
 
+def seed_usgs_csv(csv_text: str | None) -> bool:
+    if not csv_text or not str(csv_text).strip():
+        return False
+    cache.set("usgs:india:csv", str(csv_text), 10 * 60)
+    return True
+
+
 async def recent_quakes(lat: float, lon: float, limit: int = 8) -> tuple[list[dict[str, Any]], str]:
     hit = cache.get("usgs:india:csv")
     if hit is None:

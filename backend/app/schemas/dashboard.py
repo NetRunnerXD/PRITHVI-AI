@@ -11,6 +11,8 @@ class OmClientPack(BaseModel):
     air: dict[str, Any] | None = None
     flood: dict[str, Any] | None = None
     marine: dict[str, Any] | None = None
+    models: dict[str, Any] | None = None
+    era5: dict[str, Any] | None = None
 
 
 class DashboardPost(BaseModel):
@@ -23,6 +25,8 @@ class DashboardPost(BaseModel):
     disable: str | None = None
     om: OmClientPack | dict[str, Any] | None = None
     fetched_at: float | str | None = None
+    usgs_csv: str | None = None
+    nasa_power: dict[str, Any] | None = None
 
 
 class EarlyWarning(BaseModel):
