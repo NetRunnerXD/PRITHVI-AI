@@ -46,6 +46,10 @@ const FC_DAILY =
 export type OmClientPack = {
   forecast: Record<string, any>;
   air?: Record<string, any> | null;
+  flood?: Record<string, any> | null;
+  marine?: Record<string, any> | null;
+  models?: Record<string, any> | null;
+  era5?: Record<string, any> | null;
   fetched_at: number;
 };
 
@@ -76,13 +80,92 @@ export async function fetchDirectOpenMeteo(lat: number, lon: number): Promise<Re
   }
 }
 
+async function omJson(url: string): Promise<Record<string, any> | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && typeof data === "object" && !data.error ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchDirectFlood(lat: number, lon: number): Promise<Record<string, any> | null> {
+  const q = new URLSearchParams({
+    latitude: String(lat),
+    longitude: String(lon),
+    daily: "river_discharge,river_discharge_mean,river_discharge_max",
+    forecast_days: "7",
+  });
+  return omJson(`https://flood-api.open-meteo.com/v1/flood?${q}`);
+}
+
+export async function fetchDirectMarine(lat: number, lon: number): Promise<Record<string, any> | null> {
+  const vars =
+    "wave_height,wave_direction,wave_period,wave_peak_period,wind_wave_height,wind_wave_direction,wind_wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,sea_level_height_msl,sea_surface_temperature,ocean_current_velocity,ocean_current_direction";
+  const q = new URLSearchParams({
+    latitude: String(lat),
+    longitude: String(lon),
+    current: vars,
+    hourly: vars,
+    forecast_days: "3",
+    timezone: "Asia/Kolkata",
+  });
+  return omJson(`https://marine-api.open-meteo.com/v1/marine?${q}`);
+}
+
+export async function fetchDirectModels(lat: number, lon: number): Promise<Record<string, any> | null> {
+  const q = new URLSearchParams({
+    latitude: String(lat),
+    longitude: String(lon),
+    daily: "precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,wind_gusts_10m_max,shortwave_radiation_sum",
+    hourly: "precipitation,temperature_2m,wind_speed_10m,wind_gusts_10m,shortwave_radiation,visibility,relative_humidity_2m",
+    forecast_days: "7",
+    timezone: "Asia/Kolkata",
+    models: "ecmwf_ifs025,ecmwf_aifs025,gfs_global,gfs_graphcast025,icon_global,icon_seamless,ukmo_global_deterministic_10km",
+  });
+  return omJson(`https://api.open-meteo.com/v1/forecast?${q}`);
+}
+
+export async function fetchDirectEra5(lat: number, lon: number): Promise<Record<string, any> | null> {
+  const end = new Date();
+  end.setUTCDate(end.getUTCDate() - 1);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - 15);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const q = new URLSearchParams({
+    latitude: String(lat),
+    longitude: String(lon),
+    start_date: iso(start),
+    end_date: iso(end),
+    hourly: "precipitation,temperature_2m,geopotential_height_500hPa,pressure_msl",
+    daily: "precipitation_sum",
+    timezone: "Asia/Kolkata",
+    models: "era5_seamless",
+  });
+  return omJson(`https://archive-api.open-meteo.com/v1/archive?${q}`);
+}
+
 export async function fetchClientOmPack(lat: number, lon: number, includeAir = true): Promise<OmClientPack | null> {
-  const [forecast, air] = await Promise.all([
+  const [forecast, air, flood, marine, models, era5] = await Promise.all([
     fetchDirectOpenMeteo(lat, lon),
     includeAir ? fetchDirectAqi(lat, lon) : Promise.resolve(null),
+    fetchDirectFlood(lat, lon),
+    fetchDirectMarine(lat, lon),
+    fetchDirectModels(lat, lon),
+    fetchDirectEra5(lat, lon),
   ]);
   if (!forecast) return null;
-  lastOmPack = { forecast, air, fetched_at: Date.now() / 1000 };
+  lastOmPack = {
+    forecast,
+    air,
+    flood,
+    marine,
+    models,
+    era5,
+    fetched_at: Date.now() / 1000,
+  };
   return lastOmPack;
 }
 

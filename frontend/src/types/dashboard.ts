@@ -562,6 +562,7 @@ export type ChatMsg = {
     bands?: { key?: string; category?: string; band?: string; meaning?: string; scale?: string }[];
     packet_id?: string;
   } | null;
+  timestamp?: string;
 };
 
 export type TabId = "home" | "analytics" | "data" | "map" | "model" | "chat" | "settings";

@@ -1,6 +1,8 @@
 import type { ChatMsg, DashboardSnapshot, Location } from "@/types/dashboard";
 import { apiUrl } from "./config";
-import { getLastOmPack } from "./openMeteoClient";
+import { getLastOmPack, type OmClientPack } from "./openMeteoClient";
+import type { ClientObsPack } from "./clientObs";
+import { questionToEnglish } from "./mtClient";
 
 export { apiUrl, API_BASE } from "./config";
 
@@ -48,7 +50,8 @@ export async function fetchDashboard(
   loc?: Location,
   signal?: AbortSignal,
   disabled?: string[],
-  om?: { forecast?: Record<string, unknown>; air?: Record<string, unknown> | null; fetched_at?: number }
+  om?: OmClientPack,
+  obs?: ClientObsPack
 ): Promise<DashboardSnapshot> {
   const q = new URLSearchParams();
   if (loc?.district) q.set("district", loc.district);
@@ -68,8 +71,17 @@ export async function fetchDashboard(
         lat: loc?.lat,
         lon: loc?.lon,
         disable: disabled?.join(",") || undefined,
-        om: { forecast: om.forecast, air: om.air || undefined },
+        om: {
+          forecast: om.forecast,
+          air: om.air || undefined,
+          flood: om.flood || undefined,
+          marine: om.marine || undefined,
+          models: om.models || undefined,
+          era5: om.era5 || undefined,
+        },
         fetched_at: om.fetched_at,
+        usgs_csv: obs?.usgs_csv || undefined,
+        nasa_power: obs?.nasa_power || undefined,
       }),
       signal,
     });
@@ -302,13 +314,10 @@ export async function fetchStates(): Promise<string[]> {
 }
 
 export async function fetchWeatherGrid(hour = 0) {
-  try {
-    const r = await fetch(`${apiUrl("/map/weather-grid")}?hour=${hour}`);
-    if (!r.ok) return null;
-    return r.json();
-  } catch {
-    return null;
-  }
+  const { fetchClientWeatherGrid } = await import("./weatherGridClient");
+  const local = await fetchClientWeatherGrid(hour);
+  if (local?.ok && local.fields) return local;
+  return null;
 }
 
 type RadarPack = {
@@ -341,6 +350,9 @@ function listOrEmpty<T>(v: T[] | undefined): T[] {
 }
 
 export async function fetchRadarFrames(): Promise<RadarPack | null> {
+  const { fetchClientRadar, rainViewerPack: packFn } = await import("./mapCatalog");
+  const local = await fetchClientRadar();
+  if (local?.ok && (local.radar.length || local.satellite.length)) return local;
   try {
     const r = await fetch(apiUrl("/map/radar"));
     if (r.ok) {
@@ -348,12 +360,12 @@ export async function fetchRadarFrames(): Promise<RadarPack | null> {
       if (body?.ok && (body.radar?.length || body.satellite?.length || body.host)) return body;
     }
   } catch {
-    /* backend down or CORS — try RainViewer directly */
+    /* keep client miss */
   }
   try {
     const r = await fetch("https://api.rainviewer.com/public/weather-maps.json");
     if (!r.ok) return null;
-    return rainViewerPack(await r.json());
+    return packFn(await r.json());
   } catch {
     return null;
   }
@@ -418,9 +430,17 @@ export async function streamChat(
         llm: llm || undefined,
         show_evidence: Boolean(showEvidence),
         om: getLastOmPack()
-          ? { forecast: getLastOmPack()!.forecast, air: getLastOmPack()!.air }
+          ? {
+              forecast: getLastOmPack()!.forecast,
+              air: getLastOmPack()!.air,
+              flood: getLastOmPack()!.flood,
+              marine: getLastOmPack()!.marine,
+              models: getLastOmPack()!.models,
+              era5: getLastOmPack()!.era5,
+            }
           : undefined,
         fetched_at: getLastOmPack()?.fetched_at,
+        question_en: await questionToEnglish(message, locale),
       }),
       signal: ac.signal,
     });

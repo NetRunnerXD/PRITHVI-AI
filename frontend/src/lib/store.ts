@@ -6,6 +6,7 @@ import type { Locale } from "@/i18n/copy";
 export type ReplyLocale = Locale | "auto";
 import { fetchDashboard, reverseGeocode } from "./api";
 import { fetchMe, logoutAccount, type AuthUser } from "./auth";
+import { fetchClientObs, type ClientObsPack } from "./clientObs";
 import { buildOptimisticSnapshot, fetchClientOmPack, type OmClientPack } from "./openMeteoClient";
 import type { WxLayer } from "./weatherScale";
 
@@ -48,6 +49,15 @@ async function loadOmPack(loc: Location | null | undefined, disabled: string[]):
   try {
     const pack = await fetchClientOmPack(loc.lat, loc.lon, !disabled.includes("open-meteo-air"));
     return pack || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function loadObs(loc: Location | null | undefined, disabled: string[] = []): Promise<ClientObsPack | undefined> {
+  if (!loc) return undefined;
+  try {
+    return await fetchClientObs(loc.lat, loc.lon, disabled);
   } catch {
     return undefined;
   }
@@ -381,13 +391,13 @@ export const useApp = create<State>((set, get) => ({
     // 3. Deep Hydration from Backend (POST client Open-Meteo so Render skips quota)
     try {
       const disabled = get().settings.devDisabledProviders || [];
-      const omPack = await loadOmPack(location, disabled);
+      const [omPack, obs] = await Promise.all([loadOmPack(location, disabled), loadObs(location, disabled)]);
       if (dashAbort !== ac) return;
       if (omPack && get().syncStatus !== "synced") {
         const optSnap = buildOptimisticSnapshot(location, omPack.forecast, omPack.air);
         set({ dashboard: optSnap, location, status: "ready", syncStatus: "direct" });
       }
-      const dashboard = await fetchDashboard(location, ac.signal, disabled, omPack);
+      const dashboard = await fetchDashboard(location, ac.signal, disabled, omPack, obs);
       if (dashAbort !== ac) return;
       writeSavedLoc(dashboard.location);
       writeCachedSnapshot(dashboard);
@@ -434,13 +444,15 @@ export const useApp = create<State>((set, get) => ({
 
     try {
       const disabled = get().settings.devDisabledProviders || [];
-      const omPack = loc ? await loadOmPack(loc, disabled) : undefined;
+      const [omPack, obs] = loc
+        ? await Promise.all([loadOmPack(loc, disabled), loadObs(loc, disabled)])
+        : [undefined, undefined];
       if (dashAbort !== ac) return;
       if (omPack && loc && get().syncStatus !== "synced") {
         const optSnap = buildOptimisticSnapshot(loc, omPack.forecast, omPack.air);
         set({ dashboard: optSnap, location: loc, status: "ready", syncStatus: "direct" });
       }
-      const dashboard = await fetchDashboard(loc || undefined, ac.signal, disabled, omPack);
+      const dashboard = await fetchDashboard(loc || undefined, ac.signal, disabled, omPack, obs);
       if (dashAbort !== ac) return;
       writeSavedLoc(dashboard.location);
       writeCachedSnapshot(dashboard);
@@ -466,8 +478,10 @@ export const useApp = create<State>((set, get) => ({
     const locId = loc?.id;
     try {
       const disabled = get().settings.devDisabledProviders || [];
-      const omPack = loc ? await loadOmPack(loc, disabled) : undefined;
-      const dashboard = await fetchDashboard(loc, undefined, disabled, omPack);
+      const [omPack, obs] = loc
+        ? await Promise.all([loadOmPack(loc, disabled), loadObs(loc, disabled)])
+        : [undefined, undefined];
+      const dashboard = await fetchDashboard(loc, undefined, disabled, omPack, obs);
       const cur = get().location;
       if (locId && cur && cur.id !== locId) return;
       if (loc && cur && (Math.abs(cur.lat - loc.lat) > 1e-3 || Math.abs(cur.lon - loc.lon) > 1e-3)) return;
