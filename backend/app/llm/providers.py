@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from app.config import Settings, get_settings
 
@@ -105,11 +107,28 @@ def select_narrator(payload, settings: Settings | None = None, *, insight_turn: 
     return None
 
 
+def skip_loopback_ollama(s: Settings | None = None) -> bool:
+    """True on Render/public hosts where 127.0.0.1 Ollama is not this machine."""
+    s = s or get_settings()
+    host = (urlparse(s.ollama_base_url or "").hostname or "").lower()
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        return False
+    if (s.public_base_url or "").strip():
+        return True
+    if (os.environ.get("RENDER") or "").strip():
+        return True
+    return False
+
+
 def fallback_ids(s: Settings | None = None) -> list[str]:
+    """Ollama is primary via resolve(); these run next: Gemini → Groq."""
     s = s or get_settings()
     raw = [x.strip().lower() for x in (s.llm_fallback or "").split(",") if x.strip()]
-    out = [x for x in raw if spec(x, s) and spec(x, s).keyed]
-    groq = spec("groq", s)
-    if groq and groq.keyed and "groq" not in out:
-        out.append("groq")
+    if not raw:
+        raw = ["gemini", "groq"]
+    out: list[str] = []
+    for x in raw:
+        p = spec(x, s)
+        if p and p.keyed and x not in out:
+            out.append(x)
     return out

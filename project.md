@@ -599,9 +599,9 @@ When changing `extract`, `all_risks`, `compose_indic`, CAP titles, nowcast milli
 | `OLLAMA_BASE_URL` | default `http://127.0.0.1:11434/v1` |
 | `OLLAMA_MODEL` | `qwen2.5:3b` (6 GB GPU). `OLLAMA_TRIAGE_MODEL=qwen2.5:0.5b` optional |
 | `LLM_PROVIDER` | `ollama` (default) \| `groq` \| `gemini` \| `github` \| `openrouter` \| `xai` |
-| `LLM_FALLBACK` | Comma list tried after the primary (e.g. `groq,ollama`) |
-| `GROQ_API_KEY` / `GROQ_MODEL` | Groq OpenAI-compat (`llama-3.1-8b-instant`) |
-| `GEMINI_API_KEY` / `GEMINI_MODEL` | Gemini OpenAI-compat (`gemini-2.0-flash`) |
+| `LLM_FALLBACK` | Comma list after primary. Default `gemini,groq` (Ollama → Gemini → Groq → deterministic) |
+| `GROQ_API_KEY` / `GROQ_MODEL` | Groq OpenAI-compat (`openai/gpt-oss-20b`) |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | Gemini (`gemini-3.5-flash`) |
 | `GITHUB_TOKEN` / `GITHUB_MODEL` | GitHub Models |
 | `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | OpenRouter |
 | `XAI_API_KEY` / `XAI_MODEL` | xAI (`grok-4.5`) |

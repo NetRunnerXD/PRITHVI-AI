@@ -85,6 +85,11 @@ async def health():
         "model": settings.groq_model,
         "ok": bool(ollama_ok and str(ollama_msg).startswith("groq")),
     }
+    llm["gemini"] = {
+        "keyed": bool((settings.gemini_api_key or "").strip()),
+        "model": settings.gemini_model,
+        "ok": bool(ollama_ok and str(ollama_msg).startswith("gemini")),
+    }
     return {
         **service_card(),
         "default_location": loc.model_dump(),
@@ -97,6 +102,7 @@ async def health():
         },
         "keys": {
             "groq_api_key": bool((settings.groq_api_key or "").strip()),
+            "gemini_api_key": bool((settings.gemini_api_key or "").strip()),
             "imd_api_key": bool(settings.imd_api_key),
             "aikosh_api_key": bool(settings.aikosh_api_key),
             "data_gov_in_api_key": bool(settings.data_gov_in_api_key),

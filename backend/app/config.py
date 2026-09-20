@@ -28,11 +28,11 @@ class Settings(BaseSettings):
 
     # Hosted OpenAI-compat narrators. Keys stay on the server.
     llm_provider: str = "ollama"
-    llm_fallback: str = ""
+    llm_fallback: str = "gemini,groq"
     groq_api_key: str | None = None
-    groq_model: str = "llama-3.1-8b-instant"
+    groq_model: str = "openai/gpt-oss-20b"
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-3.5-flash"
     openrouter_api_key: str | None = None
     openrouter_model: str = "meta-llama/llama-3.1-8b-instruct:free"
     xai_api_key: str | None = None

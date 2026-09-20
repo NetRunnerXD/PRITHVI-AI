@@ -35,7 +35,8 @@ def client() -> AsyncOpenAI:
     p = _resolved()
     hit = _clients.get(p.id)
     if hit is None:
-        kwargs: dict[str, Any] = {"base_url": p.base_url, "api_key": p.api_key or "none", "timeout": 120.0}
+        timeout = 8.0 if p.id in ("ollama", "local") else 45.0
+        kwargs: dict[str, Any] = {"base_url": p.base_url, "api_key": p.api_key or "none", "timeout": timeout}
         if p.id == "openrouter":
             kwargs["default_headers"] = {"HTTP-Referer": "https://rituchakra.local", "X-Title": "Prithvi AI"}
         hit = AsyncOpenAI(**kwargs)
@@ -86,6 +87,13 @@ def _exc_kind(exc: BaseException) -> str:
         return "rate"
     if code >= 500:
         return "server"
+    if (
+        code == 404
+        or "does not exist" in blob
+        or "model_not_found" in blob
+        or "not found" in blob
+    ):
+        return "missing"
     if "tool_use_failed" in blob or "failed to call a function" in blob:
         return "tool_use"
     if code == 400 or "invalid_request" in blob or "schema" in blob:
@@ -127,14 +135,17 @@ def _salvage_tool_calls(exc: BaseException) -> list[dict[str, Any]]:
     return parse_xml_tool_calls(_failed_generation(exc))
 
 
-def sanitize_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+def sanitize_tools(tools: list[dict[str, Any]] | None, *, strict: bool = True) -> list[dict[str, Any]] | None:
     if not tools:
         return tools
     out = copy.deepcopy(tools)
     for t in out:
         params = (t.get("function") or {}).get("parameters")
         if isinstance(params, dict):
-            params["additionalProperties"] = False
+            if strict:
+                params["additionalProperties"] = False
+            else:
+                params.pop("additionalProperties", None)
             params.setdefault("type", "object")
     return out
 
@@ -155,20 +166,48 @@ async def chat(
     model: str | None = None,
 ) -> dict[str, Any]:
     last_err: Exception | None = None
+    last_pid = _resolved().id
     for pid in _order():
+        last_pid = pid
         p = registry.spec(pid)
         if p is None or not p.keyed:
             continue
         tok = _active.set(pid)
         try:
+            if pid in ("ollama", "local") and registry.skip_loopback_ollama() and not hub.online():
+                last_err = RuntimeError("ollama-loopback-skipped")
+                continue
+            if pid == "gemini":
+                from app.llm.gemini_native import generate as gemini_generate
+
+                async def _gcall():
+                    out = await gemini_generate(
+                        api_key=p.api_key,
+                        model=model or p.model,
+                        messages=messages,
+                        tools=None,
+                        max_tokens=512,
+                    )
+                    out["tools_stripped"] = False
+                    return out
+
+                try:
+                    parsed = await _gcall()
+                    if parsed.get("content") or parsed.get("tool_calls"):
+                        return parsed
+                    last_err = RuntimeError("gemini blank")
+                except Exception as exc:
+                    last_err = exc
+                continue
+            hosted = pid in ("groq", "gemini", "openrouter", "xai", "github")
             kwargs: dict[str, Any] = {
                 "model": model or p.model,
                 "messages": messages,
-                "temperature": 0.2,
+                "temperature": 0.5 if hosted and not tools else (0.35 if pid == "gemini" else 0.2),
+                "max_tokens": 512 if pid == "gemini" else (400 if hosted else 900),
             }
-            hosted = pid in ("groq", "gemini", "openrouter", "xai", "github")
             if tools:
-                kwargs["tools"] = sanitize_tools(tools) if hosted else tools
+                kwargs["tools"] = sanitize_tools(tools, strict=pid != "gemini") if hosted else tools
                 kwargs["tool_choice"] = "auto"
             tools_stripped = False
             strip_err = ""
@@ -197,7 +236,7 @@ async def chat(
                 resp = await api.chat.completions.create(**kwargs)
             except Exception as exc:
                 kind = _exc_kind(exc)
-                if kind in ("rate", "server"):
+                if kind in ("rate", "server", "missing"):
                     last_err = exc
                     continue
                 if tools and kind == "tool_use":
@@ -225,7 +264,7 @@ async def chat(
                                 "via": "failed-generation",
                             }
                         kind = _exc_kind(exc2)
-                        if kind in ("rate", "server"):
+                        if kind in ("rate", "server", "missing"):
                             last_err = exc2
                             continue
                         kwargs.pop("tools", None)
@@ -236,11 +275,11 @@ async def chat(
                 elif tools and kind in ("schema", "other"):
                     try:
                         retry_kw = dict(kwargs)
-                        retry_kw["tools"] = sanitize_tools(tools)
+                        retry_kw["tools"] = sanitize_tools(tools, strict=pid != "gemini")
                         resp = await api.chat.completions.create(**retry_kw)
                     except Exception as exc2:
                         kind2 = _exc_kind(exc2)
-                        if kind2 in ("rate", "server"):
+                        if kind2 in ("rate", "server", "missing"):
                             last_err = exc2
                             continue
                         kwargs.pop("tools", None)
@@ -252,11 +291,12 @@ async def chat(
                     raise
             choices = getattr(resp, "choices", None) or []
             if not choices:
-                out = {"content": "", "tool_calls": [], "tools_stripped": tools_stripped, "provider": pid}
-                if strip_err:
-                    out["error"] = strip_err
-                return out
+                last_err = RuntimeError(f"{pid} empty choices")
+                continue
             parsed = _parse_message(choices[0].message)
+            if not (parsed.get("content") or parsed.get("tool_calls")):
+                last_err = RuntimeError(f"{pid} blank")
+                continue
             parsed["tools_stripped"] = tools_stripped
             parsed["provider"] = pid
             if strip_err:
@@ -270,8 +310,8 @@ async def chat(
     return {
         "content": "",
         "tool_calls": [],
-        "tools_stripped": bool(tools),
-        "provider": _resolved().id,
+        "tools_stripped": False,
+        "provider": last_pid,
         "error": str(last_err or "no provider"),
     }
 
@@ -288,6 +328,14 @@ async def ping() -> tuple[bool, str]:
         return False, "home-offline"
     if p.id != "local" and hub.online():
         return True, f"home-online:{p.model}"
+    if registry.skip_loopback_ollama(s):
+        gemini = registry.spec("gemini", s)
+        if gemini and gemini.keyed:
+            return True, f"gemini-fallback:{gemini.model}"
+        groq = registry.spec("groq", s)
+        if groq and groq.keyed:
+            return True, f"groq-fallback:{groq.model}"
+        return False, "ollama-loopback-skipped"
     try:
         from app.providers.http import client as http_client
 
@@ -297,6 +345,9 @@ async def ping() -> tuple[bool, str]:
             return True, p.model
         raise RuntimeError(f"ollama-http-{r.status_code}")
     except Exception as local_exc:
+        gemini = registry.spec("gemini", s)
+        if gemini and gemini.keyed:
+            return True, f"gemini-fallback:{gemini.model}"
         groq = registry.spec("groq", s)
         if groq and groq.keyed:
             try:
@@ -353,5 +404,9 @@ def catalog() -> dict[str, Any]:
         "groq": {
             "keyed": bool((s.groq_api_key or "").strip()),
             "model": s.groq_model,
+        },
+        "gemini": {
+            "keyed": bool((s.gemini_api_key or "").strip()),
+            "model": s.gemini_model,
         },
     }

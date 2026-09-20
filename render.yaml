@@ -29,9 +29,15 @@ services:
       - key: LLM_WORKER_TOKEN
         sync: false
       - key: LLM_FALLBACK
-        value: groq
+        value: gemini,groq
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
       - key: GROQ_API_KEY
         sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
       - key: SNAPSHOT_TTL_S
         value: "600"
       - key: SNAPSHOT_SWR_S

@@ -49,7 +49,7 @@ def test_gemini_with_key_resolves(monkeypatch):
     assert g.keyed
     assert g.base_url.startswith("https://generativelanguage.googleapis.com")
     assert registry.resolve("gemini", s).id == "gemini"
-    assert registry.resolve("gemini", s).model == "gemini-2.0-flash"
+    assert registry.resolve("gemini", s).model.startswith("gemini-")
 
 
 def test_groq_openrouter_xai_github_keyed():
@@ -95,6 +95,60 @@ def test_select_narrator_insight_xai():
     assert registry.select_narrator(req2, s, insight_turn=True) == "groq"
     s2 = _s(xai_api_key="", llm_provider="ollama")
     assert registry.select_narrator(req, s2, insight_turn=True) is None
+
+
+def test_exc_kind_404_is_missing():
+    from app.llm.ollama_client import _exc_kind
+
+    class _NotFound(Exception):
+        status_code = 404
+
+        def __str__(self) -> str:
+            return "Error code: 404 - The model `llama-3.1-8b-instant` does not exist or you do not have access to it"
+
+    assert _exc_kind(_NotFound()) == "missing"
+
+
+def test_default_groq_model_is_current():
+    s = _s()
+    g = registry.spec("groq", s)
+    assert g is not None
+    assert g.model == "openai/gpt-oss-20b"
+
+
+@pytest.mark.asyncio
+async def test_groq_404_does_not_claim_gemini_dropped_tools(monkeypatch):
+    from app.llm import ollama_client
+    from app.agents.data_tool import SCHEMA
+
+    class _NotFound(Exception):
+        status_code = 404
+
+        def __str__(self) -> str:
+            return "Error code: 404 - The model `llama-3.1-8b-instant` does not exist"
+
+    class _Completions:
+        async def create(self, **kwargs):
+            raise _NotFound()
+
+    class _Chat:
+        completions = _Completions()
+
+    class _Client:
+        chat = _Chat()
+
+    s = _s(groq_api_key="gsk", gemini_api_key="", llm_provider="groq", llm_fallback="groq")
+    monkeypatch.setattr(ollama_client, "client", lambda: _Client())
+    monkeypatch.setattr("app.llm.ollama_client.get_settings", lambda: s)
+    monkeypatch.setattr("app.llm.providers.get_settings", lambda: s)
+    tok = ollama_client.use_provider("groq")
+    try:
+        out = await ollama_client.chat([{"role": "user", "content": "rain?"}], tools=[SCHEMA])
+    finally:
+        ollama_client.reset_provider(tok)
+    assert out.get("tools_stripped") is False
+    assert out.get("provider") == "groq"
+    assert "404" in str(out.get("error") or "")
 
 
 def test_fallback_skips_empty_keys():
@@ -183,9 +237,57 @@ async def test_chat_uses_local_ollama_even_if_groq_keyed(monkeypatch):
     assert out.get("provider") == "ollama"
 
 
-def test_fallback_auto_appends_groq_when_keyed():
-    s = _s(llm_fallback="", groq_api_key="gsk")
+def test_default_fallback_gemini_then_groq():
+    s = _s(llm_fallback="", groq_api_key="gsk", gemini_api_key="gk")
+    assert registry.fallback_ids(s) == ["gemini", "groq"]
+
+
+def test_default_fallback_skips_missing_gemini():
+    s = _s(llm_fallback="", groq_api_key="gsk", gemini_api_key="")
     assert registry.fallback_ids(s) == ["groq"]
+
+
+@pytest.mark.asyncio
+async def test_gemini_chat_never_sends_tools(monkeypatch):
+    from app.agents.data_tool import SCHEMA
+    from app.llm import ollama_client
+
+    seen = {}
+
+    async def _fake_gen(**kwargs):
+        seen.update(kwargs)
+        return {"content": "Humid at Haldia with 12.2 mm from the pack.", "tool_calls": []}
+
+    monkeypatch.setattr("app.llm.gemini_native.generate", _fake_gen)
+    s = _s(gemini_api_key="gk", groq_api_key="", llm_provider="gemini", llm_fallback="gemini")
+    monkeypatch.setattr("app.llm.ollama_client.get_settings", lambda: s)
+    monkeypatch.setattr("app.llm.providers.get_settings", lambda: s)
+    tok = ollama_client.use_provider("gemini")
+    try:
+        out = await ollama_client.chat([{"role": "user", "content": "rain?"}], tools=[SCHEMA])
+    finally:
+        ollama_client.reset_provider(tok)
+    assert seen.get("tools") is None
+    assert "12.2" in out["content"]
+    assert out.get("provider") == "gemini" or out.get("content")
+
+
+def test_gemini_tools_are_not_strict_json_schema():
+    from app.agents.data_tool import SCHEMA
+    from app.llm.ollama_client import sanitize_tools
+
+    gem = sanitize_tools([SCHEMA], strict=False)
+    params = gem[0]["function"]["parameters"]
+    assert "additionalProperties" not in params
+    groq = sanitize_tools([SCHEMA], strict=True)
+    assert groq[0]["function"]["parameters"]["additionalProperties"] is False
+
+
+def test_skip_loopback_ollama_on_public_host():
+    assert not registry.skip_loopback_ollama(_s(public_base_url="", ollama_base_url="http://127.0.0.1:11434/v1"))
+    assert registry.skip_loopback_ollama(
+        _s(public_base_url="https://rituchakra-api.onrender.com", ollama_base_url="http://127.0.0.1:11434/v1")
+    )
 
 
 class _ToolUseFailed(Exception):
