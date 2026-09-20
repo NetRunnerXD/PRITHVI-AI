@@ -4,8 +4,16 @@ from app.agents.claims import check_claims
 def test_replaces_unbound_numeral_keeps_sentence():
     text, bad = check_claims("Rain will dump 81.3 mm on Tuesday in Haldia.", [{"total_mm": 12.2}])
     assert "81.3" not in text
-    assert "—" in text
+    assert "12.2" in text
+    assert "—" not in text
     assert "Haldia" in text
+    assert "81.3" in bad
+
+
+def test_unbound_numeral_dashes_when_pack_has_no_mm():
+    text, bad = check_claims("Rain will dump 81.3 mm on Tuesday.", [{"temp_c": 29.4}])
+    assert "81.3" not in text
+    assert "—" in text
     assert "81.3" in bad
 
 
@@ -57,8 +65,9 @@ def test_single_day_window_does_not_license_3d_total():
         ],
         window={"start": "2026-08-29", "end": "2026-08-29"},
     )
-    assert "18" not in text or "—" in text
-    assert "18" in bad or "18.0" in bad or "—" in text
+    assert "18 mm" not in text and "18.0" not in text
+    assert "4.2" in text
+    assert "18" in bad or "18.0" in bad
 
 
 def test_contradiction_unbound_still_blanked():
@@ -68,5 +77,37 @@ def test_contradiction_unbound_still_blanked():
     )
     assert "2026-08-28" in text
     assert "81.3" not in text
-    assert "—" in text
+    assert "4.2" in text
+    assert "—" not in text
     assert "81.3" in bad
+
+
+def test_redacted_llm_prose_stays_a_sentence():
+    """Ungrounded digits are blanked; the rest of the narrator reply is kept."""
+    from app.agents.facts import is_dash_soup
+
+    text, bad = check_claims(
+        "Haldia is humid with 12.2 mm already down; skip the extra 99 mm rumor.",
+        [{"total_mm": 12.2}],
+    )
+    assert "12.2" in text
+    assert "99" not in text
+    assert "humid" in text
+    assert bad
+    assert not is_dash_soup(text)
+    assert bad != ["dump"]
+
+
+def test_clip_chat_reply_keeps_three_sentences():
+    from app.agents.facts import clip_chat_reply
+
+    long = (
+        "Haldia is 29.4°C with 2.1 mm this hour. Carry a light rain layer. "
+        "Winds stay under 12 km/h. The week looks wetter with several extra details "
+        "about soil and tide and a long recap of every metric in the pack."
+    )
+    out = clip_chat_reply(long)
+    assert "29.4" in out
+    assert "rain layer" in out
+    assert "soil and tide" not in out
+    assert len(out) < len(long)

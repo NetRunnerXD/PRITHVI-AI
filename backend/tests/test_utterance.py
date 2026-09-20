@@ -30,6 +30,19 @@ def test_tomorrow_is_not_a_place():
     assert "risks" in warn.needs
 
 
+def test_hazard_question_loads_warnings_not_forecast():
+    p = interpret("what are the hazards here")
+    assert p.mode == "data"
+    assert "warnings" in p.needs
+    assert "forecast" not in p.needs
+    rain_h = interpret("what is the rain hazard")
+    assert "warnings" in rain_h.needs
+    assert "forecast" not in rain_h.needs
+    alerts = interpret("what alerts")
+    assert "warnings" in alerts.needs
+    assert "forecast" not in alerts.needs
+
+
 def test_extract_spans():
     assert extract_asked_span("Puruliya") == "Puruliya"
     assert extract_asked_span("weather in Puruliya").lower() in {"puruliya", "purulia"}

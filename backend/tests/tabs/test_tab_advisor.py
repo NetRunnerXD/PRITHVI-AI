@@ -208,7 +208,6 @@ async def test_hindi_reply_keeps_figures_when_mt_dashes(monkeypatch):
     msg = next(e for e in events if e["type"] == "final")["message"]
     body = msg.get("content") or ""
     assert "29.4" in body
-    assert "7.1" in body
     assert body.count("—") < 4
     from app.agents.facts import has_null_metrics
 

@@ -28,6 +28,8 @@ from app.agents.dates import parse_window
 from app.agents.dimensions import detect_domain, extract_compare_other, mentioned_place
 from app.data.india_districts import match_states
 from app.agents.facts import (
+    alert_ask,
+    clip_chat_reply,
     drop_false_shrug,
     fill_slots,
     has_null_metrics,
@@ -35,6 +37,7 @@ from app.agents.facts import (
     is_pushback,
     present_answer,
     prose_has_payload_number,
+    quote_alerts,
     quote_facts,
     rank_metric,
     source_gate,
@@ -52,7 +55,7 @@ from app.agents.utterance import (
 )
 from app.data.closed_class import is_closed_query
 from app.agents.memory import TurnState, load as mem_load, save as mem_save
-from app.agents.prompts import GEMINI_NATIVE_DELTA, INSIGHT_SYSTEM_DELTA, SYSTEM
+from app.agents.prompts import GEMINI_NARRATE_DELTA, INSIGHT_SYSTEM_DELTA, SYSTEM
 from app.agents.views import strip_forbidden
 from app.i18n.detect import detect_lang, has_script, pick_output_locale, script_of
 from app.i18n.gemini_langs import gemini_native
@@ -119,9 +122,9 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         from app.llm.providers import resolve as resolve_llm
 
         llm_id = resolve_llm().id
-    native_in = llm_id == "gemini" and gemini_native(detected0) and detected0 != "en"
-    if native_in:
-        incoming = MTResult(text=original, src=detected0 or "en", tgt="en", engine="gemini-native", ok=True)
+    client_en = (payload.question_en or "").strip()
+    if client_en and detected0 != "en":
+        incoming = MTResult(text=client_en, src=detected0 or "auto", tgt="en", engine="client-mt", ok=True)
     else:
         incoming = await mt_inbound(original, payload.locale_hint)
     locale = incoming.src if incoming.src not in {"auto", ""} else detected0
@@ -140,7 +143,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         locale_hint=payload.locale_hint,
         detected=locale,
     )
-    native_gemini = llm_id == "gemini" and gemini_native(out_locale) and out_locale != "en"
+    native_gemini = False
 
     prior = mem_load(payload.conversation_id)
     history_en = await _english_history(payload.history)
@@ -172,7 +175,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             "gate": "emergency",
         }
         em_en = tri.message
-        em, em_out, em_engine = await _localize_validated(em_en, out_locale, native=native_gemini)
+        em, em_out, em_engine = await _localize_validated(em_en, out_locale, native=native_gemini, client_mt=bool(payload.client_mt))
         yield {
             "type": "final",
             "message": {
@@ -210,7 +213,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         if not plan.needs and layer1_ctx.intent in ("forecast", "activity_feasibility"):
             plan.needs = ["forecast", "rain_window"]
         if not plan.needs and layer1_ctx.intent == "warnings":
-            plan.needs = ["warnings", "risks"]
+            plan.needs = ["warnings"]
     else:
         resolved = None
 
@@ -455,7 +458,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             "translation": {"inbound": incoming.as_dict()},
         }
         refuse_en = gate.refuse
-        refuse, refuse_out, refuse_engine = await _localize_validated(refuse_en, out_locale, native=native_gemini)
+        refuse, refuse_out, refuse_engine = await _localize_validated(refuse_en, out_locale, native=native_gemini, client_mt=bool(payload.client_mt))
         msg_id = uuid.uuid4().hex[:12]
         yield {
             "type": "final",
@@ -616,7 +619,20 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         if want:
             ollama_client.use_provider(want)
     ollama_ok, ollama_msg = await ollama_client.ping()
+    from app.llm import providers as llm_registry
+    from app.llm.worker_hub import hub as llm_hub
+
+    want_llm = (payload.llm or "").strip().lower()
+    if llm_registry.skip_loopback_ollama() and not llm_hub.online() and want_llm in ("", "ollama", "local", "worker"):
+        for pid in ("gemini", "groq"):
+            p = llm_registry.spec(pid)
+            if p and p.keyed:
+                ollama_client.use_provider(pid)
+                llm_id = pid
+                break
     narrator = ollama_client._resolved()
+    llm_id = narrator.id
+    native_gemini = False
     yield {
         "type": "notice",
         "message": f"Narrator {narrator.id}:{narrator.model}"
@@ -627,8 +643,8 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     if ollama_ok:
         try:
             sys_content = SYSTEM + ("\n" + INSIGHT_SYSTEM_DELTA if insight_turn else "")
-            if native_gemini and out_locale != "en":
-                sys_content = sys_content + GEMINI_NATIVE_DELTA.format(lang=out_locale)
+            if llm_id in ("gemini", "groq"):
+                sys_content = sys_content + "\n" + GEMINI_NARRATE_DELTA
             messages: list[dict[str, Any]] = [{"role": "system", "content": sys_content}]
             messages.extend(history_en)
             hint_bits = [
@@ -637,17 +653,16 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             ]
             if domain == "disaster":
                 hint_bits.append(
-                    "Format for an operations desk:\n"
-                    "SITUATION — 2–4 sentences on what is happening at this pin.\n"
-                    "HAZARDS — bullet list of active warnings and risk cards (severity + meaning).\n"
-                    "ACTIONS — 2–4 concrete next steps (observe, move, hold, notify). "
-                    "Never certify an all-clear."
+                    "Operations desk, 3 short lines only:\n"
+                    "SITUATION — one sentence at this pin.\n"
+                    "HAZARDS — one line of active warnings/risks.\n"
+                    "ACTION — one next step. Never certify an all-clear."
                 )
             else:
                 hint_bits.append(
-                    "Write a natural reply (about a short paragraph, or a few bullets if they asked for a list). "
-                    "Lead with the asked hour or day if one was named. End with one useful action for this user, "
-                    "phrased freshly from the numbers — not a stock irrigation/umbrella line."
+                    "Write 2–3 short sentences only. Lead with the asked hour or day if one was named. "
+                    "Quote 1–3 pack figures. End with one useful action — not a stock irrigation/umbrella line. "
+                    "Do not recap every metric in the pack."
                 )
             if window_hint:
                 w_start, w_end = window_hint.get("start"), window_hint.get("end")
@@ -655,9 +670,8 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                 clock_str = f" at {window_hint.get('hour')}:00" if window_hint.get("hour") else ""
                 hint_bits.append(f"Named dates (use only if you call rain_window): {w_label}{clock_str}.")
                 hint_bits.append(
-                    f"SPECIFIC TIME OVERVIEW: The user asked about {w_label}{clock_str}. "
-                    "Provide a brief card-overview-style snapshot of key metrics (temperature, rain probability/mm, wind/sky) "
-                    "followed immediately by 1 actionable advice."
+                    f"The user asked about {w_label}{clock_str}. One line: temp / rain mm or probability / sky. "
+                    "Next line: 1 action. Two or three lines total."
                 )
             if "rank" in needed or "states_weather" in needed:
                 st = ", ".join(gate.states) if gate.states else "the named state"
@@ -715,11 +729,23 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                 )
                 pre_quote = ""
             else:
-                pre_quote = quote_facts(collected, window=window_hint)
-                if pre_quote:
-                    hint_bits.append(
-                        "Verified fact pack (quote these figures; write original prose around them):\n" + pre_quote
-                    )
+                if alert_ask(message_en) or needed == ["warnings"]:
+                    pre_quote = quote_alerts(collected)
+                    if pre_quote:
+                        hint_bits.append(
+                            "Home Alerts catalogue (do not paste this list verbatim):\n"
+                            + pre_quote
+                            + "\nWrite original prose: a short grouped summary of what is in force "
+                            "(thunderstorm, lightning, flood, heat, etc. in plain words), then a fresh action. "
+                            "Two or three sentences, or a tiny bullet list plus one action line. "
+                            "Vary wording from stock lines. No millimetres, no weather codes, no CAP dump."
+                        )
+                else:
+                    pre_quote = quote_facts(collected, window=window_hint)
+                    if pre_quote:
+                        hint_bits.append(
+                            "Verified fact pack (quote these figures; write original prose around them):\n" + pre_quote
+                        )
             messages.append(
                 {
                     "role": "user",
@@ -736,13 +762,23 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
             )
             rounds = 0
             nudged = False
-            use_tools = bool(needed) or tri.kind == "data"
+            packs_ready = bool(needed) and all(
+                (n in collected) or (n == "rank" and any(str(k).startswith("rank") for k in collected))
+                for n in needed
+            )
+            hosted_narrator = llm_id in ("gemini", "groq")
+            use_tools = (bool(needed) or tri.kind == "data") and not hosted_narrator and not packs_ready
             max_rounds = 2 if insight_turn else 5
             while rounds < max_rounds:
                 resp = await ollama_client.chat(
                     messages,
                     tools=[DATA_SCHEMA] if use_tools else None,
                 )
+                if resp.get("error") and not (resp.get("content") or resp.get("tool_calls")):
+                    yield {
+                        "type": "notice",
+                        "message": f"{resp.get('provider') or llm_id} empty ({str(resp.get('error'))[:120]}).",
+                    }
                 if resp.get("tools_stripped"):
                     pid = str(resp.get("provider") or "model")
                     err = str(resp.get("error") or "").strip()[:120]
@@ -992,6 +1028,15 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         english_llm = body
     else:
         content_en, rejected = check_claims(english_llm, payloads, window=window_hint)
+    if (
+        (not insight_turn)
+        and llm_id in ("gemini", "groq")
+        and content_en
+        and rejected != ["dump"]
+        and not alert_ask(message_en)
+        and needed != ["warnings"]
+    ):
+        content_en = clip_chat_reply(content_en)
     asked_name = place or (prior.asked if prior and inherit else None) or loc.place_name or loc.district
     pin_from_client = pin_now.label
     content_en = strip_unasked_pin(content_en, place, pin_from_client)
@@ -1020,16 +1065,30 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     quoted = present_answer(collected, window=window_hint, compact=True, domain=domain, query=message_en, activity=activity)
     raw_ev = quote_facts(collected, window=window_hint)
     show_ev = bool(payload.show_evidence)
-    llm_ok = bool(content_en) and not is_dash_soup(content_en) and not rejected
+    llm_ok = bool(content_en) and not is_dash_soup(content_en) and rejected != ["dump"]
     if insight_turn:
         quoted = ""
         raw_ev = ""
-    if quoted and needed:
-        if not content_en or is_dash_soup(content_en) or rejected:
+    alert_turn = alert_ask(message_en) or needed == ["warnings"]
+    if alert_turn:
+        quoted = present_answer(
+            {"warnings": collected.get("warnings")} if collected.get("warnings") else collected,
+            window=window_hint,
+            compact=True,
+            domain=domain,
+            query=message_en,
+            activity=activity,
+        ) or quote_alerts(collected)
+        raw_ev = ""
+        # Official titles often contain "—"; that is not claim-check dash soup.
+        if (not content_en) or is_dash_soup(content_en) or rejected == ["dump"]:
             content_en = quoted
-        elif show_ev and raw_ev and raw_ev not in content_en:
+    if quoted and needed:
+        if not content_en or is_dash_soup(content_en) or rejected == ["dump"]:
+            content_en = quoted
+        elif (not alert_turn) and show_ev and raw_ev and raw_ev not in content_en:
             content_en = f"{content_en}\n\n---\nEvidence\n{raw_ev}".strip()
-    elif quoted and (not content_en or is_dash_soup(content_en) or rejected):
+    elif quoted and (not content_en or is_dash_soup(content_en) or rejected == ["dump"]):
         content_en = quoted
     if not content_en:
         if collected:
@@ -1065,11 +1124,15 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     if suggestions:
         yield {"type": "suggestions", "suggestions": suggestions}
 
-    content, outbound, engine = await _localize_validated(content_en, out_locale, native=native_gemini)
+    content, outbound, engine = await _localize_validated(
+        content_en, out_locale, native=native_gemini, client_mt=bool(payload.client_mt)
+    )
     if not english_llm and engine == "llm-en":
         engine = "chat-fallback"
     if out_locale != "en" and content_en:
-        if engine.startswith("llm-en+"):
+        if engine == "client-mt":
+            yield {"type": "notice", "message": f"Answer in English; device will translate to {out_locale}."}
+        elif engine.startswith("llm-en+") and outbound is not None:
             yield {"type": "notice", "message": f"Translated answer en → {out_locale} ({outbound.engine})."}
         else:
             yield {"type": "notice", "message": "Showing English (whole-document translation unavailable)."}

@@ -78,6 +78,72 @@ def test_source_gate_refuses_unsourced_visit():
     assert "Odisha" in g4.states
 
 
+def test_wx_from_current_marks_thunderstorm():
+    from app.agents.data_tool import wx_from_current
+
+    wx = wx_from_current({"weather_code": 95, "sky_label": "Thunderstorm", "precip_1h_mm": 2.1, "temp_c": 29.4})
+    assert wx["thunder"] is True
+    assert "Thunder" in wx["sky_label"]
+    assert wx["weather_code"] == 95
+    clear = wx_from_current({"weather_code": 1, "sky_label": "Mainly clear", "precip_1h_mm": 0, "temp_c": 30})
+    assert clear["thunder"] is False
+
+
+def test_alert_prose_with_title_emdash_is_kept():
+    from app.agents.facts import is_dash_soup
+
+    text = (
+        "Howrah is under a thunderstorm nowcast — that is the main watch. "
+        "Lightning is also flagged. Postpone exposed outdoor work until the cell moves on."
+    )
+    assert not is_dash_soup(text)
+    assert text.count("—") >= 1
+
+
+def test_alert_quote_is_home_titles_only():
+    from app.agents.facts import format_card_overview, quote_alerts
+
+    collected = {
+        "forecast": {
+            "need": "forecast",
+            "place": "Howrah",
+            "sky_label": "Thunderstorm",
+            "precip_next_3d_mm": 41.2,
+            "precip_1h_mm": 2.1,
+        },
+        "warnings": {
+            "need": "warnings",
+            "place": "Howrah",
+            "warnings": [
+                {
+                    "title": "Thunderstorm nowcast — Howrah",
+                    "severity": "warning",
+                    "kind": "thunderstorm",
+                    "body": "18 mm and code 95 in the CAP text",
+                }
+            ],
+        },
+    }
+    q = quote_alerts(collected)
+    assert "Live alerts at" not in q
+    assert "Thunderstorm nowcast, Howrah" in q or "Thunderstorm nowcast" in q
+    assert " — " not in q
+    assert "41.2" not in q
+    assert "code 95" not in q
+    assert "18 mm" not in q
+    ov = format_card_overview(collected, domain="urban", query="what alerts")
+    assert "Live alerts at" not in ov
+    assert "Thunderstorm nowcast" in ov
+    assert " — " not in ov
+    assert "41.2" not in ov
+    empty = format_card_overview(
+        {"warnings": {"need": "warnings", "place": "Howrah", "warnings": []}},
+        query="hazards",
+    )
+    assert "No live Home Alerts" in empty
+    assert "Thunderstorm" not in empty
+
+
 def test_quote_facts_rank_once_no_india_when_state_rank_present():
     from app.agents.facts import quote_facts
 

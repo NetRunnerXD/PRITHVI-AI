@@ -113,10 +113,12 @@ async def _llm_translate(text: str, tgt: str) -> MTResult:
     return MTResult(text=body, src="en", tgt=tgt, engine="llm", ok=True)
 
 
-async def _localize_validated(content_en: str, out_locale: str, *, native: bool = False):
+async def _localize_validated(content_en: str, out_locale: str, *, native: bool = False, client_mt: bool = False):
     """After English validation, translate the whole reply. Never splice templates."""
     if out_locale == "en" or not (content_en or "").strip():
         return content_en, None, "llm-en"
+    if client_mt:
+        return content_en, None, "client-mt"
     if native and has_script(content_en, out_locale):
         ident = MTResult(text=content_en, src=out_locale, tgt=out_locale, engine="gemini-native", ok=True)
         return content_en, ident, "gemini-native"

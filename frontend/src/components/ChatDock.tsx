@@ -102,7 +102,13 @@ export function ChatDock({
       ? chat.filter((m) => m.role === "user" || m.id !== chat[chat.length - 1]?.id)
       : [...chat];
     if (!opts?.regenerate) {
-      addChat({ id: `u-${Date.now()}`, role: "user", content: message, locale });
+      addChat({
+        id: `u-${Date.now()}`,
+        role: "user",
+        content: message,
+        locale,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }),
+      });
     }
     setStreaming(true);
     setNotice("");
@@ -492,7 +498,13 @@ export function ChatDock({
               {/* Timestamp tick under bubble */}
               {isUser && (
                 <div className="flex items-center justify-end gap-1 pr-1 text-[9.5px] font-mono font-semibold text-slate-400">
-                  <span>15:04 IST</span>
+                  <span>
+                    {m.timestamp ||
+                      (m.id.startsWith("u-") && !isNaN(Number(m.id.slice(2)))
+                        ? new Date(Number(m.id.slice(2))).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
+                        : "")}{" "}
+                    IST
+                  </span>
                   <span>✓</span>
                 </div>
               )}

@@ -10,6 +10,23 @@ import re
 from app.agents.utterance import interpret, looks_like_bare_place  # noqa: F401
 from app.i18n.number_lock import NUM
 
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
+
+
+def clip_chat_reply(text: str, *, max_sents: int = 3, max_chars: int = 420) -> str:
+    """Keep Ollama-length chat: answer + one action, not a dump."""
+    t = (text or "").strip()
+    if not t:
+        return t
+    bits = [p.strip() for p in _SENT_SPLIT.split(t) if p and p.strip()]
+    if len(bits) > max_sents:
+        t = " ".join(bits[:max_sents])
+    if len(t) > max_chars:
+        cut = t[:max_chars]
+        sp = cut.rfind(" ")
+        t = (cut[:sp] if sp > 80 else cut).rstrip(" ,;") + "."
+    return t
+
 _PUSHBACK = (
     "still tell", "just tell", "tell me anyway", "tell me still",
     "i don't care", "i do not care", "go on", "anyway", "please just",
@@ -103,7 +120,7 @@ def fill_slots(text: str, collected: dict) -> str:
         key = m.group(1).lower()
         if key in catalog:
             return catalog[key]
-        return "—"
+        return "—"  # no pack value for this slot
 
     return _SLOT.sub(repl, text)
 
@@ -222,6 +239,26 @@ def _fmt(v: Any) -> str:
     if isinstance(v, float):
         return f"{v:g}"
     return str(v)
+
+
+def _wx_from_collected(collected: dict[str, Any]) -> dict[str, Any]:
+    for key in ("forecast", "warnings", "risks"):
+        pack = collected.get(key)
+        if not isinstance(pack, dict):
+            continue
+        wx = pack.get("wx")
+        if isinstance(wx, dict) and (wx.get("sky_label") or wx.get("weather_code") is not None):
+            return wx
+        if key == "forecast" and pack.get("sky_label"):
+            sky = str(pack.get("sky_label"))
+            return {
+                "sky_label": sky,
+                "weather_code": pack.get("weather_code"),
+                "thunder": "thunder" in sky.lower() or "storm" in sky.lower(),
+                "precip_1h_mm": pack.get("precip_1h_mm"),
+                "temp_c": pack.get("temp_c"),
+            }
+    return {}
 
 
 def quote_facts(collected: dict[str, Any], window: dict[str, str] | None = None) -> str:
@@ -410,6 +447,15 @@ def quote_facts(collected: dict[str, Any], window: dict[str, str] | None = None)
                 f"{i}. {r.get('state')} ({r.get('district')} HQ): flood {_fmt(r.get('flood_score'))}, "
                 f"3d rain {_fmt(r.get('precip_3d_mm'))} mm, tmax {_fmt(r.get('temp_max_c'))}°C"
             )
+    wx = _wx_from_collected(collected)
+    if wx.get("sky_label") and not (
+        isinstance(collected.get("forecast"), dict) and collected["forecast"].get("sky_label")
+    ):
+        lines.append(
+            f"Sky: {wx.get('sky_label')}"
+            + (f" (code {wx.get('weather_code')})" if wx.get("weather_code") is not None else "")
+            + "."
+        )
     risks = collected.get("risks") or {}
     cards = risks.get("risks") if isinstance(risks, dict) else None
     if cards:
@@ -453,6 +499,32 @@ def quote_facts(collected: dict[str, Any], window: dict[str, str] | None = None)
         else:
             lines.append(f"No Agmarknet arrivals in Prithvi AI for {mandi.get('place') or 'this district'} today.")
     return "\n".join(lines).strip()
+
+
+def alert_ask(query: str) -> bool:
+    t = (query or "").lower()
+    return any(w in t for w in ("hazard", "warning", "alert", "watch"))
+
+
+def _plain_alert_title(title: str) -> str:
+    return re.sub(r"\s*[—–]\s*", ", ", title or "").strip(" ,")
+
+
+def quote_alerts(collected: dict[str, Any]) -> str:
+    """Home Alerts as a short sentence — no forecast mm, no CAP bodies."""
+    warns = collected.get("warnings") if isinstance(collected.get("warnings"), dict) else {}
+    rows = [w for w in (warns.get("warnings") or []) if isinstance(w, dict) and w.get("title")]
+    place = str(warns.get("place") or "this pin")
+    if not rows:
+        return f"No live Home Alerts at {place}."
+    bits = []
+    for w in rows[:4]:
+        title = _plain_alert_title(str(w.get("title")))
+        sev = w.get("severity") or w.get("kind")
+        bits.append(f"{title}" + (f" ({sev})" if sev else ""))
+    if len(bits) == 1:
+        return f"At {place}, {bits[0]} is in force."
+    return f"At {place}, {', '.join(bits[:-1])}, and {bits[-1]} are in force."
 
 
 def generate_actionable_advice(domain: str, metrics: dict[str, Any], condition: str = "", activity: str | None = None) -> str:
@@ -572,6 +644,7 @@ def format_card_overview(
     aqi_pack = collected.get("aqi")
     warns = collected.get("warnings")
     q_low = (query or "").lower()
+    hazard_ask = alert_ask(query)
 
     # 2. AQI prioritized if asked specifically
     if aqi_pack and any(w in q_low for w in ("aqi", "air", "pollution", "pm2", "smog")):
@@ -606,7 +679,7 @@ def format_card_overview(
             target_row = wdays[0]
 
     slot = fc.get("hourly_slot") if isinstance(fc, dict) else None
-    if isinstance(slot, dict) and clock not in (None, ""):
+    if (not hazard_ask) and isinstance(slot, dict) and clock not in (None, ""):
         if not place_name and isinstance(fc, dict):
             place_name = str(fc.get("place") or fc.get("label") or "").split(",")[0].strip()
         place = place_name or "This area"
@@ -639,7 +712,7 @@ def format_card_overview(
         )
         return " ".join(lines).strip()
 
-    if target_row or (isinstance(fc, dict) and fc):
+    if (not hazard_ask) and (target_row or (isinstance(fc, dict) and fc)):
         place = place_name or "This area"
         cur_temp = fc.get("temp_c") if isinstance(fc, dict) else None
         max_temp = target_row.get("temp_max_c") if target_row else None
@@ -686,7 +759,7 @@ def format_card_overview(
         return " ".join(lines).strip()
 
     # 3. Nowcast overview
-    if isinstance(nc, dict) and nc:
+    if (not hazard_ask) and isinstance(nc, dict) and nc:
         place = str(nc.get("place") or "The area").split(",")[0].strip()
         locked = (nc.get("nowcast") if isinstance(nc, dict) else None) or {}
         pump = (nc.get("pump") if isinstance(nc, dict) else None) or {}
@@ -719,44 +792,36 @@ def format_card_overview(
             lines.append(generate_actionable_advice(domain, {"aqi": val}, activity=activity))
             return " ".join(lines).strip()
 
-    # 5. Warnings / risks overview
+    # 5. Home Alerts — titles + one action; never forecast mm or invented thunderstorm
+    if isinstance(warns, dict) and (warns.get("warnings") is not None or hazard_ask):
+        wlist = [w for w in (warns.get("warnings") or []) if isinstance(w, dict) and w.get("title")]
+        place = str(warns.get("place") or "This pin")
+        kinds = " ".join(
+            str(w.get("kind") or w.get("title") or "") for w in wlist
+        ).lower()
+        if not wlist:
+            return f"No live Home Alerts at {place}. Stay aware of local official channels."
+        bits = []
+        for w in wlist[:4]:
+            title = _plain_alert_title(str(w.get("title")))
+            sev = w.get("severity") or w.get("kind")
+            bits.append(f"{title}" + (f" ({sev})" if sev else ""))
+        if len(bits) == 1:
+            lines.append(f"At {place}, {bits[0]} is in force.")
+        else:
+            lines.append(f"At {place}, {', '.join(bits[:-1])}, and {bits[-1]} are in force.")
+        lines.append(generate_actionable_advice(domain, {}, condition=kinds, activity=activity))
+        return " ".join(lines).strip()
     risk_pack = collected.get("risks") if isinstance(collected.get("risks"), dict) else None
     risk_rows = (risk_pack or {}).get("risks") if risk_pack else None
-    if isinstance(warns, dict) and warns.get("warnings"):
-        wlist = [w for w in (warns.get("warnings") or []) if isinstance(w, dict)]
-        place = str(warns.get("place") or "This pin")
-        if domain == "disaster":
-            bits = [f"SITUATION: {place} has {len(wlist)} live warning(s)."]
-            for w in wlist[:5]:
-                bits.append(f"HAZARD: {w.get('title')} ({w.get('severity') or w.get('hazard') or 'watch'}).")
-            if risk_rows:
-                for c in risk_rows[:4]:
-                    if isinstance(c, dict) and c.get("score_pct") is not None:
-                        bits.append(f"RISK: {c.get('label')} {c.get('score_pct')}% {c.get('severity')}.")
-            bits.append(
-                generate_actionable_advice(domain, {"precip_mm": 20.0, "flood_score": 50}, condition="thunderstorm", activity=activity)
-            )
-            return " ".join(bits).strip()
-        titles = [str(w.get("title")) for w in wlist[:4] if w.get("title")]
-        lines.append(f"Active alerts at {place}: " + "; ".join(titles) + ".")
-        if risk_rows:
-            hot = [
-                f"{c.get('label')} {c.get('score_pct')}%"
-                for c in risk_rows
-                if isinstance(c, dict) and c.get("score_pct") is not None
-            ][:4]
-            if hot:
-                lines.append("Risk scores: " + ", ".join(hot) + ".")
-        lines.append(generate_actionable_advice(domain, {"precip_mm": 8.0}, condition="watch", activity=activity))
-        return " ".join(lines).strip()
-    if risk_rows:
+    if risk_rows and not hazard_ask:
         place = str((risk_pack or {}).get("place") or "This pin")
         bits = [f"{place} risk cards:"]
-        for c in risk_rows[:6]:
+        for c in risk_rows[:4]:
             if isinstance(c, dict) and c.get("score_pct") is not None:
                 bits.append(f"{c.get('label')} {c.get('score_pct')}% ({c.get('severity')}).")
-        bits.append(generate_actionable_advice(domain, {"flood_score": 40}, activity=activity))
-        return " ".join(bits).strip()
+        bits.append(generate_actionable_advice(domain, {}, activity=activity))
+        return " ".join(bits[:4]).strip()
 
     return ""
 

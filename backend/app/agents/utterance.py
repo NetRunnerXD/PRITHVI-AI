@@ -85,6 +85,8 @@ _STOP_HEAD = {
     "cycle", "cycling", "outdoor", "go", "going", "boating", "boat",
     "fishing", "fish", "farming", "farm", "irrigation", "irrigate",
     "spray", "spraying", "sowing", "harvest", "harvesting",
+    "hazard", "hazards", "warning", "warnings", "alert", "alerts",
+    "risk", "risks", "watch", "watches",
 }
 
 # Place-level packs Prithvi AI can actually compute. Used for "all metrics".
@@ -476,10 +478,8 @@ def interpret(text: str) -> Plan:
         needs.append("aqi")
     if any(w in t for w in _MANDI) or ("price" in t and any(w in t for w in ("rice", "paddy", "wheat", "onion", "potato"))):
         needs.append("mandi")
-    if any(w in t for w in _WARN) and not rain:
+    if any(w in t for w in _WARN):
         needs.append("warnings")
-        if "risks" not in needs:
-            needs.append("risks")
     if any(w in t for w in _RISK):
         if "risks" not in needs:
             needs.append("risks")

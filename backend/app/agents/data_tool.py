@@ -11,6 +11,42 @@ from app.agents.views import compact_nowcast, strip_forbidden
 from app.schemas.location import Location
 from app.services.location_svc import resolve_india_place, search_places
 
+def wx_from_current(cur: Any) -> dict[str, Any]:
+    """Same sky as Home/forecast: WMO code + sky_label + thunder flag."""
+    from app.ml.sky import sky_label as sky_fn
+
+    if cur is None:
+        return {}
+    if isinstance(cur, dict):
+        code = cur.get("weather_code")
+        named = cur.get("sky_label")
+        precip = cur.get("precip_1h_mm")
+        temp = cur.get("temp_c")
+    else:
+        code = getattr(cur, "weather_code", None)
+        named = getattr(cur, "sky_label", None)
+        precip = getattr(cur, "precip_1h_mm", None)
+        temp = getattr(cur, "temp_c", None)
+    try:
+        code_i = int(code) if code is not None else None
+    except (TypeError, ValueError):
+        code_i = None
+    name, kind = sky_fn(code_i)
+    if named:
+        name = str(named)
+        if "thunder" in name.lower():
+            kind = "storm"
+    thunder = kind == "storm" or (code_i is not None and code_i >= 95) or "thunder" in name.lower()
+    return {
+        "sky_label": name,
+        "weather_code": code_i,
+        "sky_kind": kind,
+        "thunder": thunder,
+        "precip_1h_mm": precip,
+        "temp_c": temp,
+    }
+
+
 NEEDS = (
     "nowcast",
     "rain_window",
@@ -239,13 +275,16 @@ class DataLib:
 
             hours = list(p.get("hourly") or [])
             slot = pick_hourly_slot(hours, a or None, hour_i)
+            wx = wx_from_current(cur)
             out = {
                 "need": "forecast",
                 "place": loc.place_name or loc.district,
                 "label": loc.label,
                 "temp_c": cur.temp_c,
                 "precip_1h_mm": cur.precip_1h_mm,
-                "sky_label": cur.sky_label,
+                "sky_label": cur.sky_label or wx.get("sky_label"),
+                "weather_code": wx.get("weather_code"),
+                "wx": wx,
                 "outlook_days": days,
             }
             if slot:
@@ -308,15 +347,20 @@ class DataLib:
             snap = await self._snap(loc if place else None)
             warns = []
             for w in snap.prescriptive.warnings[:8]:
-                row = w.model_dump()
-                row["meaning"] = (row.get("body") or row.get("title") or "")[:280]
+                raw = w.model_dump() if hasattr(w, "model_dump") else dict(w)
+                row = {
+                    k: raw.get(k)
+                    for k in ("id", "title", "severity", "kind", "hazard", "source")
+                    if raw.get(k) not in (None, "", [])
+                }
                 warns.append(row)
-            return {
-                "need": "warnings",
-                "place": loc.place_name or loc.district,
-                "warnings": warns,
-                "provider_status": snap.provider_status,
-            }
+            return strip_forbidden(
+                {
+                    "need": "warnings",
+                    "place": loc.place_name or loc.district,
+                    "warnings": warns,
+                }
+            )
         if need == "compare":
             other = str(args.get("other") or "").strip()
             if not other:
@@ -372,7 +416,14 @@ class DataLib:
                         "horizon_hours": r.horizon_hours,
                     }
                 )
-            return {"need": "risks", "place": loc.place_name or loc.district, "risks": cards}
+            return strip_forbidden(
+                {
+                    "need": "risks",
+                    "place": loc.place_name or loc.district,
+                    "wx": wx_from_current(snap.descriptive.current),
+                    "risks": cards,
+                }
+            )
         return {"error": f"unhandled {need}"}
 
     async def _rain_window(self, loc: Location, args: dict[str, Any]) -> dict[str, Any]:

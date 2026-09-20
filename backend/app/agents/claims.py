@@ -1,7 +1,8 @@
-"""Span-level numeral check. Replace unbound digits; never inject a preset answer."""
+"""Span-level numeral check. Swap unbound digits for pack figures; dash only if none."""
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.agents.binder import looks_like_dump
@@ -13,6 +14,90 @@ def walk_payload_nums(payloads: list[Any], acc: set[str]) -> None:
         walk_numbers(p, acc)
 
 _NOTE = "I only quote figures from Prithvi AI data."
+
+_TAIL = re.compile(
+    r"^\s*(mm|मिमी|মিমি|°\s*C|°C|deg(?:ree)?s?\s*C|%|pct|AQI|aqi|hPa|km/?h|m/s)\b",
+    re.I,
+)
+
+_UNIT_KEYS = {
+    "mm": ("precip", "rain", "total_mm", "water_balance"),
+    "temp": ("temp",),
+    "pct": ("pct", "prob", "score", "humidity"),
+    "aqi": ("aqi",),
+    "hpa": ("pressure", "hpa", "msl"),
+    "wind": ("wind", "gust", "kmh"),
+}
+
+
+def _unit_of(blob: str, end: int) -> str | None:
+    tail = blob[end : end + 24]
+    m = _TAIL.match(tail)
+    if not m:
+        return None
+    t = m.group(1).lower().replace(" ", "")
+    if t in {"mm", "मिमी", "মিমি"}:
+        return "mm"
+    if "c" in t or "deg" in t:
+        return "temp"
+    if t in {"%", "pct"}:
+        return "pct"
+    if t == "aqi":
+        return "aqi"
+    if t == "hpa":
+        return "hpa"
+    if "km" in t or t == "m/s":
+        return "wind"
+    return None
+
+
+def _fmt_num(v: float) -> str:
+    if abs(v - round(v)) < 1e-9:
+        return str(int(round(v)))
+    return f"{v:g}"
+
+
+def _nums_by_unit(payloads: list[Any]) -> dict[str, list[float]]:
+    buckets: dict[str, list[float]] = {k: [] for k in ("mm", "temp", "pct", "aqi", "hpa", "wind", "any")}
+
+    def walk(obj: Any, key: str = "") -> None:
+        if obj is None or isinstance(obj, bool):
+            return
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                walk(v, str(k).lower())
+            return
+        if isinstance(obj, (list, tuple)):
+            for v in obj:
+                walk(v, key)
+            return
+        if not isinstance(obj, (int, float)):
+            return
+        v = float(obj)
+        buckets["any"].append(v)
+        kl = key
+        if any(s in kl for s in _UNIT_KEYS["mm"]):
+            buckets["mm"].append(v)
+        elif any(s in kl for s in _UNIT_KEYS["temp"]):
+            buckets["temp"].append(v)
+        elif any(s in kl for s in _UNIT_KEYS["aqi"]):
+            buckets["aqi"].append(v)
+        elif any(s in kl for s in _UNIT_KEYS["hpa"]):
+            buckets["hpa"].append(v)
+        elif any(s in kl for s in _UNIT_KEYS["wind"]):
+            buckets["wind"].append(v)
+        elif any(s in kl for s in _UNIT_KEYS["pct"]):
+            buckets["pct"].append(v)
+
+    for p in payloads:
+        walk(p)
+    return buckets
+
+
+def _closest(want: float, cands: list[float]) -> float | None:
+    if not cands:
+        return None
+    return min(cands, key=lambda x: abs(x - want))
 
 
 def check_claims(
@@ -75,8 +160,10 @@ def check_claims(
 
     # this-turn payloads only: do not treat the harmless year set as a license for scores
     # but years in _HARMLESS stay so "2026" in a title is ok
+    by_unit = _nums_by_unit(scoped)
     out = []
     rejected: list[str] = []
+    dashed = False
     last = 0
     for m in NUM.finditer(blob):
         token = m.group(0)
@@ -87,14 +174,24 @@ def check_claims(
             continue
         bad = ungrounded(token, allowed)
         if bad:
-            out.append("—")
             rejected.append(token)
+            try:
+                want = float(token)
+            except ValueError:
+                want = None
+            unit = _unit_of(blob, m.end())
+            pool = by_unit.get(unit or "", []) or (by_unit["any"] if unit is None else [])
+            hit = _closest(want, pool) if want is not None else None
+            if hit is not None:
+                out.append(_fmt_num(hit))
+            else:
+                out.append("—")
+                dashed = True
         else:
             out.append(token)
         last = m.end()
     out.append(blob[last:])
     cleaned = "".join(out).strip()
-    if rejected:
-        if _NOTE.lower() not in cleaned.lower():
-            cleaned = (cleaned + " " + _NOTE).strip()
+    if dashed and _NOTE.lower() not in cleaned.lower():
+        cleaned = (cleaned + " " + _NOTE).strip()
     return cleaned, rejected

@@ -44,6 +44,8 @@ class ChatRequest(BaseModel):
     show_evidence: bool = False
     om: dict | None = None
     fetched_at: float | str | None = None
+    question_en: str | None = None
+    client_mt: bool = False
 
     @model_validator(mode="before")
     @classmethod
