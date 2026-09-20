@@ -162,6 +162,20 @@ async def map_layers(request: Request):
                 "layers": "MODIS_Terra_CorrectedReflectance_TrueColor",
             },
             {
+                "id": "gibs_ir",
+                "label": "Himawari IR",
+                "type": "wms",
+                "url": "https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi",
+                "layers": "Himawari_AHI_Band13_Clean_Infrared",
+            },
+            {
+                "id": "gibs_imerg",
+                "label": "IMERG rain rate",
+                "type": "wms",
+                "url": "https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi",
+                "layers": "IMERG_Precipitation_Rate",
+            },
+            {
                 "id": "bhuvan_geomorph",
                 "label": "Bhuvan / NRSC geomorphology (West Bengal)",
                 "type": "wms",
