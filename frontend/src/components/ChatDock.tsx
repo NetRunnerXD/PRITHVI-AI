@@ -181,9 +181,10 @@ export function ChatDock({
         if (isFinal) setText(piece.trim());
       },
       (err) => {
+        if (!err) return;
         setListening(false);
         stopListen.current = null;
-        if (err && err !== "aborted" && err !== "no-speech") {
+        if (err !== "aborted" && err !== "no-speech") {
           if (err === "not-allowed") {
             setSpeechErr("Microphone permission denied. Please allow microphone access in your browser settings.");
           } else if (err === "audio-capture") {

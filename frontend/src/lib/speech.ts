@@ -297,17 +297,37 @@ export function startDictation(
   const rec = new Ctor();
   rec.lang = bcpForSpeech(langId);
   rec.interimResults = true;
-  rec.continuous = false;
+  rec.continuous = true;
   rec.maxAlternatives = 1;
+  let stopped = false;
   rec.onresult = (ev) => {
-    const last = ev.results[ev.results.length - 1];
-    const piece = last?.[0]?.transcript || "";
-    onText(piece, Boolean(last && (last as { isFinal?: boolean }).isFinal));
+    let blob = "";
+    const list = ev.results;
+    for (let i = 0; i < list.length; i++) {
+      blob += list[i]?.[0]?.transcript || "";
+    }
+    const last = list[list.length - 1];
+    onText(blob, Boolean(last && (last as { isFinal?: boolean }).isFinal));
   };
-  rec.onerror = (ev) => onEnd(ev.error || "error");
-  rec.onend = () => onEnd();
+  rec.onerror = (ev) => {
+    const err = ev.error || "error";
+    if (err === "no-speech" || err === "aborted") return;
+    if (!stopped) onEnd(err);
+  };
+  rec.onend = () => {
+    if (stopped) {
+      onEnd();
+      return;
+    }
+    try {
+      rec.start();
+    } catch {
+      onEnd();
+    }
+  };
   rec.start();
   return () => {
+    stopped = true;
     try {
       rec.abort();
     } catch {

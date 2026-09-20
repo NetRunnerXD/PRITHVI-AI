@@ -455,8 +455,9 @@ export default function Page() {
             ) : null}
 
             {tab === "chat" ? (
-              <div className="h-[calc(100dvh-5rem)] lg:h-auto space-y-0">
+              <div className="h-[calc(100dvh-5rem)] lg:h-auto space-y-3">
                 <ChatDock />
+                <SourcesBox tab="chat" locale={locale} />
               </div>
             ) : null}
 

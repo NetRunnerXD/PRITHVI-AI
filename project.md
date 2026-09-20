@@ -601,7 +601,7 @@ When changing `extract`, `all_risks`, `compose_indic`, CAP titles, nowcast milli
 | `LLM_PROVIDER` | `ollama` (default) \| `groq` \| `gemini` \| `github` \| `openrouter` \| `xai` |
 | `LLM_FALLBACK` | Comma list after primary. Default `gemini,groq` (Ollama → Gemini → Groq → deterministic) |
 | `GROQ_API_KEY` / `GROQ_MODEL` | Groq OpenAI-compat (`openai/gpt-oss-20b`) |
-| `GEMINI_API_KEY` / `GEMINI_MODEL` | Gemini (`gemini-3.5-flash`) |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | Gemini (`gemini-3.1-flash-lite`) |
 | `GITHUB_TOKEN` / `GITHUB_MODEL` | GitHub Models |
 | `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | OpenRouter |
 | `XAI_API_KEY` / `XAI_MODEL` | xAI (`grok-4.5`) |

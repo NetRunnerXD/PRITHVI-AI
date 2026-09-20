@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     groq_api_key: str | None = None
     groq_model: str = "openai/gpt-oss-20b"
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-3.5-flash"
+    gemini_model: str = "gemini-3.1-flash-lite"
     openrouter_api_key: str | None = None
     openrouter_model: str = "meta-llama/llama-3.1-8b-instruct:free"
     xai_api_key: str | None = None
