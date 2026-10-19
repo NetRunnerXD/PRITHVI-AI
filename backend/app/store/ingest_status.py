@@ -45,13 +45,23 @@ def snapshot() -> dict[str, Any]:
         names = [s.get("name") or s.get("id") for s in sats if s.get("status") == "ok"]
     ready = bool(blob.get("ready"))
     msg = blob.get("message") or ""
+    phase = blob.get("phase") or "idle"
+    # Honest readiness: a cycle that finished days ago is not "ready" data.
+    stale_after = float(os.environ.get("INGEST_STALE_S") or 7200)
+    stale = bool(age_s is not None and age_s > stale_after and phase not in {"fetching", "cv", "predict", "alerts"})
+    if stale:
+        ready = False
+        phase = "stale"
+        hrs = age_s / 3600.0
+        msg = f"Satellite ingest is stale: last cycle {hrs:.0f} h ago. Map layers may be out of date."
     if not ready and not msg:
         label = ", ".join(str(n) for n in names if n) or "satellite"
         msg = f"Analyzing {label} data"
     return {
         "cycle_id": blob.get("cycle_id"),
-        "phase": blob.get("phase") or "idle",
+        "phase": phase,
         "ready": ready,
+        "stale": stale,
         "message": msg,
         "satellites": sats,
         "started_ms": blob.get("started_ms"),

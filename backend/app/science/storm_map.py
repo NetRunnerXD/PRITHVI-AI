@@ -55,6 +55,30 @@ def _spread_hubs(rows: list[dict], n: int = 4) -> list[dict]:
     return [ranked[i] for i in range(0, len(ranked), step)][:n]
 
 
+def cold_ground_veto(cell: dict[str, Any], vp: dict[str, Any] | None, dkm: float) -> str | None:
+    """Why an IR 'cold' cell is probably cold ground / clear sky, or None to keep it.
+
+    The public JPEG has no calibrated Tb, so the Himalaya/Ladakh/Tibetan rim at night
+    (surface ≈ −10 °C) looks like a 240 K cloud top. Two guards:
+      1. high terrain needs a genuinely deep top (proxy ≤ 228 K);
+      2. Open-Meteo current analysis within 200 km says clear (cloud < 20 %, code ≤ 2).
+    """
+    lat, lon = float(cell.get("lat") or 0), float(cell.get("lon") or 0)
+    tb = float(cell.get("min_tb_k") or 300.0)
+    high = lat >= 29.5 or (lat >= 26.8 and lon >= 88.0 and lon <= 97.5 and lat >= 27.3)
+    elev = (vp or {}).get("elevation_m")
+    if elev is not None and dkm <= 120 and float(elev) >= 2000:
+        high = True
+    if high and tb > 228.0:
+        return "high-terrain cold ground (IR proxy not cold enough for a deep top)"
+    if vp and vp.get("ok") and dkm <= 200.0:
+        cc = vp.get("cloud_cover")
+        code = int(vp.get("weather_code") or 0)
+        if cc is not None and float(cc) < 20.0 and code <= 2 and float(vp.get("precip_mm") or 0) <= 0.0:
+            return f"NWP clear sky ({int(float(cc))}% cloud, code {code}) within {int(dkm)} km"
+    return None
+
+
 def _kind(cell: dict[str, Any]) -> str:
     d_tb = float(cell.get("d_tb_k") or 0)
     if cell.get("trend") == "collapsing" or d_tb >= 2.0:
@@ -425,6 +449,7 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
         grid,
         bounds,
         strokes=list(ltn_pack.get("strokes") or []),
+        image_time=(sector or {}).get("image_time"),
     )
     hub_wx = list(zip(hubs, thunder_packs))
 
@@ -442,13 +467,18 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
         return best, dkm
 
     cells: list[dict[str, Any]] = []
+    vetoed: list[dict[str, Any]] = []
     for i, c in enumerate(cells_raw):
         clat, clon = float(c["lat"]), float(c["lon"])
         if not _in_scope(clat, clon, frame):
             continue
+        vp, dkm = _nearest_wx(clat, clon)
+        why = cold_ground_veto(c, vp, dkm)
+        if why:
+            vetoed.append({"lat": clat, "lon": clon, "min_tb_k": c.get("min_tb_k"), "reason": why})
+            continue
         kind = c.get("kind") or _kind(c)
         place = _label(clat, clon)
-        vp, dkm = _nearest_wx(clat, clon)
         nwp_now = om_thunder.thunder_now(vp)
         nwp_fwd = om_thunder.thunder_forward(vp)
         n_st = int(c.get("n_strokes") or 0)
@@ -705,15 +735,16 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
     )
 
     def _pred_ok(i: dict[str, Any]) -> bool:
-        if i.get("engine") in {"open-meteo-thunder", "thunder-predict-v1", "cv-nowcast-v1"}:
-            return True
-        if (i.get("gate") or {}).get("ok"):
+        # No engine whitelist: a prediction is only "verified" if its agreement gate
+        # passed or an independent source (NWP thunder, strokes) backs it.
+        gate = i.get("gate")
+        if isinstance(gate, dict) and not gate.get("ok"):
+            return False
+        if (gate or {}).get("ok"):
             return True
         if i.get("nwp_thunder_fwd") or i.get("nwp_thunder"):
             return True
-        if float(i.get("p_lightning") or 0) >= 0.12 or float(i.get("p_cloudburst") or 0) >= 0.12:
-            return True
-        if int(i.get("lead_min") or 0) > 0:
+        if i.get("engine") == "open-meteo-thunder" and i.get("weather_code") is not None:
             return True
         return int(i.get("n_strokes") or 0) >= 1
 
@@ -791,6 +822,7 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
             "fire": len(fires_in),
             "landslide": len(landslides),
             "cloud": sum(1 for i in live if i["kind"] == "cloud"),
+            "vetoed_cold_ground": len(vetoed),
             "all": len(incidents),
         },
         "imerg_mm_h": (imerg or {}).get("mm_h"),
@@ -809,6 +841,9 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
         "past_h": past_h,
         "need_second_frame": n_frames < 2,
         "cv": cv_meta,
+        "vetoed_cells": vetoed[:40],
+        "ir_note": (sector or {}).get("tb_note") or (ir or {}).get("tb_note"),
+        "ir_image_time": (sector or {}).get("image_time"),
         "sensors": {
             "lightning": bool((ltn_pack.get("n") or 0) > 0) or any(p.get("thunder") for p in thunder_packs),
             "lightning_status": ltn_pack.get("status") or "cv+open-meteo",

@@ -207,6 +207,15 @@ async def _assemble_snapshot(
         "nowcast": {},
         "bandit": {},
     }
+    try:
+        from app.science import pn as _pn
+
+        if _pn.blend_enabled() and isinstance(science.get("nowcast"), dict) and science["nowcast"]:
+            from app.science.pn.blend import blend as _pn_blend
+
+            science["nowcast"]["pn_blend"] = _pn_blend(science["nowcast"], dict(obs.get("om_models") or {}))
+    except Exception as e:  # research post-processing must never break the snapshot
+        science.setdefault("nowcast", {})["pn_blend"] = {"error": type(e).__name__}
     anomalies, drivers, stories = compute_anomalies(f, obs["nasa_precip"]) if "anomalies" not in disabled else ([], [], [])
     if science["hysteresis"]["flip"] == "runoff":
         drivers.append("hysteresis on runoff limb")

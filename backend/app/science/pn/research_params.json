@@ -1,0 +1,134 @@
+{
+ "source": "NetRunnerXD/PRITHVI-AI-Research, branch severe-weather-nowcast (paper_journal/results_v4_gpu.json, paper_nowcast/results_rain_ts.json, paper_journal/results_bob06.json)",
+ "pn_net_v4": {
+  "calibration": {
+   "rain": {
+    "temp": 1.736458659172058,
+    "cut": [
+     0.35,
+     0.3,
+     0.3,
+     0.3,
+     0.3,
+     0.25,
+     0.25,
+     0.25,
+     0.25,
+     0.25,
+     0.25,
+     0.25
+    ],
+    "brier_val": 0.055718645453453064
+   },
+   "ltg": {
+    "temp": 1.2180758714675903,
+    "cut": [
+     0.2,
+     0.25,
+     0.2,
+     0.2,
+     0.15,
+     0.15,
+     0.15,
+     0.2,
+     0.3,
+     0.35,
+     0.35,
+     0.35
+    ],
+    "brier_val": 0.00367921544238925
+   },
+   "ci": {
+    "temp": 0.48891741037368774,
+    "cut": [
+     0.15,
+     0.05,
+     0.75,
+     0.3,
+     0.1,
+     0.2
+    ],
+    "brier_val": 0.001006532460451126
+   }
+  },
+  "test_year": 2026,
+  "note": "Per-head temperature + per-lead cut-offs tuned on validation (max CSI with FAR penalty)."
+ },
+ "pn_blend_rain": {
+  "weights_by_lead_h": {
+   "1": {
+    "extrap": 0.7,
+    "gfs": 0.1,
+    "ifs": 0.2
+   },
+   "2": {
+    "extrap": 0.6,
+    "gfs": 0.2,
+    "ifs": 0.2
+   },
+   "3": {
+    "extrap": 0.4,
+    "gfs": 0.2,
+    "ifs": 0.4
+   },
+   "4": {
+    "extrap": 0.3,
+    "gfs": 0.3,
+    "ifs": 0.4
+   },
+   "5": {
+    "extrap": 0.2,
+    "gfs": 0.3,
+    "ifs": 0.5
+   },
+   "6": {
+    "extrap": 0.1,
+    "gfs": 0.2,
+    "ifs": 0.7
+   },
+   "7": {
+    "extrap": 0.2,
+    "gfs": 0.5,
+    "ifs": 0.3
+   },
+   "8": {
+    "extrap": 0.2,
+    "gfs": 0.4,
+    "ifs": 0.4
+   },
+   "9": {
+    "extrap": 0.1,
+    "gfs": 0.3,
+    "ifs": 0.6
+   },
+   "10": {
+    "extrap": 0.2,
+    "gfs": 0.4,
+    "ifs": 0.4
+   },
+   "11": {
+    "extrap": 0.2,
+    "gfs": 0.4,
+    "ifs": 0.4
+   },
+   "12": {
+    "extrap": 0.1,
+    "gfs": 0.4,
+    "ifs": 0.5
+   }
+  },
+  "latency_rule": {
+   "gfs_min_age_h": 6,
+   "ifs_min_age_h": 8
+  },
+  "note": "Fixed weights tuned on validation; members = extrapolation, GFS, ECMWF IFS."
+ },
+ "pn_blend_cyclone": {
+  "weights_12h": {
+   "extrap": 0.35,
+   "gfs": 0.2,
+   "ifs": 0.45
+  },
+  "note": "12 h track blend; tuned 2023, tested 2024-2026."
+ }
+}
