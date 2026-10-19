@@ -57,8 +57,11 @@ async def run_cycle() -> dict[str, Any]:
                 satellite={
                     "id": "mosdac_l1b",
                     "name": "INSAT-3DS L1B TIR1",
-                    "status": l1.get("status") or ("ok" if l1.get("ok") else "fail"),
-                    "detail": l1.get("error") or l1.get("status"),
+                    "status": l1.get("status")
+                    or ("ok" if l1.get("ok") else "disabled" if not settings.mosdac_allow_l1b else "fail"),
+                    "detail": l1.get("error")
+                    or l1.get("status")
+                    or (None if settings.mosdac_allow_l1b else "L1B off (MOSDAC_ALLOW_L1B=false); Himawari B13 used for Tb"),
                 }
             )
         except Exception as e:

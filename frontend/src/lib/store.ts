@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { ensureThemeFonts } from "./themeFonts";
 import type { ChatMsg, DashboardSnapshot, Density, Location, TabId, ThemeId, UiAction, UnitSys } from "@/types/dashboard";
 import { resolveTab } from "@/types/dashboard";
 import type { Locale } from "@/i18n/copy";
@@ -121,6 +122,7 @@ export function applyTheme(s: AppSettings, locale?: Locale) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   root.dataset.theme = s.theme;
+  ensureThemeFonts(s.theme);
   root.dataset.density = s.density;
   root.dataset.motion = s.reduceMotion ? "off" : "on";
   root.style.fontSize = `${s.fontScale}%`;
@@ -182,6 +184,9 @@ function writeCachedSnapshot(snap: DashboardSnapshot) {
     // LocalStorage quota safety
   }
 }
+
+/** Location id of the server default shown while waiting for GPS (null = user/GPS chose). */
+let defaultedLocId: string | null = null;
 
 function askGps(): Promise<Location | null> {
   if (typeof navigator === "undefined" || !navigator.geolocation) return Promise.resolve(null);
@@ -425,7 +430,28 @@ export const useApp = create<State>((set, get) => ({
     prev?.abort();
 
     let loc = get().location || readSavedLoc();
-    if (!loc) loc = await askGps();
+    if (!loc) {
+      // First visit: never block the first paint on the GPS prompt (it can wait forever
+      // while the permission dialog is open). Show the server's default city now and move
+      // to the user's position when/if GPS answers.
+      const r = await Promise.race([
+        askGps(),
+        new Promise<null>((res) => setTimeout(() => res(null), 1200)),
+      ]);
+      loc = r;
+      if (!loc) {
+        defaultedLocId = "pending";
+        void askGps().then((g) => {
+          const cur = get().location;
+          if (g && (!cur || defaultedLocId === "pending" || cur.id === defaultedLocId)) {
+            defaultedLocId = null;
+            writeSavedLoc(g);
+            set({ location: g });
+            void get().refresh();
+          }
+        });
+      }
+    }
     if (loc) writeSavedLoc(loc);
 
     // If we have an existing or cached dashboard, display it immediately without blanking
@@ -454,6 +480,7 @@ export const useApp = create<State>((set, get) => ({
       }
       const dashboard = await fetchDashboard(loc || undefined, ac.signal, disabled, omPack, obs);
       if (dashAbort !== ac) return;
+      if (defaultedLocId === "pending") defaultedLocId = dashboard.location.id;
       writeSavedLoc(dashboard.location);
       writeCachedSnapshot(dashboard);
       set({

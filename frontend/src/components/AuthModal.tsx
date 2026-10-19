@@ -4,12 +4,20 @@ import { useState } from "react";
 import { COPY } from "@/i18n/copy";
 import { forgotPassword, gpsFix, loginAccount, registerAccount, resetPassword } from "@/lib/auth";
 import { useApp } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import { IconCross, IconPin, IconSparkle, IconUser } from "./Icons";
 
 type Mode = "signin" | "register" | "forgot" | "reset";
 
 export function AuthModal() {
-  const { locale, authModal, setAuthModal, setAccount } = useApp();
+  const { locale, authModal, setAuthModal, setAccount } = useApp(
+    useShallow((s) => ({
+      locale: s.locale,
+      authModal: s.authModal,
+      setAuthModal: s.setAuthModal,
+      setAccount: s.setAccount,
+    })),
+  );
   const t = COPY[locale];
   const [mode, setMode] = useState<Mode>("signin");
   const [phone, setPhone] = useState("");
@@ -123,7 +131,7 @@ export function AuthModal() {
         {/* Header Branding */}
         <div className="flex items-center gap-3">
           <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full overflow-hidden bg-transparent shadow-xl shadow-blue-500/25 border-2 border-white/25">
-            <img src="/logo.png" alt="PRITHVI-AI Logo" width={56} height={56} className="h-full w-full object-cover rounded-full" />
+            <img src="/logo-128.webp" alt="PRITHVI-AI Logo" width={56} height={56} className="h-full w-full object-cover rounded-full" />
             <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-300 opacity-75" />
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400 border border-[var(--card)]" />

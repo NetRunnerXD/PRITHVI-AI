@@ -43,6 +43,15 @@ async def lifespan(_: FastAPI):
     await auth_connect()
     task = None if skip_loop else asyncio.create_task(_snapshot_loop())
     sms_task = None if not sms_should_start() or role == "ingest" else asyncio.create_task(sms_loop())
+    prefetch_task = None
+    if (
+        role != "ingest"
+        and not os.environ.get("PYTEST_CURRENT_TEST")
+        and os.environ.get("PREFETCH_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
+    ):
+        from app.prefetch import prefetch_loop
+
+        prefetch_task = asyncio.create_task(prefetch_loop())
     ingest_task = None
     if role == "ingest" and not os.environ.get("PYTEST_CURRENT_TEST"):
         from app.ingest.worker import ingest_loop
@@ -55,7 +64,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
-        for t in (task, sms_task, ingest_task):
+        for t in (task, sms_task, ingest_task, prefetch_task):
             if t is not None:
                 t.cancel()
                 try:
@@ -99,7 +108,15 @@ else:
     _cors_kwargs["allow_credentials"] = True
     if settings.cors_origin_regex:
         _cors_kwargs["allow_origin_regex"] = settings.cors_origin_regex
+# Order matters: Starlette's last-added middleware is outermost. The error→JSON layer is
+# added first so it sits *inside* CORS — a crash still returns Access-Control-Allow-Origin,
+# so the browser shows the real 500 instead of a misleading CORS error.
+from app.middleware import CacheControlMiddleware, JSONErrorMiddleware, SelectiveGZipMiddleware
+
+app.add_middleware(JSONErrorMiddleware)
+app.add_middleware(CacheControlMiddleware)
 app.add_middleware(CORSMiddleware, **_cors_kwargs)
+app.add_middleware(SelectiveGZipMiddleware, minimum_size=1024)
 
 mount_surfaces(app)
 

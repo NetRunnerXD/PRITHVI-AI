@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
 import type { StormIncident, StormMapPack } from "@/lib/api";
+import { subscribeSecond } from "@/lib/visibility";
 
 function fmtRemain(ms: number) {
   if (ms <= 0) return "0s";
@@ -65,8 +66,7 @@ export function StormFeed({
   const [kindFilter, setKindFilter] = useState<string>("all");
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
+    return subscribeSecond(() => setNow(Date.now()));
   }, []);
 
   const rows = useMemo(() => {

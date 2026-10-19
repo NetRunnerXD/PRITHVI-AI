@@ -16,17 +16,62 @@ from app.tools import build_registry
 
 @router.get("/sat/imd-asia")
 async def imd_asia_jpeg():
-    """Same-origin INSAT Asia-sector JPEG so Leaflet ImageOverlay is not blocked by CORS."""
-    from app.providers.imd_insat import fetch_jpeg
+    """Same-origin INSAT Asia-sector map area (header removed). It is Web-Mercator already, so
+    a Leaflet ImageOverlay with the X-Bounds corners lines up with the basemap."""
+    from app.providers.imd_insat import map_area
 
-    body, _url, status = await fetch_jpeg()
-    if not body:
-        return Response(status_code=502, content=f"imd jpeg {status}".encode())
+    pack = await map_area()
+    if not pack.get("ok"):
+        return Response(status_code=502, content=f"imd jpeg {pack.get('status')}".encode())
+    w, e, s_, n = pack["bounds"]
     return Response(
-        content=body,
+        content=pack["jpeg"],
         media_type="image/jpeg",
-        headers={"Cache-Control": "public, max-age=120", "Access-Control-Allow-Origin": "*"},
+        headers={
+            "Cache-Control": "public, max-age=120, stale-while-revalidate=600",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "X-Bounds, X-Image-Time",
+            "X-Bounds": f"{w},{e},{s_},{n}",
+            "X-Image-Time": str(pack.get("image_time") or ""),
+        },
     )
+
+
+@router.get("/sat/imd-asia/meta")
+async def imd_asia_meta():
+    from app.providers.imd_insat import ASIA_MAP_BOUNDS, GRAY_TB_NOTE, map_area
+
+    pack = await map_area()
+    w, e, s_, n = pack.get("bounds") or ASIA_MAP_BOUNDS
+    return {
+        "ok": bool(pack.get("ok")),
+        "url": "/api/sat/imd-asia",
+        "projection": "EPSG:3857 (Mercator)",
+        "bounds": {"west": w, "east": e, "south": s_, "north": n},
+        "image_time": pack.get("image_time"),
+        "note": GRAY_TB_NOTE,
+    }
+
+
+@router.get("/sat/gibs/latest")
+async def gibs_latest():
+    """Latest non-empty GIBS frame times so map tiles request a real time (no TIME = stale
+    default; a date-only TIME = 00:00Z)."""
+    import asyncio
+
+    from app.providers import gibs_ir
+
+    ir, im = await asyncio.gather(gibs_ir.frame("ir"), gibs_ir.frame("imerg"))
+    return {
+        "ir": {"layer": ir.get("layer"), "time": ir.get("valid"), "ok": bool(ir.get("ok")), "status": ir.get("status")},
+        "imerg": {
+            "layer": im.get("layer"),
+            "time": im.get("valid"),
+            "ok": bool(im.get("ok")),
+            "status": im.get("status"),
+            "note": "GIBS IMERG is a daily image, not real-time." if im.get("ok") else "IMERG not yet available.",
+        },
+    }
 
 
 @router.get("/dashboard")
@@ -234,6 +279,7 @@ async def nowcast_api(loc: Location = Depends(loc_from_query)):
         "sat": nc.get("sat") or {},
         "convective": nc.get("convective") or {},
         "sat_live": nc.get("sat_live") or {},
+        "pn_blend": nc.get("pn_blend") or {},
     }
 
 
@@ -267,6 +313,7 @@ def _nowcast_live_body(snap) -> dict:
         "sat": nc.get("sat") or {},
         "convective": nc.get("convective") or {},
         "sat_live": nc.get("sat_live") or {},
+        "pn_blend": nc.get("pn_blend") or {},
     }
 
 
@@ -387,8 +434,18 @@ async def storm_map_api(
     from app.store.time import clamp_horizon
     from app.science.storm_map import build as build_storm_map
 
+    import asyncio
+
+    from app import cache
+
     horizon = clamp_horizon(past_h)
-    pack = await build_storm_map(state, past_h=horizon)
+    key = f"stormpack:{state.strip().lower()}:{horizon}"
+    # 90 s fresh, 10 min stale-while-revalidate, single-flight: concurrent tabs share one
+    # build and a slow rebuild never blocks a user who already has a recent map.
+    pack = await asyncio.shield(
+        cache.aget(key, lambda: build_storm_map(state, past_h=horizon), ttl_s=90, swr_s=600)
+    )
+    pack = dict(pack)
     try:
         from app.store import ingest_status
 
@@ -399,6 +456,22 @@ async def storm_map_api(
         pass
     pack["past_h"] = horizon
     return pack
+
+
+@router.get("/cyclones")
+async def cyclones_api(region: str = Query(default="india", pattern="^(india|all)$")):
+    """Active tropical cyclones: observed + forecast track, cone, category, timestamps."""
+    from app.providers import cyclones
+
+    return await cyclones.active(region)
+
+
+@router.get("/research/status")
+async def research_status():
+    """Which PN-* research methods are live, and what (env var names only) each still needs."""
+    from app.science import pn
+
+    return pn.status()
 
 
 @router.get("/states")

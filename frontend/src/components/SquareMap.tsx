@@ -8,6 +8,7 @@ import { MapWrap } from "./MapWrap";
 import { StormFeed } from "./StormFeed";
 import { WX_LAYERS, legendStops, unitOf, type WeatherGrid, type WxLayer } from "@/lib/weatherScale";
 import { useApp } from "@/lib/store";
+import { visibleInterval } from "@/lib/visibility";
 
 let cachedStates: string[] = [];
 let cachedRadarPack: { host: string; radarPath: string | null; satPath: string | null } | null = null;
@@ -217,10 +218,10 @@ export function SquareMap({
       }
     }
     void load();
-    const id = window.setInterval(() => void load(), 90_000);
+    const stopPoll = visibleInterval(() => void load(), 90_000);
     return () => {
       dead = true;
-      window.clearInterval(id);
+      stopPoll();
     };
   }, [state, pastHours]);
 
@@ -360,7 +361,8 @@ export function SquareMap({
   };
 
   const processing = storm?.processing;
-  const satBusy = processing?.ready === false;
+  const satStale = Boolean(processing?.stale);
+  const satBusy = processing?.ready === false && !satStale;
   const analyzingMsg =
     processing?.message ||
     (satBusy ? t.analyzingSat || "Analyzing satellite data" : "");
@@ -477,6 +479,14 @@ export function SquareMap({
           {satBusy ? (
             <div className="absolute top-2 left-2 right-2 z-[700] rounded-lg bg-slate-900/80 text-amber-100 text-[11px] font-semibold px-3 py-2 pointer-events-none">
               {analyzingMsg}
+            </div>
+          ) : null}
+          {satStale ? (
+            <div
+              role="status"
+              className="absolute top-2 left-2 right-2 z-[700] rounded-lg bg-amber-500/90 text-slate-950 text-[11px] font-bold px-3 py-2 pointer-events-none"
+            >
+              ⚠ {processing?.message || "Satellite data is stale — map layers may be out of date."}
             </div>
           ) : null}
           {box}

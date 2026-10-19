@@ -107,11 +107,18 @@ def cluster(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
         times = [g.get("t_utc") for g in group if g.get("t_utc") is not None]
         occurred = max(times) if times else None
         iso = occurred.isoformat(timespec="seconds") if occurred else None
+        age_h = None
+        if occurred is not None:
+            from datetime import datetime, timezone
+
+            age_h = round((datetime.now(timezone.utc) - occurred).total_seconds() / 3600.0, 1)
         out.append(
             {
                 "id": f"firms-{iy}-{ix}",
                 "kind": "fire",
-                "phase": "live",
+                # VIIRS passes are ~2/day and NRT lags ~3 h: a detection, not a live fire.
+                "phase": "detected" if age_h is None or age_h > 6 else "recent",
+                "age_h": age_h,
                 "lat": round(lat, 3),
                 "lon": round(lon, 3),
                 "n": n,

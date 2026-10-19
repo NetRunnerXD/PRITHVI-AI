@@ -43,9 +43,11 @@ def test_vera_pack_on_models_tab():
     assert pack["cv"]["frames"] is not None or pack["cv"]["insat_url"]
     assert "Chhattisgarh" not in str(pack)
     assert pack["graph"]["nodes"][0]["id"] == "data"
-    assert pack["cv"]["map"]["asia"]["west"] == 40.0
-    assert pack["cv"]["map"]["asia"]["east"] == 110.0
-    assert pack["cv"]["map"]["asia"]["south"] == -10.0
+    # Fitted Mercator georeference of the IMD Asia-sector map area (header removed).
+    assert abs(pack["cv"]["map"]["asia"]["west"] - 40.0) < 0.05
+    assert abs(pack["cv"]["map"]["asia"]["east"] - 110.0) < 0.05
+    assert abs(pack["cv"]["map"]["asia"]["south"] + 10.0) < 0.05
+    assert abs(pack["cv"]["map"]["asia"]["north"] - 45.4) < 0.05
     assert pack["cv"]["map"]["asia"]["url"] == "/api/sat/imd-asia"
     assert pack["cv"]["map"]["imerg_layer"] == "IMERG_Precipitation_Rate"
     assert pack["fusion"]["method"] == "EQMN"

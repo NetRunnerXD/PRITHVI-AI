@@ -1,12 +1,23 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ImageOverlay, useMap } from "react-leaflet";
+import { demAt, LAPSE_K_PER_M, loadDem, type Dem } from "@/lib/dem";
 import { colorAt, fieldKey, sampleGrid, type WeatherGrid, type WxLayer } from "@/lib/weatherScale";
 
-function paint(grid: WeatherGrid, layer: WxLayer, key: string): string {
-  const w = 960;
-  const h = 420;
+const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
+const invMercY = (m: number) => (360 / Math.PI) * Math.atan(Math.exp(m)) - 90;
+
+/** Rows are spaced evenly in *Web-Mercator* y, because Leaflet stretches an ImageOverlay
+ * linearly in projected space. (Painting rows evenly in latitude shifted features by up to
+ * ~1.5° at 30°N on the India grid, and by ~10° on the old world grid.) */
+function paint(grid: WeatherGrid, layer: WxLayer, key: string, dem: Dem | null): string {
+  // Temperature: model nodes sit at their own (smoothed) height; correct each pixel to the
+  // real ground height with the standard lapse rate. Validated on 10 cities: MAE 2.97 → 1.4 °C
+  // (Srinagar −1.3 → 4.1 vs 6.8 observed-analysis; Guwahati 12.6 → 21.3 vs 22.2).
+  const lapse = key === "temp_c" && dem != null && Array.isArray(grid.fields.elev_m);
+  const w = 640;
+  const h = 680;
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
@@ -18,11 +29,18 @@ function paint(grid: WeatherGrid, layer: WxLayer, key: string): string {
   const north = grid.lats[grid.ny - 1];
   const west = grid.lons[0];
   const east = grid.lons[grid.nx - 1];
+  const mN = mercY(north);
+  const mS = mercY(south);
   for (let y = 0; y < h; y++) {
-    const lat = north - ((north - south) * y) / (h - 1);
+    const lat = invMercY(mN - ((mN - mS) * y) / (h - 1));
     for (let x = 0; x < w; x++) {
       const lon = west + ((east - west) * x) / (w - 1);
-      const v = sampleGrid(grid, lat, lon, key);
+      let v = sampleGrid(grid, lat, lon, key);
+      if (lapse && v != null) {
+        const zn = sampleGrid(grid, lat, lon, "elev_m");
+        const zp = demAt(dem!, lat, lon);
+        if (zn != null && zp != null) v += LAPSE_K_PER_M * (zn - Math.max(0, zp));
+      }
       const [r, g, b, a] = colorAt(layer, v);
       const i = (y * w + x) * 4;
       data[i] = r;
@@ -45,7 +63,19 @@ export function WeatherOverlay({
   opacity: number;
 }) {
   const key = fieldKey(layer);
-  const url = useMemo(() => (grid && key ? paint(grid, layer, key) : ""), [grid, layer, key]);
+  const [dem, setDem] = useState<Dem | null>(null);
+  useEffect(() => {
+    if (key !== "temp_c" || dem) return;
+    let live = true;
+    loadDem().then((d) => {
+      if (live && d) setDem(d);
+    });
+    return () => {
+      live = false;
+    };
+  }, [key, dem]);
+  const useDem = key === "temp_c" ? dem : null;
+  const url = useMemo(() => (grid && key ? paint(grid, layer, key, useDem) : ""), [grid, layer, key, useDem]);
   if (!grid || !key || !url) return null;
   const south = grid.lats[0];
   const north = grid.lats[grid.ny - 1];

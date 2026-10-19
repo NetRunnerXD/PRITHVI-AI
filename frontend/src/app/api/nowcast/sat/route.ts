@@ -15,7 +15,12 @@ async function proxy(req: NextRequest) {
     const body = await r.text();
     return new NextResponse(body, {
       status: r.status,
-      headers: { "content-type": r.headers.get("content-type") || "application/json" },
+      headers: {
+        "content-type": r.headers.get("content-type") || "application/json",
+        // Let Vercel's edge cache identical (location-keyed) requests for 60 s and serve
+        // stale while revalidating, instead of a cold trip to Render on every poll.
+        "cache-control": r.ok ? "public, s-maxage=60, stale-while-revalidate=300" : "no-store",
+      },
     });
   } catch (e) {
     return NextResponse.json({ error: String(e), hint: "Start uvicorn on :8000" }, { status: 502 });

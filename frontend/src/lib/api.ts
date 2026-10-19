@@ -222,6 +222,8 @@ export type StormMapPack = {
   past_h?: number;
   processing?: {
     ready?: boolean;
+    stale?: boolean;
+    phase?: string;
     message?: string;
     satellites?: { id?: string; name?: string; status?: string; detail?: string }[];
     age_s?: number | null;
@@ -371,20 +373,38 @@ export async function fetchRadarFrames(): Promise<RadarPack | null> {
   }
 }
 
+const stormInflight = new Map<string, Promise<StormMapPack | null>>();
+const stormMemo = new Map<string, { at: number; pack: StormMapPack }>();
+const STORM_MEMO_MS = 60_000;
+
+/** One request per (state, past_h) at a time, shared by every component (map, feed, sat
+ * tab), memoised 60 s. The alias path is tried only on a 404 — previously any error
+ * (timeout/5xx) fired a second identical heavy request at the same server. */
 export async function fetchStormMap(state: string, pastHours?: number): Promise<StormMapPack | null> {
   const params = new URLSearchParams({ state });
   if (pastHours != null) params.set("past_h", String(pastHours));
   const q = params.toString();
-  for (const path of ["/nowcast/storm-map", "/nowcast-storm-map"]) {
-    try {
-      const r = await fetch(`${apiUrl(path)}?${q}`);
-      if (!r.ok) continue;
-      return (await r.json()) as StormMapPack;
-    } catch {
-      continue;
+  const memo = stormMemo.get(q);
+  if (memo && Date.now() - memo.at < STORM_MEMO_MS) return memo.pack;
+  const running = stormInflight.get(q);
+  if (running) return running;
+  const job = (async () => {
+    for (const path of ["/nowcast/storm-map", "/nowcast-storm-map"]) {
+      try {
+        const r = await fetch(`${apiUrl(path)}?${q}`);
+        if (r.status === 404) continue;
+        if (!r.ok) return memo?.pack ?? null;
+        const pack = (await r.json()) as StormMapPack;
+        stormMemo.set(q, { at: Date.now(), pack });
+        return pack;
+      } catch {
+        return memo?.pack ?? null;
+      }
     }
-  }
-  return null;
+    return memo?.pack ?? null;
+  })().finally(() => stormInflight.delete(q));
+  stormInflight.set(q, job);
+  return job;
 }
 
 export async function fetchNearby(lat: number, lon: number): Promise<Location[]> {
@@ -471,5 +491,61 @@ export async function streamChat(
     return final;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+
+export type GibsLatest = {
+  ir?: { layer?: string; time?: string | null; ok?: boolean };
+  imerg?: { layer?: string; time?: string | null; ok?: boolean; note?: string };
+};
+
+let gibsMemo: { at: number; v: GibsLatest } | null = null;
+export async function fetchGibsLatest(): Promise<GibsLatest | null> {
+  if (gibsMemo && Date.now() - gibsMemo.at < 5 * 60_000) return gibsMemo.v;
+  try {
+    const r = await fetch(apiUrl("/sat/gibs/latest"));
+    if (!r.ok) return gibsMemo?.v ?? null;
+    const v = (await r.json()) as GibsLatest;
+    gibsMemo = { at: Date.now(), v };
+    return v;
+  } catch {
+    return gibsMemo?.v ?? null;
+  }
+}
+
+export type CycloneTrackPoint = { t?: string | null; lat: number; lon: number; cat?: string | null; forecast?: boolean };
+export type CycloneSystem = {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  basin?: string | null;
+  peak_wind_kt?: number | null;
+  current_category?: string | null;
+  peak_category?: string | null;
+  category_scale?: string;
+  severity_text?: string;
+  advisory_source?: string;
+  advisory_time?: string | null;
+  observed_track: CycloneTrackPoint[];
+  forecast_track: CycloneTrackPoint[];
+  cone?: { type: string; coordinates: number[][][] | number[][][][] } | null;
+  pn_blend?: { ok?: boolean; lat?: number; lon?: number; valid?: string; method?: string } | null;
+  links?: Record<string, string | undefined>;
+};
+export type CyclonePack = { ok: boolean; as_of?: string; count: number; systems: CycloneSystem[]; note?: string; links?: Record<string, string> };
+
+let cycMemo: { at: number; v: CyclonePack } | null = null;
+export async function fetchCyclones(): Promise<CyclonePack | null> {
+  if (cycMemo && Date.now() - cycMemo.at < 5 * 60_000) return cycMemo.v;
+  try {
+    const r = await fetch(`${apiUrl("/cyclones")}?region=india`);
+    if (!r.ok) return cycMemo?.v ?? null;
+    const v = (await r.json()) as CyclonePack;
+    cycMemo = { at: Date.now(), v };
+    return v;
+  } catch {
+    return cycMemo?.v ?? null;
   }
 }

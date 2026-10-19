@@ -13,6 +13,7 @@ import {
   stopSpeaking,
 } from "@/lib/speech";
 import { useApp } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import type { ChatMsg, ChatSuggestion, DashboardSnapshot } from "@/types/dashboard";
 import { ChatBlocks } from "./ChatBlocks";
 import {
@@ -52,7 +53,28 @@ export function ChatDock({
     setPendingAsk,
     applyUi,
     settings,
-  } = useApp();
+  } = useApp(
+    useShallow((s) => ({
+      locale: s.locale,
+      outputLocale: s.outputLocale,
+      setOutputLocale: s.setOutputLocale,
+      location: s.location,
+      chat: s.chat,
+      addChat: s.addChat,
+      replaceLastAssistant: s.replaceLastAssistant,
+      patchLastUser: s.patchLastUser,
+      clearChat: s.clearChat,
+      streaming: s.streaming,
+      setStreaming: s.setStreaming,
+      applySnapshot: s.applySnapshot,
+      applySuggestion: s.applySuggestion,
+      conversationId: s.conversationId,
+      pendingAsk: s.pendingAsk,
+      setPendingAsk: s.setPendingAsk,
+      applyUi: s.applyUi,
+      settings: s.settings,
+    })),
+  );
   const t = COPY[locale];
   const [text, setText] = useState("");
   const [showEn, setShowEn] = useState(false);
@@ -251,7 +273,7 @@ export function ChatDock({
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 dark:border-white/10 bg-[color-mix(in_srgb,var(--card)_60%,transparent)] backdrop-blur-2xl px-3.5 py-2.5 sm:px-4 sm:py-3">
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <div className="relative flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full overflow-hidden bg-transparent border-2 border-white/30 shadow-md">
-            <img src="/logo.png" alt="PRITHVI-AI" width={40} height={40} className="h-full w-full object-cover rounded-full" />
+            <img src="/logo-128.webp" alt="PRITHVI-AI" width={40} height={40} className="h-full w-full object-cover rounded-full" />
             <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-[var(--card)] animate-pulse" />
           </div>
           <div className="min-w-0">

@@ -61,6 +61,15 @@ def list_archive() -> list[str]:
     return [str(p.relative_to(ARCHIVE)) for p in ARCHIVE.rglob("*") if p.is_file()][:40]
 
 
+def _json_body(r: Any) -> dict[str, Any]:
+    """Parse a JSON object defensively; MOSDAC sometimes returns HTML/empty bodies with 200."""
+    try:
+        out = r.json()
+    except Exception:
+        return {}
+    return out if isinstance(out, dict) else {}
+
+
 async def _token() -> dict[str, Any]:
     s = get_settings()
     if not credentials_present():
@@ -78,7 +87,7 @@ async def _token() -> dict[str, Any]:
         r = await client().post(TOKEN_URL, json={"username": s.mosdac_user, "password": s.mosdac_pass})
     if r.status_code >= 400:
         return {"ok": False, "status": f"http_{r.status_code}", "error": (r.text or "")[:180]}
-    body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    body = _json_body(r)
     tok = body.get("access_token")
     if not tok:
         return {"ok": False, "status": "no_token", "error": str(body)[:180]}
@@ -98,7 +107,7 @@ async def _refresh(pack: dict[str, Any]) -> dict[str, Any]:
     if r.status_code >= 400:
         cache.set("mosdac:token", None, 1)
         return await _token()
-    body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    body = _json_body(r)
     tok = body.get("access_token")
     if not tok:
         cache.set("mosdac:token", None, 1)
@@ -143,9 +152,8 @@ async def search(dataset_id: str = "3SIMG_L1B_STD", count: int = 3) -> dict[str,
         r = await client().get(SEARCH_URL, params={"datasetId": dataset_id, "count": str(count)})
     if r.status_code >= 400:
         return {"ok": False, "status": f"http_{r.status_code}", "datasetId": dataset_id}
-    try:
-        body = r.json()
-    except Exception:
+    body = _json_body(r)
+    if not body:
         return {"ok": False, "status": "not_json", "datasetId": dataset_id}
     items = body.get("entries") or body.get("items") or body.get("data") or body.get("features") or []
     if not items and isinstance(body.get("result"), list):
@@ -312,7 +320,11 @@ async def ingest_latest(*, allow_l1b: bool = False) -> list[dict[str, Any]]:
         products.extend(p for p in DATASETS if p in L1B)
     out: list[dict[str, Any]] = []
     for product in products:
-        pack = await search(product, count=1)
+        try:
+            pack = await search(product, count=1)
+        except Exception as e:
+            out.append({"ok": False, "product": product, "status": "search_error", "error": f"{type(e).__name__}: {e}"[:180]})
+            continue
         granules = pack.get("granules") or []
         if not granules or not granules[0].get("id"):
             out.append({"ok": False, "product": product, "status": "no_granule"})
@@ -329,7 +341,11 @@ async def ingest_latest(*, allow_l1b: bool = False) -> list[dict[str, Any]]:
         if not _quota_inc(cached=False):
             out.append({"ok": False, "product": product, "status": "quota"})
             break
-        dl = await download_granule(gid, g.get("identifier"))
+        try:
+            dl = await download_granule(gid, g.get("identifier"))
+        except Exception as e:  # one bad granule must not kill the whole ingest cycle
+            out.append({"ok": False, "product": product, "granule_id": gid, "status": "download_error", "error": f"{type(e).__name__}: {e}"[:180]})
+            continue
         err = str(dl.get("error") or dl.get("status") or "")
         if "latency" in err.lower() or "3 days" in err.lower():
             out.append({"ok": False, "product": product, "status": "latency_3d", "error": err[:180]})

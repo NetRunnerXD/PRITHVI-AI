@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { COPY } from "@/i18n/copy";
 import { useApp } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import { ChatDock } from "./ChatDock";
 import { IconCross } from "./Icons";
 
@@ -93,7 +94,13 @@ function AnimatedEarthGlobe({ isOpen }: { isOpen: boolean }) {
 }
 
 export function ChatFloat() {
-  const { locale, floatChatOpen, setFloatChatOpen } = useApp();
+  const { locale, floatChatOpen, setFloatChatOpen } = useApp(
+    useShallow((s) => ({
+      locale: s.locale,
+      floatChatOpen: s.floatChatOpen,
+      setFloatChatOpen: s.setFloatChatOpen,
+    })),
+  );
   const t = COPY[locale];
   const [bounce, setBounce] = useState(true);
 
