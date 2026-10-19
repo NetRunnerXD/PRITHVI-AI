@@ -397,7 +397,7 @@ def run(
             "c": c,
             "h": h,
             "w": w,
-            "note": "Last 6–12 INSAT frames at 15-min. C=5 (VIS/SWIR/MIR/TIR/WV) from IMD Asia-sector; MOSDAC L1B HDF5 when MOSDAC_* env is set.",
+            "note": "Last 6–12 INSAT frames at 15-min. C=3 (VIS/TIR/WV; SWIR/MIR JPEGs are 404) from IMD Asia-sector; MOSDAC L1B HDF5 when MOSDAC_* env is set.",
         },
         "channels": [{"channel": b.get("channel"), "ok": b.get("ok"), "url": b.get("url"), "tb_k": b.get("tb_k")} for b in band_rows],
         "stage1_cnn": {**cnn, "backbone": "ResNet-18-shaped 3×3 conv stack (numpy; torch if installed)"},

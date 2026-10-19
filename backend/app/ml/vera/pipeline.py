@@ -22,7 +22,7 @@ def api_needed() -> list[dict[str, Any]]:
             {
                 "id": "mosdac",
                 "env": ["MOSDAC_USER", "MOSDAC_PASS", "MOSDAC_BASE_URL"],
-                "prompt": "Register at https://www.mosdac.gov.in, then add MOSDAC_USER, MOSDAC_PASS, and MOSDAC_BASE_URL=https://www.mosdac.gov.in to backend/.env to ingest INSAT-3D/3DR L1B HDF5. Until then the CV branch uses IMD 5-band Asia-sector JPEGs (VIS/SWIR/MIR/TIR/WV).",
+                "prompt": "Register at https://www.mosdac.gov.in, then add MOSDAC_USER, MOSDAC_PASS, and MOSDAC_BASE_URL=https://www.mosdac.gov.in to backend/.env to ingest INSAT-3D/3DR L1B HDF5. Until then the CV branch uses the IMD Asia-sector JPEGs that exist (VIS/TIR/WV).",
             }
         )
     if not (s.nasa_earthdata_api or (s.nasa_earthdata_user and s.nasa_earthdata_pass)):

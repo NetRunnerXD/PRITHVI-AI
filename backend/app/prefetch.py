@@ -23,6 +23,7 @@ JOBS: tuple[tuple[str, float], ...] = (
     ("cyclones", 600.0),
     ("sachet_india", 600.0),
     ("sachet_states", 1800.0),
+    ("default_pin", 540.0),
 )
 
 
@@ -51,6 +52,15 @@ async def _run(name: str) -> None:
         from app.providers import sachet
 
         await sachet.alerts(None)
+    elif name == "default_pin":
+        # First-time visitors now get the server default city immediately (no GPS wait),
+        # so keep that one snapshot warm (one Open-Meteo pin per ~9 min).
+        from app.config import get_settings
+        from app.services.location_svc import resolve_location
+        from app.services.snapshot import build_snapshot
+
+        st = get_settings()
+        await build_snapshot(resolve_location(lat=float(st.default_lat), lon=float(st.default_lon)))
     elif name == "sachet_states":
         from app.providers import sachet
 

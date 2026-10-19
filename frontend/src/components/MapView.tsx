@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Circle,
   CircleMarker,
@@ -8,6 +8,7 @@ import {
   MapContainer,
   Marker,
   Polygon,
+  Polyline,
   Popup,
   Rectangle,
   ScaleControl,
@@ -20,7 +21,7 @@ import L from "leaflet";
 import type { Location } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
 import type { StormIncident, StormMapPack, StormMapTools, StormStroke } from "@/lib/api";
-import { apiUrl, reverseGeocode } from "@/lib/api";
+import { apiUrl, fetchCyclones, fetchGibsLatest, reverseGeocode, type CyclonePack, type GibsLatest } from "@/lib/api";
 import { WeatherOverlay, WindParticles } from "./WeatherOverlay";
 import { fieldKey, sampleGrid, unitOf, type WeatherGrid, type WxLayer } from "@/lib/weatherScale";
 
@@ -691,6 +692,29 @@ export function MapView({
   const showImerg = overlays.includes("gibs_imerg");
   const showField = weatherLayer && fieldKey(weatherLayer) && weatherGrid;
   const now = Date.now();
+  // Real GIBS frame times (no TIME → server default; date-only → 00:00Z, up to a day old).
+  const [gibs, setGibs] = useState<GibsLatest | null>(null);
+  useEffect(() => {
+    if (!showIr && !showImerg) return;
+    let dead = false;
+    void fetchGibsLatest().then((v) => {
+      if (!dead) setGibs(v);
+    });
+    return () => {
+      dead = true;
+    };
+  }, [showIr, showImerg]);
+  const [cyc, setCyc] = useState<CyclonePack | null>(null);
+  useEffect(() => {
+    if (isVisible === false) return;
+    let dead = false;
+    void fetchCyclones().then((v) => {
+      if (!dead) setCyc(v);
+    });
+    return () => {
+      dead = true;
+    };
+  }, [isVisible]);
   const pastMs = Math.max(1, opt.pastHours) * 3600_000;
 
   const pastStrokes = useMemo(() => {
@@ -854,28 +878,99 @@ export function MapView({
       ) : null}
       {showIr ? (
         <WMSTileLayer
+          key={`ir-${gibs?.ir?.time || "default"}`}
           url={GIBS}
           layers="Himawari_AHI_Band13_Clean_Infrared"
           format="image/png"
           transparent
           version="1.3.0"
+          params={(gibs?.ir?.time ? { time: gibs.ir.time } : {}) as never}
           opacity={opt.overlayOpacity}
-          attribution="NASA GIBS / Himawari IR"
+          attribution={`NASA GIBS / Himawari IR${gibs?.ir?.time ? ` ${fmtIst(gibs.ir.time) || gibs.ir.time} IST` : ""}`}
           noWrap={true}
         />
       ) : null}
       {showImerg ? (
         <WMSTileLayer
+          key={`imerg-${gibs?.imerg?.time || "default"}`}
           url={GIBS}
           layers="IMERG_Precipitation_Rate"
           format="image/png"
           transparent
           version="1.3.0"
+          params={(gibs?.imerg?.time ? { time: gibs.imerg.time } : {}) as never}
           opacity={Math.max(0.2, opt.overlayOpacity - 0.08)}
-          attribution="NASA GIBS / IMERG"
+          attribution={`NASA GIBS / IMERG${gibs?.imerg?.time ? ` (${gibs.imerg.time}, daily — not live)` : ""}`}
           noWrap={true}
         />
       ) : null}
+      {showImerg ? (
+        <div className="pointer-events-none absolute left-2 bottom-8 z-[1000] rounded-md bg-white/90 px-2 py-1 text-[10px] font-semibold text-slate-800 shadow">
+          {gibs?.imerg?.ok && gibs.imerg.time
+            ? `IMERG rain: ${gibs.imerg.time} (daily image, not live)`
+            : "IMERG rain: not yet available (shown as missing, not dry)"}
+        </div>
+      ) : null}
+      {(cyc?.systems || []).map((c) => {
+        const obs = c.observed_track.map((p) => [p.lat, p.lon] as [number, number]);
+        const fc = [...(obs.length ? [obs[obs.length - 1]] : []), ...c.forecast_track.map((p) => [p.lat, p.lon] as [number, number])];
+        const cat = c.current_category || c.peak_category || "TC";
+        return (
+          <Fragment key={c.id}>
+            {c.cone ? (
+              <GeoJSON
+                key={`cone-${c.id}-${c.advisory_time}`}
+                data={{ type: "Feature", properties: {}, geometry: c.cone } as never}
+                style={{ color: "#f97316", weight: 1, fillColor: "#fdba74", fillOpacity: 0.18, dashArray: "4 4" }}
+              />
+            ) : null}
+            {obs.length > 1 ? <Polyline positions={obs} pathOptions={{ color: "#dc2626", weight: 3 }} /> : null}
+            {fc.length > 1 ? <Polyline positions={fc} pathOptions={{ color: "#dc2626", weight: 2, dashArray: "6 6" }} /> : null}
+            {c.forecast_track.map((p, i) => (
+              <CircleMarker key={`fc-${c.id}-${i}`} center={[p.lat, p.lon]} radius={3} pathOptions={{ color: "#dc2626", fillOpacity: 0.6 }}>
+                <Popup>
+                  <div className="text-xs text-slate-900">
+                    <b>{c.name}</b> forecast {p.cat || ""}
+                    <div>{p.t ? `${fmtIst(p.t) || p.t} IST` : ""}</div>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            ))}
+            {c.pn_blend?.ok && c.pn_blend.lat != null && c.pn_blend.lon != null ? (
+              <CircleMarker center={[c.pn_blend.lat, c.pn_blend.lon]} radius={6} pathOptions={{ color: "#7c3aed", weight: 2, fillOpacity: 0.2 }}>
+                <Popup>
+                  <div className="text-xs text-slate-900">
+                    <b>PN-Blend 12 h position</b>
+                    <div>{c.pn_blend.valid ? `${fmtIst(c.pn_blend.valid) || c.pn_blend.valid} IST` : ""}</div>
+                    <div className="text-[10px] text-slate-600">{c.pn_blend.method}</div>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            ) : null}
+            <CircleMarker center={[c.lat, c.lon]} radius={9} pathOptions={{ color: "#b91c1c", weight: 3, fillColor: "#ef4444", fillOpacity: 0.7 }}>
+              <Popup>
+                <div className="space-y-1 text-xs text-slate-900">
+                  <div className="text-sm font-bold text-red-700">🌀 {c.name}</div>
+                  <div>
+                    Now: <b>{cat}</b> · peak {c.peak_category || "?"} ({c.category_scale})
+                    {c.peak_wind_kt != null ? ` · ${Math.round(c.peak_wind_kt)} kt` : ""}
+                  </div>
+                  <div>Advisory: {c.advisory_time ? `${fmtIst(c.advisory_time) || c.advisory_time} IST` : "—"} ({c.advisory_source || "GDACS"})</div>
+                  <div>
+                    Track: {c.observed_track.length} fixes · forecast {c.forecast_track.length} points
+                  </div>
+                  <div className="text-[10px] text-slate-600">{cyc?.note}</div>
+                  {c.links?.imd_rsmc ? (
+                    <a className="text-blue-700 underline" href={c.links.imd_rsmc} target="_blank" rel="noreferrer">
+                      IMD RSMC bulletins
+                    </a>
+                  ) : null}
+                </div>
+              </Popup>
+            </CircleMarker>
+          </Fragment>
+        );
+      })}
       {overlays.includes("bhuvan_geomorph") ? (
         <WMSTileLayer
           url={apiUrl("/map/wms")}
@@ -1404,6 +1499,7 @@ export function MapView({
               n: f.n,
               frp_mw: f.frp_mw,
               phase: f.phase || "live",
+              age_h: (f as any).age_h,
               title: f.place,
               t: (f as any).t,
               timestamp_utc: (f as any).timestamp_utc,
@@ -1442,6 +1538,11 @@ export function MapView({
                     {f.n != null ? <div className="text-slate-800 font-medium">{f.n} VIIRS hotspot{f.n === 1 ? "" : "s"}</div> : null}
                     {f.frp_mw != null ? <div className="text-slate-800 font-medium">FRP {f.frp_mw} MW</div> : null}
                     <div className="text-[10px] text-slate-600">NASA FIRMS thermal · not burned area</div>
+                    {(f as { age_h?: number }).age_h != null ? (
+                      <div className="text-[11px] font-semibold text-amber-800">
+                        Detected {Math.round((f as { age_h?: number }).age_h as number)} h ago (satellite pass) — may no longer be burning
+                      </div>
+                    ) : null}
                     {fmtIst((f as { occurred_at?: string }).occurred_at || (f as { t?: string }).t) ? (
                       <div className="text-[11px] text-slate-700 font-medium">{fmtIst((f as { occurred_at?: string }).occurred_at || (f as { t?: string }).t)} IST</div>
                     ) : null}

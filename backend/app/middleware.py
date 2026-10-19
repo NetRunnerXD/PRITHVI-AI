@@ -16,6 +16,7 @@ log = logging.getLogger("prithvi.http")
 _CACHE_RULES: tuple[tuple[str, str], ...] = (
     ("/nowcast/storm-map", "public, max-age=60, stale-while-revalidate=240"),
     ("/cyclones", "public, max-age=300, stale-while-revalidate=900"),
+    ("/sat/gibs/latest", "public, max-age=300, stale-while-revalidate=900"),
     ("/sat/imd-asia/meta", "public, max-age=120, stale-while-revalidate=600"),
     ("/nowcast/live", "public, max-age=60, stale-while-revalidate=300"),
     ("/nowcast/sat", "public, max-age=60, stale-while-revalidate=300"),

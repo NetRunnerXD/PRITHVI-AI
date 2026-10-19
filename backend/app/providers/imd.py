@@ -23,6 +23,9 @@ async def official_get(path: str, params: dict | None = None) -> tuple[dict | li
     """Try official IMD REST. Returns (payload, status) where status is ok|unauthorized|error."""
     settings = get_settings()
     headers = {}
+    if not settings.imd_api_key:
+        # No key → the official API never answers (each call burned a 3 s timeout).
+        return None, "not_configured"
     if settings.imd_api_key:
         headers["Authorization"] = f"Bearer {settings.imd_api_key}"
         headers["X-API-Key"] = settings.imd_api_key

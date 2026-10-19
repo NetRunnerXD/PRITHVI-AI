@@ -1,21 +1,30 @@
-/** World weather grid from Open-Meteo on the user's IP. No invented millimetres. */
+/** India weather grid from Open-Meteo on the user's IP. No invented millimetres.
+ *
+ * Was a 13×25 *world* mesh (15° spacing) — Srinagar was interpolated from points 1,600 km
+ * apart (map 24 °C vs truth 6.5 °C). Now a 1.5° India mesh (462 points, ~150 km), fetched
+ * in parallel chunks, cached 30 min in memory + localStorage. 462 points stays under the
+ * Open-Meteo free 600 calls/min per-IP limit in one refresh.
+ */
 
-const SOUTH = -56,
-  WEST = -180,
-  NORTH = 72,
-  EAST = 180;
-const NY = 13,
-  NX = 25;
-const CHUNK = 20;
+const SOUTH = 6,
+  WEST = 67.5,
+  NORTH = 37.5,
+  EAST = 97.5;
+const STEP = 1.5;
+const NY = Math.round((NORTH - SOUTH) / STEP) + 1,
+  NX = Math.round((EAST - WEST) / STEP) + 1;
+const CHUNK = 120;
+const PARALLEL = 4;
+const LS_KEY = "prithvi:wxgrid:v3";
 const HOURLY =
   "temperature_2m,relative_humidity_2m,precipitation,precipitation_probability,pressure_msl,wind_speed_10m,wind_direction_10m,cloud_cover,cape,weather_code";
 
 type OmHourly = Record<string, (number | null)[] | string[] | undefined>;
-type OmRow = { hourly?: OmHourly };
+type OmRow = { hourly?: OmHourly; elevation?: number };
 
 let rawCache: { rows: OmRow[]; until: number } | null = null;
 const hourCache = new Map<number, { pack: WeatherGridPack; until: number }>();
-const TTL_MS = 8 * 60 * 1000;
+const TTL_MS = 30 * 60 * 1000;
 
 export type WeatherGridPack = {
   ok: boolean;
@@ -102,7 +111,7 @@ async function fetchChunk(pts: [number, number][]): Promise<OmRow[]> {
   try {
     return await run();
   } catch {
-    await new Promise((res) => setTimeout(res, 400));
+    await new Promise((res) => setTimeout(res, 400 + Math.random() * 600));
     try {
       return await run();
     } catch {
@@ -111,14 +120,56 @@ async function fetchChunk(pts: [number, number][]): Promise<OmRow[]> {
   }
 }
 
+function loadLs(): { rows: OmRow[]; until: number } | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { rows: OmRow[]; until: number };
+    return v && Array.isArray(v.rows) && v.until > Date.now() ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLs(v: { rows: OmRow[]; until: number }) {
+  try {
+    window.localStorage.setItem(LS_KEY, JSON.stringify(v));
+  } catch {
+    /* quota — memory cache still works */
+  }
+}
+
+let inflight: Promise<OmRow[] | null> | null = null;
+
 async function fetchRaw(): Promise<OmRow[] | null> {
   if (rawCache && Date.now() < rawCache.until) return rawCache.rows;
-  const pts = meshPts();
-  const rows: OmRow[] = [];
-  for (let i = 0; i < pts.length; i += CHUNK) {
-    const part = await fetchChunk(pts.slice(i, i + CHUNK));
-    rows.push(...part);
+  const ls = loadLs();
+  if (ls && ls.rows.length === NX * NY) {
+    rawCache = ls;
+    return ls.rows;
   }
+  if (inflight) return inflight;
+  inflight = fetchRawNet().finally(() => {
+    inflight = null;
+  });
+  return inflight;
+}
+
+async function fetchRawNet(): Promise<OmRow[] | null> {
+  const pts = meshPts();
+  const chunks: [number, number][][] = [];
+  for (let i = 0; i < pts.length; i += CHUNK) chunks.push(pts.slice(i, i + CHUNK));
+  const out: OmRow[][] = new Array(chunks.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < chunks.length) {
+      const k = next++;
+      out[k] = await fetchChunk(chunks[k]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PARALLEL, chunks.length) }, worker));
+  const rows: OmRow[] = out.flat();
   if (rows.length < pts.length) {
     while (rows.length < pts.length) rows.push({});
   } else if (rows.length > pts.length) {
@@ -126,6 +177,7 @@ async function fetchRaw(): Promise<OmRow[] | null> {
   }
   if (!rows.some((r) => r?.hourly)) return null;
   rawCache = { rows, until: Date.now() + TTL_MS };
+  saveLs(rawCache);
   return rows;
 }
 
@@ -147,6 +199,7 @@ function slice(rows: OmRow[], hour: number): WeatherGridPack {
     wind_v: [],
     cloud_pct: [],
     cape: [],
+    elev_m: [],
   };
   for (const row of rows) {
     const h = row.hourly || {};
@@ -171,12 +224,14 @@ function slice(rows: OmRow[], hour: number): WeatherGridPack {
     fields.wind_v.push(v);
     fields.cloud_pct.push(cloud == null ? null : Math.round(cloud));
     fields.cape.push(cape == null ? null : Math.round(cape));
+    const z = Number(row.elevation);
+    fields.elev_m.push(row.elevation == null || !Number.isFinite(z) ? null : Math.round(z));
   }
   return {
     ok: true,
     source: "open-meteo",
-    note: "Global Open-Meteo field (not a rain-gauge). Storm cells stay India-only. Hours are UTC.",
-    scope: "world",
+    note: "Open-Meteo model field on a 1.5° India grid (not a rain-gauge). Hours are UTC.",
+    scope: "india",
     south: SOUTH,
     west: WEST,
     north: NORTH,

@@ -17,11 +17,10 @@ from app.providers.http import client
 # 3RIMG_IR1.jpg 404 — both removed so a miss does not cost two extra round-trips.)
 IR_URLS = ("https://mausam.imd.gov.in/Satellite/3Dasiasec_ir1.jpg",)
 
-# INSAT-3D/3DS Asia-sector public JPEGs ≈ VIS / SWIR / MIR / TIR / WV.
+# INSAT-3D/3DS Asia-sector public JPEGs: VIS / TIR / WV.
+# SWIR (3Dasiasec_swir.jpg) and MIR (3Dasiasec_mir.jpg) return 404 (checked Oct 2026): removed.
 CHANNELS = (
     ("VIS 0.65μm", ("https://mausam.imd.gov.in/Satellite/3Dasiasec_vis.jpg",)),
-    ("SWIR 1.6μm", ("https://mausam.imd.gov.in/Satellite/3Dasiasec_swir.jpg",)),
-    ("MIR 3.9μm", ("https://mausam.imd.gov.in/Satellite/3Dasiasec_mir.jpg",)),
     ("TIR 10.8μm", IR_URLS),
     ("WV 6.7μm", ("https://mausam.imd.gov.in/Satellite/3Dasiasec_wv.jpg",)),
 )
@@ -441,26 +440,43 @@ async def fetch_sector() -> dict[str, Any]:
     return out
 
 
+async def _band_body(url: str) -> bytes | None:
+    """Shared, cached (120 s) download of one band JPEG. TIR reuses the main frame."""
+    if url in IR_URLS:
+        return (await fetch_frame()).get("body")
+
+    async def factory() -> bytes | None:
+        r = await client().get(url, timeout=8.0)
+        if r.status_code >= 400 or len(r.content) < 400 or "html" in (r.headers.get("content-type") or "").lower():
+            return b""
+        return r.content
+
+    import asyncio
+
+    got = await asyncio.shield(cache.aget(f"imd:band:{url}", factory, ttl_s=_JPEG_TTL_S, swr_s=600))
+    return got or None
+
+
 async def fetch_channels(lat: float, lon: float) -> dict[str, Any]:
-    """Five INSAT imager bands (public JPEG). MOSDAC L1B replaces these when wired."""
+    """INSAT imager bands (public JPEG). MOSDAC L1B replaces these when wired."""
     import asyncio
 
     async def one(name: str, urls: tuple[str, ...]) -> dict[str, Any]:
         for url in urls:
-            if url.endswith(".php"):
-                continue
             try:
-                r = await client().get(url)
+                body = await _band_body(url)
             except Exception:
                 continue
-            if r.status_code >= 400 or len(r.content) < 400:
+            if not body:
                 continue
-            if "html" in (r.headers.get("content-type") or "").lower():
-                continue
-            sampled = await asyncio.to_thread(_sample_gray, r.content, lat, lon)
+            sampled = await asyncio.to_thread(_sample_gray, body, lat, lon)
             if not sampled or not sampled.get("ok"):
                 continue
-            grid = await asyncio.to_thread(downsample_india, r.content, 48)
+            ck = f"imd:band:grid48:{url}:{len(body)}"
+            grid = cache.get(ck)
+            if grid is None:
+                grid = await asyncio.to_thread(downsample_india, body, 48)
+                cache.set(ck, grid, 3600)
             return {
                 "ok": True,
                 "channel": name,
@@ -473,4 +489,4 @@ async def fetch_channels(lat: float, lon: float) -> dict[str, Any]:
 
     rows = await asyncio.gather(*[one(n, u) for n, u in CHANNELS])
     ok = [r for r in rows if r.get("ok")]
-    return {"ok": bool(ok), "n": len(ok), "bands": list(rows), "c": 5}
+    return {"ok": bool(ok), "n": len(ok), "bands": list(rows), "c": len(CHANNELS)}

@@ -53,6 +53,27 @@ async def imd_asia_meta():
     }
 
 
+@router.get("/sat/gibs/latest")
+async def gibs_latest():
+    """Latest non-empty GIBS frame times so map tiles request a real time (no TIME = stale
+    default; a date-only TIME = 00:00Z)."""
+    import asyncio
+
+    from app.providers import gibs_ir
+
+    ir, im = await asyncio.gather(gibs_ir.frame("ir"), gibs_ir.frame("imerg"))
+    return {
+        "ir": {"layer": ir.get("layer"), "time": ir.get("valid"), "ok": bool(ir.get("ok")), "status": ir.get("status")},
+        "imerg": {
+            "layer": im.get("layer"),
+            "time": im.get("valid"),
+            "ok": bool(im.get("ok")),
+            "status": im.get("status"),
+            "note": "GIBS IMERG is a daily image, not real-time." if im.get("ok") else "IMERG not yet available.",
+        },
+    }
+
+
 @router.get("/dashboard")
 async def dashboard(
     loc: Location = Depends(loc_from_query),

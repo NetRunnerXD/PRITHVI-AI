@@ -1,30 +1,38 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChatDock } from "@/components/ChatDock";
+import dynamic from "next/dynamic";
 import { DistrictSearch } from "@/components/DistrictSearch";
 import { EarlyWarnings } from "@/components/EarlyWarnings";
-import { ForecastCharts } from "@/components/ForecastCharts";
-import { NowcastLive } from "@/components/NowcastLive";
 import { OverviewLive, OverviewPlots } from "@/components/OverviewLive";
-import { MandiPanel } from "@/components/MandiPanel";
-import { OutlookTable } from "@/components/OutlookTable";
-import { PredictionsPanel } from "@/components/PredictionsPanel";
 import { RiskCard } from "@/components/RiskCard";
-import { SciencePanel } from "@/components/SciencePanel";
-import { SettingsPanel } from "@/components/SettingsPanel";
 import { AuthModal } from "@/components/AuthModal";
 import { Sidebar } from "@/components/Sidebar";
-import { SquareMap } from "@/components/SquareMap";
 import { ThemeBoot } from "@/components/ThemeBoot";
 import { Collapse, SourcesBox } from "@/components/ui";
 import { COPY } from "@/i18n/copy";
 import { fetchCompare, pingReady, searchPlaces } from "@/lib/api";
 import { rain } from "@/lib/units";
 import { useApp } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import { ChatFloat } from "@/components/ChatFloat";
-import { QualityCatalog } from "@/components/QualityCatalog";
 import type { TabId } from "@/types/dashboard";
+
+// Non-home tabs are code-split: recharts, leaflet and the advisor only download when their
+// tab is opened (first-load JS of "/" was 356 kB).
+function TabLoading() {
+  return <div className="neo p-4 text-sm text-neo-muted animate-pulse">Loading…</div>;
+}
+const ForecastCharts = dynamic(() => import("@/components/ForecastCharts").then((m) => m.ForecastCharts), { ssr: false, loading: TabLoading });
+const NowcastLive = dynamic(() => import("@/components/NowcastLive").then((m) => m.NowcastLive), { ssr: false, loading: TabLoading });
+const MandiPanel = dynamic(() => import("@/components/MandiPanel").then((m) => m.MandiPanel), { ssr: false, loading: TabLoading });
+const OutlookTable = dynamic(() => import("@/components/OutlookTable").then((m) => m.OutlookTable), { ssr: false, loading: TabLoading });
+const PredictionsPanel = dynamic(() => import("@/components/PredictionsPanel").then((m) => m.PredictionsPanel), { ssr: false, loading: TabLoading });
+const SciencePanel = dynamic(() => import("@/components/SciencePanel").then((m) => m.SciencePanel), { ssr: false, loading: TabLoading });
+const SettingsPanel = dynamic(() => import("@/components/SettingsPanel").then((m) => m.SettingsPanel), { ssr: false, loading: TabLoading });
+const SquareMap = dynamic(() => import("@/components/SquareMap").then((m) => m.SquareMap), { ssr: false, loading: TabLoading });
+const ChatDock = dynamic(() => import("@/components/ChatDock").then((m) => m.ChatDock), { ssr: false, loading: TabLoading });
+const QualityCatalog = dynamic(() => import("@/components/QualityCatalog").then((m) => m.QualityCatalog), { ssr: false, loading: TabLoading });
 
 const TAB_ORDER: TabId[] = ["home", "analytics", "data", "map", "model", "chat", "settings"];
 
@@ -50,7 +58,35 @@ export default function Page() {
     windowPack,
     viewMode,
     setViewMode,
-  } = useApp();
+  } = useApp(
+    useShallow((s) => ({
+      locale: s.locale,
+      tab: s.tab,
+      setTab: s.setTab,
+      dashboard: s.dashboard,
+      location: s.location,
+      status: s.status,
+      syncStatus: s.syncStatus,
+      error: s.error,
+      refresh: s.refresh,
+      quietRefresh: s.quietRefresh,
+      loadAccount: s.loadAccount,
+      setLocation: s.setLocation,
+      favorites: s.favorites,
+      toggleFavorite: s.toggleFavorite,
+      settings: s.settings,
+      highlight: s.highlight,
+      mapFocus: s.mapFocus,
+      windowPack: s.windowPack,
+      viewMode: s.viewMode,
+      setViewMode: s.setViewMode,
+    })),
+  );
+  // Mount the map (leaflet + storm-map polling) only once the Map tab has been opened.
+  const [mapOpened, setMapOpened] = useState(false);
+  useEffect(() => {
+    if (tab === "map") setMapOpened(true);
+  }, [tab]);
   const t = COPY[locale];
   const [cmpQ, setCmpQ] = useState("Pune");
   const [cmp, setCmp] = useState<Record<string, unknown> | null>(null);
@@ -140,7 +176,7 @@ export default function Page() {
         <header className={`neo relative z-50 flex items-center gap-2 px-2.5 py-2 sm:px-4 ${tab === "chat" ? "hidden lg:flex" : ""}`}>
           <div className="flex items-center gap-2 lg:hidden shrink-0">
             <img
-              src="/logo.png"
+              src="/logo-128.webp"
               alt="PRITHVI-AI"
               width={36}
               height={36}
@@ -434,7 +470,7 @@ export default function Page() {
               </div>
             ) : null}
 
-            {dashboard ? (
+            {dashboard && mapOpened ? (
               <div className={tab === "map" ? "space-y-3" : "hidden"}>
                 <SquareMap
                   dash={dashboard}

@@ -116,20 +116,26 @@ async def frame(kind: str) -> dict[str, Any]:
         layer = IR_LAYERS[0] if kind == "ir" else IMERG_LAYERS[0]
         times = ir_candidate_times() if kind == "ir" else imerg_candidate_times()
         status = "empty"
-        for t in times:
+
+        async def get(t: str) -> tuple[str, Any]:
             try:
                 raw = await _get_frame(layer, t)
             except Exception as e:
-                status = f"error:{type(e).__name__}"
-                continue
+                return t, f"error:{type(e).__name__}"
             if not raw:
-                status = "http_error"
-                continue
+                return t, "http_error"
             arr = await asyncio.to_thread(_rgba, raw)
             if int((arr[..., 3] > 0).sum()) == 0:
-                status = "no_data"  # fully transparent → not available yet (NOT "dry")
+                return t, "no_data"  # fully transparent → not available yet (NOT "dry")
+            return t, arr
+
+        # All candidate times in parallel; keep the newest one that has data.
+        results = await asyncio.gather(*(get(t) for t in times[:3]))
+        for t, res in results:
+            if isinstance(res, str):
+                status = res
                 continue
-            out = {"ok": True, "layer": layer, "valid": t, "rgba": arr, "status": "ok"}
+            out = {"ok": True, "layer": layer, "valid": t, "rgba": res, "status": "ok"}
             cache.set(ck, out, 600 if kind == "ir" else 1800)
             return out
         fail = {"ok": False, "layer": layer, "valid": None, "rgba": None, "status": status}

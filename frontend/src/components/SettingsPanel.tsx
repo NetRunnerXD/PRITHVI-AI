@@ -5,6 +5,7 @@ import { COPY, type Locale } from "@/i18n/copy";
 import { apiUrl, SHOW_DEV } from "@/lib/config";
 import { gpsFix, patchAlertLocation, patchProfile } from "@/lib/auth";
 import { useApp } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import { DistrictSearch } from "./DistrictSearch";
 import type { Density, TabId, ThemeId, UnitSys } from "@/types/dashboard";
 
@@ -36,7 +37,23 @@ export function SettingsPanel() {
     location,
     viewMode,
     setViewMode,
-  } = useApp();
+  } = useApp(
+    useShallow((s) => ({
+      locale: s.locale,
+      setLocale: s.setLocale,
+      outputLocale: s.outputLocale,
+      setOutputLocale: s.setOutputLocale,
+      settings: s.settings,
+      setSettings: s.setSettings,
+      account: s.account,
+      setAccount: s.setAccount,
+      setAuthModal: s.setAuthModal,
+      setLocation: s.setLocation,
+      location: s.location,
+      viewMode: s.viewMode,
+      setViewMode: s.setViewMode,
+    })),
+  );
   const t = COPY[locale];
   const [llms, setLlms] = useState<LlmRow[]>([{ id: "ollama", model: "qwen2.5:3b" }]);
   useEffect(() => {
