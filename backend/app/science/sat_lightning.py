@@ -206,7 +206,7 @@ def _times(now: datetime | None = None) -> list[datetime]:
     now = now or datetime.now(UTC)
     base = now - timedelta(minutes=30)
     base = base.replace(minute=base.minute - base.minute % 10, second=0, microsecond=0)
-    return [base - timedelta(minutes=10 * k) for k in range(5)]
+    return [base - timedelta(minutes=10 * k) for k in range(7)]
 
 
 async def _pair(t_candidates: list[datetime], bbox, res):
@@ -214,7 +214,7 @@ async def _pair(t_candidates: list[datetime], bbox, res):
         cur = await tb_mosaic(t.strftime("%Y-%m-%dT%H:%M:%SZ"), bbox, res)
         # Each satellite reaches GIBS with its own delay: a frame where only some of the
         # three disks have arrived would make fake "cooling" at disk borders.
-        if cur is None or float(np.isfinite(cur).mean()) < 0.7 * _full_cover(bbox):
+        if cur is None or float(np.isfinite(cur).mean()) < 0.92 * _full_cover(bbox):
             continue
         prev = await tb_mosaic((t - timedelta(minutes=20)).strftime("%Y-%m-%dT%H:%M:%SZ"), bbox, res)
         return t, cur, prev
