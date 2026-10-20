@@ -131,3 +131,28 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def _export_runtime_flags() -> None:
+    """Feature flags read via os.environ (PN_*, INGEST_*) are not Settings fields, so a
+    local backend/.env would be ignored for them. Export only those prefixes, never
+    overriding the real environment and never logging values."""
+    import os
+
+    p = ROOT / ".env"
+    if not p.exists() or os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    try:
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            if k.startswith(("PN_", "INGEST_")):
+                os.environ.setdefault(k, v.strip().strip('"').strip("'"))
+    except OSError:
+        pass
+
+
+_export_runtime_flags()
