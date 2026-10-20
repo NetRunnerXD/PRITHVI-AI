@@ -226,7 +226,7 @@ async def estimate(bbox=(-50.0, -180.0, 50.0, 180.0), res: float = 0.2, k: int =
     if cur is None:
         return {"ok": False, "status": "no_ir_frame"}
     sc = await asyncio.to_thread(score, cur, prev, 20.0)
-    cand, _ = boxes(sc, cur, bbox, res, k)
+    cand, _ = await asyncio.to_thread(boxes, sc, cur, bbox, res, k)
     # 10°W–60°E is either the extreme GOES-East limb or uncovered (no Meteosat in GIBS).
     cand = [c for c in cand if not (-10.0 < c["lon"] < 60.0)]
     top = cand[:120]
@@ -288,7 +288,7 @@ async def validate(n_hours: int = 3) -> dict[str, Any]:
             continue
         cur = cur[::-1][: pn_live.H, : pn_live.W]  # north-first → south-first like IMERG
         prev = prev[::-1][: pn_live.H, : pn_live.W] if prev is not None else None
-        sc = score(cur, prev, 20.0)
+        sc = await asyncio.to_thread(score, cur, prev, 20.0)  # keep the event loop free
         k = 5
         hh, ww = (pn_live.H // k) * k, (pn_live.W // k) * k
         P = sc["p"][:hh, :ww].reshape(hh // k, k, ww // k, k).max((1, 3))
