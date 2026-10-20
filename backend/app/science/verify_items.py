@@ -177,6 +177,13 @@ def attach(pack: dict[str, Any], htb: dict[str, Any] | None, now: datetime) -> N
         it["verification"] = b
         if kind != "landslide" and not (b["status"] == "pending" and k in lg):
             _record(k, kind, t, b, lat, lon)
+    # Also re-try older pending entries from the log: IMERG Early lags ~5 h, so an item may
+    # have left the map window by the time its granule exists.
+    have = {x["key"] for x in todo}
+    cut = (now - timedelta(hours=24)).isoformat()
+    for k, v in lg.items():
+        if k not in have and v.get("by") != "IMERG" and v.get("kind") != "landslide" and str(v.get("t") or "") >= cut:
+            todo.append({"key": k, "kind": v["kind"], "t": v["t"], "lat": v["lat"], "lon": v["lon"]})
     _save()
     pack["verification_24h"] = stats_24h(now)
     pack["verification_rule"] = {"live": f"Himawari B13 <= {TB_COLD_K:.0f} K", "past": "IMERG rain", "imerg_mm_h": IMERG_MM_H}
