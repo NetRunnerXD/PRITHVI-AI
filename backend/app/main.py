@@ -69,12 +69,14 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        # Bounded shutdown: an ingest cycle / prefetch can sit in a worker thread that cannot
+        # be cancelled; waiting on it made `--reload` hang and the launcher then exit.
         for t in (task, sms_task, ingest_task, prefetch_task):
             if t is not None:
                 t.cancel()
                 try:
-                    await t
-                except (asyncio.CancelledError, Exception):
+                    await asyncio.wait_for(t, timeout=3.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
                     pass
         await auth_close()
         await aclose()
