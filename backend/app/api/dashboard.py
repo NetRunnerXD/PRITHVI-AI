@@ -79,8 +79,16 @@ async def dashboard(
     loc: Location = Depends(loc_from_query),
     locale: str = "en",
     disable: str | None = Query(default=None, description="Comma-separated provider/process IDs to bypass"),
+    view: str = Query(default="full", pattern="^(full|core)$"),
 ):
     disabled_set = {d.strip().lower() for d in disable.split(",")} if disable else None
+    if view == "core":
+        from app.services.snapshot import build_core, slim_dump
+
+        snap, is_full = await build_core(loc, locale, disabled=disabled_set)
+        body = slim_dump(snap)
+        body["enriching"] = not is_full
+        return body
     snap = await build_snapshot(loc, locale, full=True, disabled=disabled_set)
     return snap.model_dump()
 
@@ -472,6 +480,21 @@ async def research_status():
     from app.science import pn
 
     return pn.status()
+
+
+@router.get("/research/pn-live")
+async def research_pn_live(wait: bool = Query(default=False)):
+    """PN-Net v4 on live IMERG Early: per-lead valid times (IST shown in UI), lightning-proxy
+    cells, and a live validation of leads 1–3 against IMERG observed afterwards."""
+    from app.science.pn import live, net
+
+    if not net.status().get("enabled"):
+        return {"ok": False, "status": "disabled", **net.status()}
+    if wait:
+        pack = await live.refresh()
+    else:
+        pack = live.peek() or {"ok": False, "status": "warming", "note": "First run started; retry in ~30–60 s."}
+    return {k: v for k, v in pack.items() if not k.startswith("_")}
 
 
 @router.get("/states")

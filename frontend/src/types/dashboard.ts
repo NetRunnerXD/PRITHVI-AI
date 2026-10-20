@@ -52,6 +52,8 @@ export type EarlyWarning = {
   eta_min?: number | null;
   window_start?: string | null;
   window_end?: string | null;
+  status?: "active" | "upcoming" | "undated" | string | null;
+  end_inferred?: boolean;
   states?: string[];
   kind?: string | null;
   lat?: number | null;

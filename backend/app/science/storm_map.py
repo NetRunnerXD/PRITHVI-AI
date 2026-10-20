@@ -284,10 +284,12 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
             gibs_ir.fetch_ir(frame["lat"], frame["lon"]),
             gibs_ir.fetch_imerg(frame["lat"], frame["lon"]),
             firms.fetch_india(),
+            gibs_ir.india_grid(tuple(imd_insat.INDIA_BOUNDS)),
+            gibs_ir.tb_frame(),
             return_exceptions=True,
         )
     except Exception:
-        gathered = [{}, [], {}, {}, {}, {}]
+        gathered = [{}, [], {}, {}, {}, {}, {}, {}]
 
     def _dict(x: Any, default: dict[str, Any]) -> dict[str, Any]:
         return x if isinstance(x, dict) else default
@@ -298,6 +300,8 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
     ir = _dict(gathered[3], {"ok": False})
     imerg = _dict(gathered[4], {"ok": False})
     firms_pack = _dict(gathered[5], {"ok": False, "fires": [], "n": 0})
+    hgrid = _dict(gathered[6], {"ok": False})
+    htb = _dict(gathered[7], {"ok": False})
 
     seen: set[tuple[float, float, str]] = set()
     strokes: list[dict[str, Any]] = []
@@ -432,11 +436,19 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
     grid = None
     bounds = None
     half = 1.1
+    cell_source = None
+    image_time = None
     if sector.get("ok") and sector.get("grid"):
         grid = sector["grid"]
         bounds = tuple(sector.get("bounds") or imd_insat.INDIA_BOUNDS)
+        cell_source, image_time = "insat-3ds-ir1", sector.get("image_time")
+    elif hgrid.get("ok") and hgrid.get("grid"):
+        # Full-India Himawari B13 (calibrated Tb) when INSAT is unavailable.
+        grid, bounds = hgrid["grid"], tuple(hgrid["bounds"])
+        cell_source, image_time = "himawari9-b13", hgrid.get("image_time")
     elif ir.get("ok") and ir.get("grid"):
         grid, half = ir["grid"], 1.1
+        cell_source, image_time = "himawari9-b13-patch", ir.get("valid")
     cells_raw = (
         sat_cv.segment(grid, bounds=bounds)
         if grid and bounds
@@ -449,8 +461,17 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
         grid,
         bounds,
         strokes=list(ltn_pack.get("strokes") or []),
-        image_time=(sector or {}).get("image_time"),
+        image_time=image_time,
     )
+    # Independent check of every cell against Himawari-9 B13 calibrated Tb (cold top <= 240 K).
+    if htb.get("ok"):
+        for c in cells_raw:
+            try:
+                t = gibs_ir.tb_at(htb["tb"], float(c["lat"]), float(c["lon"]))
+            except Exception:
+                t = None
+            c["himawari_tb_k"] = t
+            c["himawari_confirmed"] = None if t is None else bool(t <= 240.0)
     hub_wx = list(zip(hubs, thunder_packs))
 
     def _nearest_wx(lat: float, lon: float) -> tuple[dict[str, Any], float]:
@@ -692,6 +713,7 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
                     weather_code=int(vp.get("weather_code") or 0),
                     agrees=agrees,
                     p_cloudburst=float(inc.get("p_cloudburst") or 0),
+                    source=str(inc.get("skill_source") or "ir_cell"),
                 )
             )
             gate = thunder_predict.agreement_gate(
@@ -707,6 +729,7 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
             inc["gate"] = gate
             if not gate.get("ok"):
                 inc["confidence_band"] = "low"
+                inc["confidence_basis"] = (inc.get("confidence_basis") or "") + " Not confirmed by a second independent source."
                 inc["verify"] = {**(inc.get("verify") or {}), "note": "IR nowcast — not confirmed by strokes or NWP"}
             thunder_predict.log_verify(
                 {
@@ -843,14 +866,28 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
         "cv": cv_meta,
         "vetoed_cells": vetoed[:40],
         "ir_note": (sector or {}).get("tb_note") or (ir or {}).get("tb_note"),
-        "ir_image_time": (sector or {}).get("image_time"),
+        "ir_image_time": image_time,
+        "cell_source": cell_source,
+        "himawari_valid": htb.get("valid"),
+        "himawari_check": {
+            "n_cells": len(cells),
+            "confirmed": sum(1 for c in cells if c.get("himawari_confirmed") is True),
+            "not_confirmed": sum(1 for c in cells if c.get("himawari_confirmed") is False),
+            "rule": "Himawari-9 B13 Tb <= 240 K within ±0.15°",
+        },
         "sensors": {
             "lightning": bool((ltn_pack.get("n") or 0) > 0) or any(p.get("thunder") for p in thunder_packs),
             "lightning_status": ltn_pack.get("status") or "cv+open-meteo",
             "lightning_source": ltn_pack.get("source"),
             "lightning_hubs": ltn_pack.get("hubs"),
+            "lightning_key_valid": ltn_pack.get("key_valid", True),
+            "lightning_note": None
+            if ltn_pack.get("key_valid", True)
+            else "Observed lightning needs a valid WEATHERBIT_API_KEY (current key rejected: 403). Lightning shown is IR/NWP-inferred only.",
             "lightning_history_n": ltn_pack.get("history_n"),
             "insat": bool(sector.get("ok")),
+            "insat_status": sector.get("status"),
+            "himawari_grid": bool(hgrid.get("ok")),
             "gibs_ir": bool(ir.get("ok")),
             "imerg": bool((imerg or {}).get("ok")),
             "open_meteo_thunder": any(p.get("ok") for p in thunder_packs),
@@ -862,13 +899,14 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
             "ready": True,
             "message": "",
             "satellites": [
-                {"id": "imd_ir1", "name": "INSAT-3DS IR1 JPEG", "status": "ok" if sector.get("ok") or ir.get("ok") else "fail"},
+                {"id": "imd_ir1", "name": "INSAT-3DS IR1 JPEG", "status": "ok" if sector.get("ok") else "fail"},
                 {"id": "gibs", "name": "GIBS Himawari Band 13", "status": "ok" if ir.get("ok") else "fail"},
                 {"id": "imerg", "name": "GPM IMERG", "status": "ok" if (imerg or {}).get("ok") else "fail"},
             ],
             "age_s": 0,
         },
     }
+    _attach_pn_net(pack, now)
     pack["counts"]["predicted"] = len(pack["predicted"])
     pack["counts"]["predicted_storm"] = len(pack["predicted_storms"])
     pack["counts"]["predicted_unverified"] = len(pack["predicted_unverified"])
@@ -886,3 +924,56 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
     except Exception:
         pass
     return pack
+
+
+
+def _attach_pn_net(pack: dict[str, Any], now: datetime) -> None:
+    """PN-Net v4 lightning-proxy cells (live IMERG input) for leads that are still in the
+    future. Non-blocking: uses the cached run and kicks a refresh in the background."""
+    try:
+        from app.science.pn import live as pn_live
+    except Exception:  # noqa: BLE001
+        return
+    pn = pn_live.peek()
+    if not pn:
+        pack["pn_net"] = {"enabled": False}
+        return
+    summary = {
+        "enabled": True,
+        "status": pn.get("status"),
+        "last_obs_hour": pn.get("last_obs_hour"),
+        "obs_age_h": pn.get("obs_age_h"),
+        "note": pn.get("note") or pn.get("label_note"),
+        "validation": pn.get("validation"),
+        "n_cells": 0,
+    }
+    added = []
+    for ld in pn.get("leads") or []:
+        lead_now = int(ld.get("lead_from_now_min") or 0)
+        if lead_now < 0:
+            continue
+        conf = thunder_predict.confidence_of(0.0, lead_min=int(ld["lead_h"]) * 60, source="pn_net_ltg")
+        vs = _parse_dt(ld.get("valid_start"))
+        for c in (ld.get("ltg_cells") or [])[:15]:
+            added.append(
+                {
+                    "id": f"pn-{ld['lead_h']}-{c['lat']}-{c['lon']}",
+                    "kind": "lightning",
+                    "phase": "predicted",
+                    "engine": "pn-net-v4",
+                    "lat": c["lat"],
+                    "lon": c["lon"],
+                    "place": "PN-Net lightning-proxy cell",
+                    "lead_min": lead_now,
+                    "model_lead_h": ld["lead_h"],
+                    "started_at": ld.get("valid_start"),
+                    "closes_at": (vs + timedelta(hours=1)).isoformat() if vs else None,
+                    "p_lightning": c["p"],
+                    "skill_source": "pn_net_ltg",
+                    **conf,
+                }
+            )
+    added = added[:40]
+    summary["n_cells"] = len(added)
+    pack["pn_net"] = summary
+    pack.setdefault("predicted", []).extend(added)

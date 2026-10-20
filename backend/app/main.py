@@ -61,6 +61,11 @@ async def lifespan(_: FastAPI):
 
             wipe_user_databases()
         ingest_task = asyncio.create_task(ingest_loop())
+    elif not os.environ.get("PYTEST_CURRENT_TEST"):
+        from app.ingest.worker import embedded_loop, embedded_mode
+
+        if embedded_mode() != "off":
+            ingest_task = asyncio.create_task(embedded_loop())
     try:
         yield
     finally:

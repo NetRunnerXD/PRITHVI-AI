@@ -203,13 +203,18 @@ async def fetch_hubs(
     )
     strokes: list[dict[str, Any]] = []
     status = "ok"
+    sts = {str(p.get("status") or "") for p in cur_packs}
+    # A 403/401 or missing key must not be reported as "ok" (it hid an invalid key).
+    for bad in ("unauthorized", "missing_key"):
+        if sts and sts <= {bad, "error"} and bad in sts:
+            status = bad
     for pack in cur_packs:
         if pack.get("status") == "rate_limited":
             status = "rate_limited"
         for s in pack.get("strokes") or []:
             strokes.append({**s, "phase": "past", "kind": "lightning", "window": "current_45m"})
     hist_n = 0
-    if history and status != "rate_limited" and not weatherbit_lightning.rate_limited():
+    if history and status == "ok" and not weatherbit_lightning.rate_limited():
         today = datetime.now(IST).date().isoformat()
         hist_hubs = hubs[:2]
         hist_packs = await asyncio.gather(
@@ -227,6 +232,7 @@ async def fetch_hubs(
     strokes = remember_strokes(extra + strokes, now)
     return {
         "ok": bool(strokes) or status == "ok",
+        "key_valid": status not in {"unauthorized", "missing_key"},
         "status": status,
         "strokes": strokes[:200],
         "n": len(strokes),

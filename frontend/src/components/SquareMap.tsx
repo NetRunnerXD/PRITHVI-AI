@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
 import type { DashboardSnapshot, Location } from "@/types/dashboard";
-import { fetchRadarFrames, fetchStates, fetchStormMap, fetchWeatherGrid, reverseGeocode, type StormIncident, type StormMapPack } from "@/lib/api";
+import { fetchRadarFrames, fetchStates, fetchWorldGrid, fetchStormMap, fetchWeatherGrid, reverseGeocode, type StormIncident, type StormMapPack } from "@/lib/api";
 import { MapWrap } from "./MapWrap";
 import { StormFeed } from "./StormFeed";
 import { WX_LAYERS, legendStops, unitOf, type WeatherGrid, type WxLayer } from "@/lib/weatherScale";
@@ -13,6 +13,7 @@ import { visibleInterval } from "@/lib/visibility";
 let cachedStates: string[] = [];
 let cachedRadarPack: { host: string; radarPath: string | null; satPath: string | null } | null = null;
 const cachedGrids = new Map<number, WeatherGrid>();
+const cachedWorld = new Map<number, WeatherGrid>();
 const cachedStormMaps = new Map<string, { pack: StormMapPack; ts: number }>();
 
 const BASES = ["dark", "streets", "satellite", "terrain"] as const;
@@ -104,6 +105,7 @@ export function SquareMap({
   const showPin = mapSession.showPin;
   const pastHours = mapSession.pastHours;
   const minConfidence = mapSession.minConfidence;
+  const maxLeadMin = mapSession.maxLeadMin ?? 720;
   const state = mapSession.state;
   const sidebarTab = mapSession.sidebarTab;
   const sidebarCollapsed = mapSession.sidebarCollapsed;
@@ -124,6 +126,8 @@ export function SquareMap({
     setMapSession((prev) => ({ showPin: typeof v === "function" ? v(prev.showPin) : v }));
   const setPastHours = (v: number) => setMapSession({ pastHours: v });
   const setMinConfidence = (v: number) => setMapSession({ minConfidence: v });
+  const [stormLoading, setStormLoading] = useState(false);
+  const [stormFetchedAt, setStormFetchedAt] = useState<number | null>(null);
   const setState = (v: string) => setMapSession({ state: v });
   const setSidebarTab = (v: "maps" | "events") => setMapSession({ sidebarTab: v });
   const setSidebarCollapsed = (v: boolean | ((c: boolean) => boolean)) =>
@@ -144,6 +148,23 @@ export function SquareMap({
     }));
 
   const [grid, setGrid] = useState<WeatherGrid | null>(() => cachedGrids.get(hour) || null);
+  const [worldGrid, setWorldGrid] = useState<WeatherGrid | null>(() => cachedWorld.get(hour) || null);
+  useEffect(() => {
+    if (cachedWorld.has(hour)) {
+      setWorldGrid(cachedWorld.get(hour)!);
+      return;
+    }
+    let dead = false;
+    void fetchWorldGrid(hour).then((g) => {
+      if (!dead && g) {
+        cachedWorld.set(hour, g as WeatherGrid);
+        setWorldGrid(g as WeatherGrid);
+      }
+    });
+    return () => {
+      dead = true;
+    };
+  }, [hour]);
   const [radarHost, setRadarHost] = useState(() => cachedRadarPack?.host || "https://tilecache.rainviewer.com");
   const [radarPath, setRadarPath] = useState<string | null>(() => cachedRadarPack?.radarPath || null);
   const [satPath, setSatPath] = useState<string | null>(() => cachedRadarPack?.satPath || null);
@@ -211,10 +232,16 @@ export function SquareMap({
       setStorm(cached.pack);
     }
     async function load() {
-      const data = await fetchStormMap(state, pastHours);
-      if (!dead && data) {
-        cachedStormMaps.set(cacheKey, { pack: data, ts: Date.now() });
-        setStorm(data);
+      setStormLoading(true);
+      try {
+        const data = await fetchStormMap(state, pastHours);
+        if (!dead && data) {
+          cachedStormMaps.set(cacheKey, { pack: data, ts: Date.now() });
+          setStorm(data);
+          setStormFetchedAt(Date.now());
+        }
+      } finally {
+        if (!dead) setStormLoading(false);
       }
     }
     void load();
@@ -288,6 +315,7 @@ export function SquareMap({
         overlays={extraOverlays}
         weatherLayer={wxLayer}
         weatherGrid={grid}
+        worldGrid={worldGrid}
         particles={particles}
         radarUrl={
           wxLayer === "radar" && radarPath
@@ -306,7 +334,7 @@ export function SquareMap({
             : null
         }
         selectedId={selected?.id}
-        tools={{ overlayOpacity, showPin, pastHours, minConfidence, fitNonce }}
+        tools={{ overlayOpacity, showPin, pastHours, minConfidence, fitNonce, maxLeadMin }}
         locale={locale}
         hazardEvents={hazardEvents}
         isVisible={isVisible}
@@ -314,7 +342,7 @@ export function SquareMap({
         onSelectIncident={pickIncident}
       />
     ),
-    [dash.location, rain, zoom, mapBasemap, dash.ogd?.nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, fitNonce, locale, wxLayer, grid, particles, radarHost, radarPath, satPath, hazardEvents, isVisible]
+    [dash.location, rain, zoom, mapBasemap, dash.ogd?.nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, maxLeadMin, fitNonce, locale, wxLayer, grid, particles, radarHost, radarPath, satPath, hazardEvents, isVisible]
   );
 
   function toggleOverlay(id: string) {
@@ -490,6 +518,14 @@ export function SquareMap({
             </div>
           ) : null}
           {box}
+          <MapStatusStrip storm={storm} loading={stormLoading} fetchedAt={stormFetchedAt} />
+          <MapTimeline
+            pastHours={pastHours}
+            maxLeadMin={maxLeadMin}
+            onPast={(h) => setMapSession({ pastHours: h, maxLeadMin: 0 })}
+            onNow={() => setMapSession({ maxLeadMin: 0 })}
+            onLead={(m) => setMapSession({ maxLeadMin: m })}
+          />
           <div className="absolute bottom-8 left-2 z-[700] rounded-md bg-slate-950/80 text-[10px] text-slate-100 px-2 py-1.5 space-y-0.5 pointer-events-none">
             {highlights.includes("lightning") ? <div>⚡ {t.hlLiveLightning}</div> : null}
             {highlights.includes("pred_lightning") ? <div>✦ {t.hlPredLightning}</div> : null}
@@ -1110,6 +1146,107 @@ export function SquareMap({
           </div>
         </aside>
       )}
+    </div>
+  );
+}
+
+
+const fmtIstShort = (iso?: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+};
+
+/** Data provenance + freshness on the map: which IR source, its valid time (IST), the
+ * independent Himawari check, lightning-key status, and a loading indicator. */
+function MapStatusStrip({ storm, loading, fetchedAt }: { storm: StormMapPack | null; loading: boolean; fetchedAt: number | null }) {
+  const s = (storm || {}) as StormMapPack & {
+    cell_source?: string | null;
+    ir_image_time?: string | null;
+    himawari_valid?: string | null;
+    himawari_check?: { n_cells: number; confirmed: number; not_confirmed: number };
+    sensors?: Record<string, unknown>;
+  };
+  const sensors = (s.sensors || {}) as Record<string, unknown>;
+  const src =
+    s.cell_source === "insat-3ds-ir1"
+      ? "INSAT-3DS IR1"
+      : s.cell_source?.startsWith("himawari")
+        ? "Himawari-9 B13 (INSAT unavailable)"
+        : "no IR frame";
+  const hc = s.himawari_check;
+  const ageMin = s.ir_image_time ? Math.round((Date.now() - new Date(s.ir_image_time).getTime()) / 60000) : null;
+  const old = ageMin != null && ageMin > 90;
+  return (
+    <div className="absolute top-2 right-2 z-[690] max-w-[min(92%,340px)] rounded-lg bg-slate-950/80 text-slate-100 text-[10px] leading-snug px-2.5 py-1.5 space-y-0.5 pointer-events-none">
+      <div className="flex items-center gap-1.5 font-bold">
+        {loading ? <span className="h-2 w-2 rounded-full bg-sky-400 animate-ping" aria-label="loading" /> : <span className={`h-2 w-2 rounded-full ${old ? "bg-amber-400" : "bg-emerald-400"}`} />}
+        <span>
+          Cells: {src}
+          {s.ir_image_time ? ` · ${fmtIstShort(s.ir_image_time)} IST` : ""}
+          {ageMin != null ? ` (${ageMin} min old)` : ""}
+        </span>
+      </div>
+      {hc && hc.n_cells > 0 ? (
+        <div>
+          Himawari B13 check: {hc.confirmed}/{hc.n_cells} cells cold-topped{s.himawari_valid ? ` · ${fmtIstShort(s.himawari_valid)} IST` : ""}
+        </div>
+      ) : null}
+      {sensors.lightning_key_valid === false ? <div className="text-amber-300">Observed lightning off: Weatherbit key rejected (403)</div> : null}
+      {fetchedAt ? <div className="text-slate-400">Updated {fmtIstShort(new Date(fetchedAt).toISOString())} IST</div> : null}
+    </div>
+  );
+}
+
+const TIMELINE: { label: string; past?: number; lead?: number }[] = [
+  { label: "−12h", past: 12 },
+  { label: "−6h", past: 6 },
+  { label: "−3h", past: 3 },
+  { label: "−1h", past: 1 },
+  { label: "Now", lead: 0 },
+  { label: "+15m", lead: 15 },
+  { label: "+30m", lead: 30 },
+  { label: "+1h", lead: 60 },
+  { label: "+3h", lead: 180 },
+  { label: "+12h", lead: 720 },
+];
+
+/** Past / now / forecast: one touch-friendly strip. Past picks the history window (and hides
+ * forecasts); forecast steps show predictions up to that lead. */
+function MapTimeline({
+  pastHours,
+  maxLeadMin,
+  onPast,
+  onNow,
+  onLead,
+}: {
+  pastHours: number;
+  maxLeadMin: number;
+  onPast: (h: number) => void;
+  onNow: () => void;
+  onLead: (m: number) => void;
+}) {
+  return (
+    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-[700] max-w-[96%] overflow-x-auto rounded-xl bg-slate-950/85 px-1.5 py-1 shadow-lg">
+      <div className="flex items-center gap-0.5 whitespace-nowrap" role="group" aria-label="Map time">
+        {TIMELINE.map((t) => {
+          const active =
+            t.past != null ? maxLeadMin === 0 && pastHours === t.past : t.lead === 0 ? maxLeadMin === 0 && false : maxLeadMin === t.lead;
+          return (
+            <button
+              key={t.label}
+              type="button"
+              className={`min-w-[40px] px-2 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                active ? "bg-sky-500 text-white" : t.lead === 0 ? "text-emerald-300 hover:bg-white/10" : "text-slate-200 hover:bg-white/10"
+              }`}
+              onClick={() => (t.past != null ? onPast(t.past) : t.lead === 0 ? onNow() : onLead(t.lead!))}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -19,3 +19,9 @@ mobile/.env
 .pytest_cache/
 *.pyc
 .DS_Store
+
+# Local model weights / static grids (never committed)
+backend/models/
+*.onnx
+*.pt
+*.npy

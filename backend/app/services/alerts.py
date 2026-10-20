@@ -412,9 +412,11 @@ def assemble_warnings(
                 source="sachet-ndma",
                 hazard="weather",
                 scope="local" if local_ok else "india",
-                issued_at=item.get("published"),
+                issued_at=item.get("sent") or item.get("published"),
                 url=item.get("link") or item.get("url"),
                 states=[hint] if hint else [],
+                window_start=item.get("onset") or item.get("effective"),
+                window_end=item.get("expires"),
             ),
             official=True,
         )
@@ -880,33 +882,50 @@ def assemble_warnings(
             )
         )
 
+    # FIRMS hotspots: previously ~30 all-India "warning" rows with no time window were added
+    # to every pin (Bikaner shown for Srinagar, 36 h old). Now: within 150 km only, detected
+    # <= 24 h ago, window = detection → +24 h. The all-India view lives on the map layer.
     nearby_fires = []
     for fr in fires or []:
         try:
             d = ((float(fr["lat"]) - loc.lat) ** 2 + (float(fr["lon"]) - loc.lon) ** 2) ** 0.5 * 111.3
         except (TypeError, ValueError, KeyError):
             continue
-        if d <= 40:
-            nearby_fires.append({**fr, "distance_km": round(d, 1)})
-        elif int(fr.get("n") or 0) >= 8 or float(fr.get("frp_mw") or 0) >= 40:
-            add(
-                _ew(
-                    id=str(fr.get("id") or f"fire_{fr.get('lat')}")[:64],
-                    severity="warning",
-                    title=f"Forest fire hotspot — {fr.get('place') or 'India'}",
-                    body=f"{int(fr.get('n') or 0)} VIIRS detections, FRP {fr.get('frp_mw')} MW. NASA FIRMS thermal, not a burned-area map.",
-                    source="nasa-firms",
-                    hazard="weather",
-                    kind="fire",
-                    scope="india",
-                    href_kind="map",
-                    lat=fr.get("lat"),
-                    lon=fr.get("lon"),
-                    states=[fr["state"]] if fr.get("state") else [],
-                )
+        det = _parse_dt(fr.get("t") or fr.get("acq_time"))
+        if det is not None and det.tzinfo is None:
+            det = det.replace(tzinfo=timezone.utc)
+        age_h = fr.get("age_h")
+        if age_h is None and det is not None:
+            age_h = (datetime.now(timezone.utc) - det).total_seconds() / 3600.0
+        if age_h is None or float(age_h) > 24.0:
+            continue
+        if d <= 150:
+            nearby_fires.append({**fr, "distance_km": round(d, 1), "_det": det})
+    nearby_fires.sort(key=lambda x: x["distance_km"])
+    for fr in nearby_fires[1:4]:
+        det = fr.get("_det")
+        add(
+            _ew(
+                id=str(fr.get("id") or f"fire_{fr.get('lat')}")[:64],
+                severity="watch",
+                title=f"Fire hotspot — {fr.get('place') or 'nearby'} ({fr['distance_km']:.0f} km)",
+                body=f"{int(fr.get('n') or 0)} VIIRS detections, FRP {fr.get('frp_mw')} MW. NASA FIRMS thermal, not a burned-area map.",
+                source="nasa-firms",
+                hazard="weather",
+                kind="fire",
+                scope="local",
+                href_kind="map",
+                lat=fr.get("lat"),
+                lon=fr.get("lon"),
+                distance_km=fr["distance_km"],
+                issued_at=det.isoformat() if det else None,
+                window_start=det.isoformat() if det else None,
+                window_end=(det + timedelta(hours=24)).isoformat() if det else None,
             )
+        )
     if nearby_fires:
         top = nearby_fires[0]
+        det = top.get("_det")
         add(
             _ew(
                 id="firms_pin",
@@ -920,6 +939,10 @@ def assemble_warnings(
                 href_kind="map",
                 lat=top.get("lat"),
                 lon=top.get("lon"),
+                distance_km=top.get("distance_km"),
+                issued_at=det.isoformat() if det else None,
+                window_start=det.isoformat() if det else None,
+                window_end=(det + timedelta(hours=24)).isoformat() if det else None,
             )
         )
 
@@ -982,6 +1005,45 @@ def assemble_warnings(
             )
         )
 
-    order = {"extreme": 0, "warning": 1, "alert": 2}
+    out = finalize_windows(out)
+    order = {"extreme": 0, "warning": 1, "alert": 2, "watch": 3}
     out.sort(key=lambda w: (order.get(w.severity, 9), w.issued_at or ""), reverse=False)
     return out
+
+
+# Default validity when a source gives an issue time but no end (hours).
+_DEFAULT_TTL_H = {"cyclone": 72, "tsunami": 72, "seismic": 48, "fire": 24, "flood": 36}
+
+
+def finalize_windows(rows: list[EarlyWarning], now: datetime | None = None) -> list[EarlyWarning]:
+    """One honest pass over every alert: drop anything that has ended; give issue-time-only
+    alerts an explicit (inferred) end; mark alerts with neither as 'undated' so the UI never
+    counts them as active. All times are kept as ISO with offset; the UI renders IST."""
+    now = now or datetime.now(timezone.utc)
+    keep: list[EarlyWarning] = []
+    for w in rows:
+        end = _parse_dt(w.window_end or w.expires_at or w.valid_until)
+        if end is not None and end.tzinfo is None:
+            end = end.replace(tzinfo=IST)
+        start = _parse_dt(w.window_start)
+        if start is not None and start.tzinfo is None:
+            start = start.replace(tzinfo=IST)
+        if end is None:
+            issued = _parse_dt(w.issued_at)
+            if issued is not None:
+                if issued.tzinfo is None:
+                    issued = issued.replace(tzinfo=timezone.utc)
+                end = issued + timedelta(hours=_DEFAULT_TTL_H.get(w.kind or "", 36))
+                w.window_end = end.isoformat()
+                w.expires_at = w.expires_at or w.window_end
+                w.end_inferred = True
+        if end is not None and end < now:
+            continue  # expired → never shown as active
+        if end is None:
+            w.status = "undated"
+        elif start is not None and start > now:
+            w.status = "upcoming"
+        else:
+            w.status = "active"
+        keep.append(w)
+    return keep

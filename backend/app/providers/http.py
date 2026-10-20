@@ -41,12 +41,40 @@ def breaker_state() -> dict[str, Any]:
     return {h: {"fails": b.fails, "open": b.open_until > now} for h, b in _breakers.items()}
 
 
+# Indian government hosts (mausam.imd.gov.in, sachet.ndma.gov.in, ...) chain to eMudhra's
+# "emSign Root CA - G1", which certifi>=2026.10 no longer ships, so every IMD JPEG and every
+# Sachet feed failed with CERTIFICATE_VERIFY_FAILED. Trust those public roots for these hosts
+# only; every other host keeps strict certifi verification.
+_GOV_SUFFIXES = (".gov.in", ".nic.in")
+_EXTRA_CA = __import__("pathlib").Path(__file__).resolve().parents[1] / "data" / "extra_ca_emsign.pem"
+
+
+def _gov_ssl_context():
+    import ssl
+
+    import certifi
+
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    try:
+        ctx.load_verify_locations(cafile=str(_EXTRA_CA))
+    except (OSError, ssl.SSLError):
+        pass
+    return ctx
+
+
+def _is_gov(host: str) -> bool:
+    h = (host or "").lower()
+    return any(h.endswith(s) for s in _GOV_SUFFIXES)
+
+
 class ResilientTransport(httpx.AsyncBaseTransport):
-    def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
+    def __init__(self, inner: httpx.AsyncBaseTransport, gov: httpx.AsyncBaseTransport | None = None) -> None:
         self._inner = inner
+        self._gov = gov or inner
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         host = request.url.host or ""
+        tr = self._gov if _is_gov(host) else self._inner
         br = _breakers.setdefault(host, _Breaker())
         now = time.monotonic()
         if br.open_until > now:
@@ -55,7 +83,7 @@ class ResilientTransport(httpx.AsyncBaseTransport):
         attempt = 0
         while True:
             try:
-                resp = await self._inner.handle_async_request(request)
+                resp = await tr.handle_async_request(request)
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError) as e:
                 if idempotent and attempt < 1:
                     attempt += 1
@@ -94,6 +122,8 @@ class ResilientTransport(httpx.AsyncBaseTransport):
 
     async def aclose(self) -> None:
         await self._inner.aclose()
+        if self._gov is not self._inner:
+            await self._gov.aclose()
 
 
 def _http2_available() -> bool:
@@ -110,8 +140,9 @@ def client() -> httpx.AsyncClient:
         settings = get_settings()
         limits = httpx.Limits(max_connections=60, max_keepalive_connections=30, keepalive_expiry=60.0)
         inner = httpx.AsyncHTTPTransport(http2=_http2_available(), limits=limits)
+        gov = httpx.AsyncHTTPTransport(http2=_http2_available(), limits=limits, verify=_gov_ssl_context())
         _client = httpx.AsyncClient(
-            transport=ResilientTransport(inner),
+            transport=ResilientTransport(inner, gov),
             timeout=httpx.Timeout(6.0, connect=2.0),
             headers={
                 "User-Agent": settings.user_agent,

@@ -574,7 +574,7 @@ function fmtIstHm(raw: unknown): string | null {
 
 function confOk(row: { confidence?: number; confidence_band?: string } | undefined, min: number) {
   if (!min) return true;
-  if (row?.confidence_band === "low" && min >= 0.38) return false;
+  if (row?.confidence_band === "low" && min >= 0.25) return false;
   return (row?.confidence ?? 0) >= min;
 }
 
@@ -642,6 +642,7 @@ export function MapView({
   locale,
   weatherLayer,
   weatherGrid,
+  worldGrid,
   particles,
   radarUrl,
   hazardEvents,
@@ -665,6 +666,8 @@ export function MapView({
   locale?: Locale;
   weatherLayer?: WxLayer | null;
   weatherGrid?: WeatherGrid | null;
+  /** Coarse global grid painted beneath the India high-res inset. */
+  worldGrid?: WeatherGrid | null;
   particles?: boolean;
   radarUrl?: string | null;
   isVisible?: boolean;
@@ -747,13 +750,14 @@ export function MapView({
     for (const s of raw) {
       if (s.lat == null || s.lon == null || !Number.isFinite(Number(s.lat)) || !Number.isFinite(Number(s.lon))) continue;
       if (!confOk(s, opt.minConfidence)) continue;
+      if ((Number(s.lead_min) || 0) > (opt.maxLeadMin ?? 720)) continue;
       const key = `${Number(s.lat).toFixed(2)}:${Number(s.lon).toFixed(2)}:lightning`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(s);
     }
     return out;
-  }, [storm?.predicted, storm?.predicted_unverified, storm?.incidents, opt.minConfidence]);
+  }, [storm?.predicted, storm?.predicted_unverified, storm?.incidents, opt.minConfidence, opt.maxLeadMin]);
 
   const predStorms = useMemo(() => {
     const raw = [
@@ -788,13 +792,14 @@ export function MapView({
     for (const s of raw) {
       if (s.lat == null || s.lon == null || !Number.isFinite(Number(s.lat)) || !Number.isFinite(Number(s.lon))) continue;
       if (!confOk(s, opt.minConfidence)) continue;
+      if ((Number(s.lead_min) || 0) > (opt.maxLeadMin ?? 720)) continue;
       const key = `${Number(s.lat).toFixed(2)}:${Number(s.lon).toFixed(2)}:${s.kind || "storm"}`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(s);
     }
     return out;
-  }, [storm?.predicted_storms, storm?.predicted_unverified, storm?.incidents, storm?.polygons, opt.minConfidence]);
+  }, [storm?.predicted_storms, storm?.predicted_unverified, storm?.incidents, storm?.polygons, opt.minConfidence, opt.maxLeadMin]);
 
   const liveByKind = (kind: string) => {
     const fromCells = (storm?.cells || []).filter((c) => (c.kind || "storm") === kind);
@@ -864,6 +869,9 @@ export function MapView({
         maxZoom={tile.maxZoom || 18}
       />
       <ScaleControl imperial={false} position="bottomleft" />
+      {weatherLayer && fieldKey(weatherLayer) && worldGrid ? (
+        <WeatherOverlay grid={worldGrid} layer={weatherLayer} opacity={opt.overlayOpacity * 0.85} />
+      ) : null}
       {showField ? <WeatherOverlay grid={weatherGrid!} layer={weatherLayer!} opacity={opt.overlayOpacity} /> : null}
       {particles && weatherGrid ? <WindParticles grid={weatherGrid} on /> : null}
       {radarUrl ? (
@@ -880,13 +888,13 @@ export function MapView({
         <WMSTileLayer
           key={`ir-${gibs?.ir?.time || "default"}`}
           url={GIBS}
-          layers="Himawari_AHI_Band13_Clean_Infrared"
+          layers="GOES-West_ABI_Band13_Clean_Infrared,GOES-East_ABI_Band13_Clean_Infrared,Himawari_AHI_Band13_Clean_Infrared"
           format="image/png"
           transparent
           version="1.3.0"
           params={(gibs?.ir?.time ? { time: gibs.ir.time } : {}) as never}
           opacity={opt.overlayOpacity}
-          attribution={`NASA GIBS / Himawari IR${gibs?.ir?.time ? ` ${fmtIst(gibs.ir.time) || gibs.ir.time} IST` : ""}`}
+          attribution={`NASA GIBS / Himawari-9 + GOES-East/West B13 IR (no Meteosat in GIBS: Europe/Africa gap)${gibs?.ir?.time ? ` ${fmtIst(gibs.ir.time) || gibs.ir.time} IST` : ""}`}
           noWrap={true}
         />
       ) : null}
@@ -1197,6 +1205,9 @@ export function MapView({
                   {s.confidence != null ? (
                     <div className="text-[11px] text-slate-800 font-medium">
                       Confidence {(s.confidence * 100).toFixed(0)}% ({s.confidence_band || "—"})
+                      {(s as { confidence_basis?: string }).confidence_basis ? (
+                        <div className="text-[10px] text-slate-600 font-normal">{(s as { confidence_basis?: string }).confidence_basis}</div>
+                      ) : null}
                     </div>
                   ) : null}
                   {s.p_lightning != null ? <div className="text-[11px] text-slate-800 font-medium">P(lightning) {(s.p_lightning * 100).toFixed(0)}%</div> : null}
@@ -1262,6 +1273,9 @@ export function MapView({
                   {s.confidence != null ? (
                     <div className="text-[11px] text-slate-800 font-medium">
                       Confidence {(s.confidence * 100).toFixed(0)}% ({s.confidence_band || "—"})
+                      {(s as { confidence_basis?: string }).confidence_basis ? (
+                        <div className="text-[10px] text-slate-600 font-normal">{(s as { confidence_basis?: string }).confidence_basis}</div>
+                      ) : null}
                     </div>
                   ) : null}
                   <button
@@ -1412,6 +1426,9 @@ export function MapView({
                   {p.confidence != null ? (
                     <div className="text-[11px] text-slate-800 font-medium">
                       Confidence {(p.confidence * 100).toFixed(0)}% ({p.confidence_band || "—"})
+                      {(p as { confidence_basis?: string }).confidence_basis ? (
+                        <div className="text-[10px] text-slate-600 font-normal">{(p as { confidence_basis?: string }).confidence_basis}</div>
+                      ) : null}
                     </div>
                   ) : null}
                   <button

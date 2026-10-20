@@ -232,3 +232,86 @@ async def fetch_imerg(lat: float, lon: float) -> dict[str, Any]:
         "status": "ok",
         "note": f"GIBS IMERG image for {fr['valid']} (not real-time).",
     }
+
+
+# ---- Full-India Himawari B13 Tb (independent, calibrated) ---------------------------------
+_TB_FULL: dict[str, Any] = {}
+
+
+def _tb_full(arr):
+    """Whole frame → Tb (K) array, NaN where transparent / no colormap match. Vectorised over
+    the frame's unique colours (a few hundred), not per pixel."""
+    import numpy as np
+
+    flat = arr.reshape(-1, 4)
+    uniq, inv = np.unique(flat, axis=0, return_inverse=True)
+    vals = np.full(len(uniq), np.nan, np.float32)
+    for i, u in enumerate(uniq):
+        ok, v = _decode_value(tuple(int(x) for x in u), "ir_c")
+        if ok and v is not None:
+            vals[i] = v + 273.15
+    return vals[inv.reshape(-1)].reshape(arr.shape[:2])
+
+
+async def tb_frame() -> dict[str, Any]:
+    import asyncio
+
+    fr = await frame("ir")
+    if not fr.get("ok"):
+        return {"ok": False, "status": fr.get("status")}
+    key = str(fr.get("valid"))
+    hit = _TB_FULL.get(key)
+    if hit is None:
+        hit = await asyncio.to_thread(_tb_full, fr["rgba"])
+        _TB_FULL.clear()
+        _TB_FULL[key] = hit
+    return {"ok": True, "tb": hit, "valid": fr.get("valid"), "layer": fr.get("layer")}
+
+
+def tb_at(tb, lat: float, lon: float, half_deg: float = 0.15) -> float | None:
+    """Coldest Himawari Tb (K) within ±half_deg of a point (parallax/advection tolerance)."""
+    import numpy as np
+
+    s, w, n, e = FRAME_BBOX
+    H, W = tb.shape
+    if not (s <= lat <= n and w <= lon <= e):
+        return None
+    y0 = int((n - (lat + half_deg)) / (n - s) * (H - 1))
+    y1 = int((n - (lat - half_deg)) / (n - s) * (H - 1)) + 1
+    x0 = int((lon - half_deg - w) / (e - w) * (W - 1))
+    x1 = int((lon + half_deg - w) / (e - w) * (W - 1)) + 1
+    win = tb[max(0, y0) : min(H, y1), max(0, x0) : min(W, x1)]
+    if win.size == 0 or not np.isfinite(win).any():
+        return None
+    return round(float(np.nanmin(win)), 1)
+
+
+async def india_grid(bounds: tuple[float, float, float, float], n: int = 140) -> dict[str, Any]:
+    """Himawari B13 Tb on the same n×n India grid as the INSAT sector (west, east, south,
+    north). Used to find cells across ALL of India when INSAT is unavailable (previously the
+    fallback searched only a 2.2° box around 22.5N 79E)."""
+    import numpy as np
+
+    tf = await tb_frame()
+    if not tf.get("ok"):
+        return {"ok": False, "status": tf.get("status"), "grid": None}
+    tb = tf["tb"]
+    w, e, s_, n_ = bounds
+    fs, fw, fn, fe = FRAME_BBOX
+    H, W = tb.shape
+    lats = n_ - (np.arange(n) + 0.5) / n * (n_ - s_)
+    lons = w + (np.arange(n) + 0.5) / n * (e - w)
+    yy = np.clip(np.round((fn - lats) / (fn - fs) * (H - 1)).astype(int), 0, H - 1)
+    xx = np.clip(np.round((lons - fw) / (fe - fw) * (W - 1)).astype(int), 0, W - 1)
+    g = tb[yy[:, None], xx[None, :]]
+    cover = float(np.isfinite(g).mean())
+    g = np.where(np.isfinite(g), g, 300.0)
+    return {
+        "ok": cover > 0.2,
+        "grid": np.round(g, 1).tolist(),
+        "bounds": bounds,
+        "image_time": tf.get("valid"),
+        "source": "gibs-himawari9-b13",
+        "source_kind": "satellite-ir-calibrated",
+        "coverage": round(cover, 3),
+    }

@@ -60,6 +60,29 @@ _T0 = {
 _LEADS = (15, 30, 45, 60)
 
 
+def _skill_row(table: str, lead_min: float) -> dict[str, Any] | None:
+    from app.science.pn import params
+
+    sk = (params().get("skill") or {}).get(table) or {}
+    if "by_lead_h" not in sk:
+        return {"sr": sk.get("sr"), "pod": sk.get("pod"), "csi": sk.get("csi"), "source": sk.get("source")} if sk else None
+    leads = sorted(int(k) for k in sk["by_lead_h"])
+    lh = min(leads, key=lambda L: abs(L - max(1.0, float(lead_min or 0) / 60.0)))
+    row = sk["by_lead_h"][str(lh)]
+    return {**row, "lead_h": lh, "source": sk.get("source")}
+
+
+# Which measured skill table answers "how often did forecasts like this verify?"
+_SKILL_TABLE = {
+    "ir_cell": "ir_extrapolation_rain",  # app IR-cell extrapolation (motion vectors), <= 60 min
+    "pn_net_ltg": "pn_net_ltg_0p5",
+    "pn_net_rain": "pn_net_rain_0p5",
+    "pn_blend_rain": "pn_blend_rain",
+    "nwp_rain": "nwp_ifs_rain",
+    "nwp_thunder": "nwp_thunder_point",
+}
+
+
 def confidence_of(
     p_lightning: float,
     *,
@@ -70,30 +93,48 @@ def confidence_of(
     agrees: bool | None = None,
     ot: bool = False,
     p_cloudburst: float = 0.0,
+    source: str = "ir_cell",
 ) -> dict[str, Any]:
-    """0–1 nowcast confidence and a high/medium/low band."""
-    c = 0.20 + 0.50 * _clip(float(p_lightning or 0.0), 0.0, 1.0)
-    c += 0.12 * _clip(float(p_cloudburst or 0.0), 0.0, 1.0)
-    c -= 0.0035 * max(0, int(lead_min or 0))
+    """Confidence = measured success ratio (1 - FAR) of this forecast source at this lead,
+    from the research hold-out tests (app/science/pn/research_params.json "skill").
+
+    The old value was a heuristic that subtracted 0.0035 per lead minute; at the 5-10 h
+    leads of Open-Meteo thunder it went below zero and was clipped to 0.08 for every row.
+    The event-specific signal (p_lightning, CAPE, OT, codes) is still returned, as
+    `signal`, but it is NOT presented as confidence because it is not calibrated.
+    """
+    sig = 0.20 + 0.50 * _clip(float(p_lightning or 0.0), 0.0, 1.0)
+    sig += 0.12 * _clip(float(p_cloudburst or 0.0), 0.0, 1.0)
     if frames >= 2:
-        c += 0.08
+        sig += 0.08
     if ot:
-        c += 0.05
+        sig += 0.05
     if cape >= 2000:
-        c += 0.10
+        sig += 0.10
     elif cape >= 900:
-        c += 0.05
+        sig += 0.05
     if weather_code >= 95:
-        c += 0.14
+        sig += 0.14
     elif weather_code >= 80:
-        c += 0.06
+        sig += 0.06
     if agrees is True:
-        c += 0.10
+        sig += 0.10
     elif agrees is False:
-        c -= 0.08
-    c = _clip(c, 0.08, 0.92)
-    band = "high" if c >= 0.62 else "medium" if c >= 0.38 else "low"
-    return {"confidence": round(c, 3), "confidence_band": band}
+        sig -= 0.08
+    sig = _clip(sig, 0.0, 1.0)
+    row = _skill_row(_SKILL_TABLE.get(source, "ir_extrapolation_rain"), lead_min) or {}
+    c = float(row.get("sr") if row.get("sr") is not None else 0.0)
+    band = "high" if c >= 0.5 else "medium" if c >= 0.25 else "low"
+    lead_txt = f" at {row['lead_h']} h lead" if row.get("lead_h") else ""
+    return {
+        "confidence": round(c, 3),
+        "confidence_band": band,
+        "confidence_basis": f"{round(c * 100)}% of past forecasts of this type verified{lead_txt} "
+        f"(1 - FAR; {row.get('source') or 'research hold-out'}).",
+        "skill": {k: row.get(k) for k in ("sr", "pod", "csi", "lead_h")},
+        "skill_source": source,
+        "signal": round(sig, 3),
+    }
 
 
 def _iso(dt: datetime) -> str:
@@ -466,7 +507,8 @@ def om_predicted(hub: dict[str, Any], pack: dict[str, Any], now: datetime) -> li
         phase = "live" if lead_h == 0 else "predicted"
         code = int(row.get("weather_code") or 0)
         p_l = 0.62 if code >= 95 else 0.42
-        conf = confidence_of(p_l, lead_min=lead_h * 60, cape=cape, weather_code=code)
+        conf = confidence_of(p_l, lead_min=lead_h * 60, cape=cape, weather_code=code, source="nwp_thunder")
+        conf["rain_confidence"] = confidence_of(p_l, lead_min=lead_h * 60, source="nwp_rain")["confidence"]
         out.append(
             {
                 "id": f"omth-{round(lat, 2)}-{round(lon, 2)}-{lead_h}",

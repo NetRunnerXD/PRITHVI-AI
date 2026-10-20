@@ -130,8 +130,76 @@ async def alerts(state: str | None = None) -> tuple[list[dict[str, Any]], str]:
                 continue
             seen.add(kid)
             out.append(it)
+    out = await enrich_cap(out)
     cache.set(key_all, out, 5 * 60)
     return out, "ok" if out else "empty"
+
+
+_CAP_NS = "{urn:oasis:names:tc:emergency:cap:1.2}"
+
+
+def parse_cap(text: str) -> dict[str, Any]:
+    """CAP 1.2 timing (ISO with +05:30 offset as issued by SDMA/IMD) and area."""
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return {}
+    info = root.find(f"{_CAP_NS}info")
+    if info is None:
+        return {}
+
+    def t(el, tag: str) -> str | None:
+        v = (el.findtext(f"{_CAP_NS}{tag}") or "").strip() if el is not None else ""
+        return v or None
+
+    area = info.find(f"{_CAP_NS}area")
+    return {
+        "sent": t(root, "sent"),
+        "msg_type": t(root, "msgType"),
+        "effective": t(info, "effective"),
+        "onset": t(info, "onset"),
+        "expires": t(info, "expires"),
+        "event": t(info, "event"),
+        "cap_severity": t(info, "severity"),
+        "urgency": t(info, "urgency"),
+        "certainty": t(info, "certainty"),
+        "headline": t(info, "headline"),
+        "area_desc": t(area, "areaDesc"),
+    }
+
+
+async def _cap_one(item: dict[str, Any]) -> dict[str, Any]:
+    url = item.get("link") or ""
+    if "FetchXMLFile" not in url:
+        return {}
+
+    async def dl() -> dict[str, Any]:
+        r = await client().get(url, timeout=8.0)
+        return parse_cap(r.text) if r.status_code < 400 else {}
+
+    try:
+        # CAP messages are immutable: cache per identifier for a day.
+        return await asyncio.shield(cache.aget(f"sachet:cap:{item.get('id')}", dl, ttl_s=86400, swr_s=86400))
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return {}
+
+
+async def enrich_cap(items: list[dict[str, Any]], limit: int = 120, concurrency: int = 8) -> list[dict[str, Any]]:
+    """Attach CAP onset/expires so alert windows are real, not guessed from pubDate.
+    Downloads are shielded and cached, so a caller timeout leaves them warming."""
+    sem = asyncio.Semaphore(concurrency)
+
+    async def one(it: dict[str, Any]) -> dict[str, Any]:
+        async with sem:
+            cap = await _cap_one(it)
+        if not cap:
+            return it
+        return {**it, **{k: v for k, v in cap.items() if v}, "body": it.get("body") or cap.get("headline") or ""}
+
+    head = await asyncio.gather(*(one(it) for it in items[:limit]), return_exceptions=True)
+    return [h if isinstance(h, dict) else items[i] for i, h in enumerate(head)] + items[limit:]
 
 
 async def warm_all_states(concurrency: int = 4) -> int:

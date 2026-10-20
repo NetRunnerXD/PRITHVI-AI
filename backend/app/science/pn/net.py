@@ -2,7 +2,8 @@
 
 Export with tools/pn_export_onnx.py (4.7 MB; ~250 ms single-thread on a desktop core).
 Input groups (each with an availability mask, exactly as in training):
-  rain_log1p [1,4,H,W]   last 4 h IMERG (0.1°) · 0.02·log1p(mm/h)   ← required
+  rain_log1p [1,4,H,W]   last 4 h IMERG (0.1°) · log1p(mm/h)   ← required
+                         (research stores q=log1p/0.02 as uint8 and feeds q·0.02 = log1p)
   insat      [1,4,6,H/2,W/2] TIR1/TIR2/WV/cooling + 2 masks          ← MOSDAC L1C (optional)
   env        [1,4,9,H/4,W/4] ERA5-like CAPE/CIN/TCWV/KI/u850/v850/RH850/conv850 + mask (optional)
   nwp        [1,3,H/4,W/4]   IFS tp 0–6/6–12 h + mask (optional)
@@ -53,15 +54,28 @@ def _session():
     return _SESSION
 
 
+_STATIC: Any = None
+
+
+def _static():
+    global _STATIC
+    if _STATIC is None:
+        import numpy as np
+
+        _STATIC = np.load(os.environ["PN_STATIC_PATH"]).astype(np.float32)[None]
+    return _STATIC
+
+
 def run(rain_mm_h, insat=None, env=None, nwp=None) -> dict[str, Any]:
     """rain_mm_h: np.ndarray [4,H,W] real IMERG; others optional (None → mask 0)."""
     import numpy as np
 
-    if not status()["enabled"]:
-        return {"ok": False, "status": "disabled", **status()}
-    stat = np.load(os.environ["PN_STATIC_PATH"]).astype(np.float32)[None]
+    st = status()
+    if not st["enabled"]:
+        return {"ok": False, "status": "disabled", **st}
+    stat = _static()
     H, W = stat.shape[-2:]
-    x = (0.02 * np.log1p(np.clip(rain_mm_h, 0, None))).astype(np.float32)[None]
+    x = np.log1p(np.clip(rain_mm_h, 0, None)).astype(np.float32)[None]
     if x.shape[-2:] != (H, W):
         return {"ok": False, "status": "grid_mismatch", "want": [H, W], "got": list(x.shape[-2:])}
     h2, w2, h4, w4 = (H + 1) // 2, (W + 1) // 2, (H + 3) // 4, (W + 3) // 4
@@ -78,7 +92,7 @@ def run(rain_mm_h, insat=None, env=None, nwp=None) -> dict[str, Any]:
     rain_evt = pr >= np.array(cal["rain"]["cut"], np.float32)[:, None, None]
     ltg_evt = pl >= np.array(cal["ltg"]["cut"], np.float32)[:, None, None]
     ci_evt = pc >= np.array(cal["ci"]["cut"], np.float32)[:, None, None]
-    mm = np.expm1(amt[0] / 0.02)
+    mm = np.expm1(np.maximum(amt[0], 0))
     return {
         "ok": True,
         "mm_h": mm,

@@ -62,6 +62,48 @@ async def build_snapshot(
     return await cache.aget(key, factory, ttl_s=ttl, swr_s=swr)
 
 
+_BG: set = set()
+
+
+def slim_dump(snap: DashboardSnapshot) -> dict[str, Any]:
+    """Core payload for first paint (< 60 KB gzip): drop the heavy VERA diagnostics that
+    only the Predictions/Science tabs read; /dashboard/enrich returns the full snapshot."""
+    d = snap.model_dump()
+    pv = ((d.get("predictions") or {}).get("vera")) if isinstance(d.get("predictions"), dict) else None
+    if isinstance(pv, dict):
+        for k in ("intra_hour", "compare", "hourly", "extremes", "performance", "cv", "node_detail", "replay", "graph"):
+            if k in pv:
+                pv[k] = None
+        pv["slim"] = True
+    nc = (d.get("science") or {}).get("nowcast") if isinstance(d.get("science"), dict) else None
+    if isinstance(nc, dict):
+        for k in ("grid", "frames", "debug", "trace"):
+            if k in nc:
+                nc[k] = None
+    d["slim"] = True
+    return d
+
+
+async def build_core(loc: Location, locale: str = "en", *, disabled: set[str] | None = None) -> tuple[DashboardSnapshot, bool]:
+    """(snapshot, is_full). Fresh full snapshot if cached; else a core build (no VERA) and
+    the full build starts in the background (single-flight via the same cache key)."""
+    import asyncio
+
+    full = peek_snapshot(loc) if not disabled else None
+    if full is not None and not getattr(full, "enriching", False):
+        return full, True
+    key = pin_key(loc) + ":core" + (f":dis:{'_'.join(sorted(disabled))}" if disabled else "")
+
+    async def factory() -> DashboardSnapshot:
+        return await _assemble_snapshot(loc, locale, enrich=True, disabled=disabled, core=True)
+
+    core = await cache.aget(key, factory, ttl_s=300, swr_s=900)
+    t = asyncio.create_task(build_snapshot(loc, locale, full=True, disabled=disabled))
+    _BG.add(t)
+    t.add_done_callback(_BG.discard)
+    return core, False
+
+
 async def refresh_recent_snapshots(limit: int = 8) -> int:
     """Rebuild cached pins so OM is hit on a timer, not per browser poll."""
     from app.config import get_settings

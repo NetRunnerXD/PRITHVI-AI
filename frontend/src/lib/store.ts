@@ -5,7 +5,9 @@ import { resolveTab } from "@/types/dashboard";
 import type { Locale } from "@/i18n/copy";
 
 export type ReplyLocale = Locale | "auto";
-import { fetchDashboard, reverseGeocode } from "./api";
+import { fetchDashboard,
+  fetchDashboardCore,
+  fetchDashboardEnrich, reverseGeocode } from "./api";
 import { fetchMe, logoutAccount, type AuthUser } from "./auth";
 import { fetchClientObs, type ClientObsPack } from "./clientObs";
 import { buildOptimisticSnapshot, fetchClientOmPack, type OmClientPack } from "./openMeteoClient";
@@ -22,6 +24,7 @@ export type MapSessionState = {
   showPin: boolean;
   pastHours: number;
   minConfidence: number;
+  maxLeadMin: number;
   state: string;
   sidebarTab: "maps" | "events";
   sidebarCollapsed: boolean;
@@ -39,6 +42,7 @@ export const DEFAULT_MAP_SESSION: MapSessionState = {
   showPin: true,
   pastHours: 6,
   minConfidence: 0,
+  maxLeadMin: 720,
   state: "India",
   sidebarTab: "maps",
   sidebarCollapsed: false,
@@ -277,6 +281,84 @@ const TABS = new Set<TabId>(["home", "analytics", "data", "map", "model", "chat"
 
 let dashAbort: AbortController | null = null;
 
+type SetFn = (p: Partial<State>) => void;
+type GetFn = () => State;
+
+/** Place switch: call the backend immediately (it fetches Open-Meteo server-side) instead of
+ * waiting for the client Open-Meteo + USGS/POWER downloads first (that serial wait plus a
+ * 13 s full build made a new place take ~30 s on a slow link). The client Open-Meteo pack is
+ * still fetched in parallel, but only to paint an optimistic shell sooner. */
+async function hydrate(loc: Location | undefined, ac: AbortController, set: SetFn, get: GetFn): Promise<DashboardSnapshot | null> {
+  const disabled = get().settings.devDisabledProviders || [];
+  if (loc) {
+    void loadOmPack(loc, disabled)
+      .then((om) => {
+        if (om && dashAbort === ac && get().syncStatus === "syncing") {
+          set({ dashboard: buildOptimisticSnapshot(loc, om.forecast, om.air), location: loc, status: "ready", syncStatus: "direct" });
+        }
+      })
+      .catch(() => undefined);
+  }
+  const core = await fetchDashboardCore(loc, ac.signal, disabled);
+  if (dashAbort !== ac) return null;
+  const apply = (d: DashboardSnapshot, done: boolean) => {
+    if (!d.enriching) writeCachedSnapshot(d);
+    writeSavedLoc(d.location);
+    set({
+      dashboard: d,
+      location: d.location,
+      status: "ready",
+      syncStatus: done ? "synced" : "direct",
+      error: undefined,
+      favorites: get().favorites.length ? get().favorites : readList(FAV_KEY),
+      recent: get().recent.length ? get().recent : readList(REC_KEY),
+    });
+  };
+  apply(core, !core.enriching);
+  if (!core.enriching) return core;
+  try {
+    const full = await fetchDashboardEnrich(loc || core.location, ac.signal, disabled);
+    if (dashAbort !== ac) return core;
+    apply(full, true);
+    return full;
+  } catch {
+    if (dashAbort === ac) set({ syncStatus: "synced" });
+    return core;
+  }
+}
+
+let prefetchedAt = 0;
+/** Warm favourite + recent places (server cache and the local snapshot cache) when idle,
+ * so switching to them is instant. At most 4 places, once per 10 min, one at a time. */
+function prefetchPlaces(get: GetFn) {
+  if (typeof window === "undefined" || Date.now() - prefetchedAt < 10 * 60 * 1000) return;
+  prefetchedAt = Date.now();
+  const cur = get().location?.id;
+  const seen = new Set<string>();
+  const list = [...readList(FAV_KEY), ...readList(REC_KEY)].filter((l) => {
+    if (!l?.id || l.id === cur || seen.has(l.id)) return false;
+    seen.add(l.id);
+    return true;
+  }).slice(0, 4);
+  const run = async () => {
+    for (const l of list) {
+      try {
+        const d = await fetchDashboardCore(l, undefined, get().settings.devDisabledProviders || []);
+        if (!d.enriching) writeCachedSnapshot(d);
+        else {
+          const full = await fetchDashboardEnrich(l, undefined, get().settings.devDisabledProviders || []);
+          writeCachedSnapshot(full);
+        }
+      } catch {
+        /* best effort */
+      }
+    }
+  };
+  const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void }).requestIdleCallback;
+  if (ric) ric(() => void run(), { timeout: 8000 });
+  else setTimeout(() => void run(), 4000);
+}
+
 export const useApp = create<State>((set, get) => ({
   locale: "en",
   tab: "home",
@@ -393,27 +475,10 @@ export const useApp = create<State>((set, get) => ({
 
     }
 
-    // 3. Deep Hydration from Backend (POST client Open-Meteo so Render skips quota)
+    // 3. Backend core immediately (fast first paint), then the full snapshot.
     try {
-      const disabled = get().settings.devDisabledProviders || [];
-      const [omPack, obs] = await Promise.all([loadOmPack(location, disabled), loadObs(location, disabled)]);
-      if (dashAbort !== ac) return;
-      if (omPack && get().syncStatus !== "synced") {
-        const optSnap = buildOptimisticSnapshot(location, omPack.forecast, omPack.air);
-        set({ dashboard: optSnap, location, status: "ready", syncStatus: "direct" });
-      }
-      const dashboard = await fetchDashboard(location, ac.signal, disabled, omPack, obs);
-      if (dashAbort !== ac) return;
-      writeSavedLoc(dashboard.location);
-      writeCachedSnapshot(dashboard);
-      set({
-        dashboard,
-        location: dashboard.location,
-        status: "ready",
-        syncStatus: "synced",
-        error: undefined,
-        favorites: get().favorites.length ? get().favorites : readList(FAV_KEY),
-      });
+      await hydrate(location, ac, set, get);
+      prefetchPlaces(get);
     } catch (e) {
       if (ac.signal.aborted || dashAbort !== ac) return;
       if (get().dashboard && get().dashboard?.location?.id === location.id) {
@@ -469,28 +534,10 @@ export const useApp = create<State>((set, get) => ({
     }
 
     try {
-      const disabled = get().settings.devDisabledProviders || [];
-      const [omPack, obs] = loc
-        ? await Promise.all([loadOmPack(loc, disabled), loadObs(loc, disabled)])
-        : [undefined, undefined];
-      if (dashAbort !== ac) return;
-      if (omPack && loc && get().syncStatus !== "synced") {
-        const optSnap = buildOptimisticSnapshot(loc, omPack.forecast, omPack.air);
-        set({ dashboard: optSnap, location: loc, status: "ready", syncStatus: "direct" });
-      }
-      const dashboard = await fetchDashboard(loc || undefined, ac.signal, disabled, omPack, obs);
-      if (dashAbort !== ac) return;
+      const dashboard = await hydrate(loc || undefined, ac, set, get);
+      if (!dashboard) return;
       if (defaultedLocId === "pending") defaultedLocId = dashboard.location.id;
-      writeSavedLoc(dashboard.location);
-      writeCachedSnapshot(dashboard);
-      set({
-        dashboard,
-        location: dashboard.location,
-        status: "ready",
-        syncStatus: "synced",
-        favorites: get().favorites.length ? get().favorites : readList(FAV_KEY),
-        recent: get().recent.length ? get().recent : readList(REC_KEY),
-      });
+      prefetchPlaces(get);
     } catch (e) {
       if (ac.signal.aborted || dashAbort !== ac) return;
       if (get().dashboard) {

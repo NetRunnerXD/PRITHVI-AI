@@ -92,9 +92,15 @@ function windowLabel(w: EarlyWarning) {
   };
   const a = w.window_start || w.issued_at;
   const b = w.window_end || w.expires_at;
-  if (a && b) return `Expected ${fmt(a)} – ${fmt(b)} IST`;
-  if (a) return `From ${fmt(a)} IST`;
-  if (b) return `Until ${fmt(b)} IST`;
+  const est = w.end_inferred ? " (end estimated)" : "";
+  const now = Date.now();
+  const bm = b ? new Date(b).getTime() : NaN;
+  const am = a ? new Date(a).getTime() : NaN;
+  const lead = Number.isFinite(am) && am > now ? "Upcoming" : "Active";
+  if (Number.isFinite(bm) && bm < now) return `Ended ${fmt(b)} IST`;
+  if (a && b) return `${lead} ${fmt(a)} – ${fmt(b)} IST${est}`;
+  if (a) return `From ${fmt(a)} IST · no end time given`;
+  if (b) return `Until ${fmt(b)} IST${est}`;
   if (w.eta_min != null && Number.isFinite(Number(w.eta_min))) {
     const m = Math.max(0, Math.round(Number(w.eta_min)));
     return m <= 5 ? "Expected now" : `Expected in ${m} min`;
@@ -127,7 +133,17 @@ export function EarlyWarnings({
   status?: Record<string, string>;
 }) {
   const t = COPY[locale];
-  const hot = items.some((w) => w.severity === "extreme" || w.severity === "warning");
+  // Only alerts with a real (or explicitly estimated) end in the future count as active;
+  // the backend already drops expired ones, this guards stale cached snapshots.
+  const nowMs = Date.now();
+  const liveItems = items.filter((w) => {
+    const end = w.window_end || w.expires_at;
+    if (!end) return false;
+    const t = new Date(end).getTime();
+    return Number.isFinite(t) && t >= nowMs;
+  });
+  const undated = items.length - liveItems.length;
+  const hot = liveItems.some((w) => w.severity === "extreme" || w.severity === "warning");
   const [open, setOpen] = useState(hot);
   const nearest = live?.quakes?.[0];
   const tsunami = live?.tsunami?.[0];
@@ -149,7 +165,8 @@ export function EarlyWarnings({
             <span className="live-dot" aria-hidden />
             <h2 className="text-xs font-bold uppercase tracking-[0.16em] text-neo-accent">{t.warnings}</h2>
             <span className="chip">
-              {items.length} {t.activeAlerts}
+              {liveItems.length} {t.activeAlerts}
+              {undated > 0 ? ` · ${undated} undated` : ""}
               {worst ? ` · ${worst.severity}` : ""}
             </span>
             <span className="text-[11px] text-neo-muted">{open ? t.collapse : t.expand}</span>
