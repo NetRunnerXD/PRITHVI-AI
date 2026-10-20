@@ -482,6 +482,16 @@ async def research_status():
     return pn.status()
 
 
+@router.get("/nowcast/sat-lightning")
+async def nowcast_sat_lightning(wait: bool = Query(default=False)):
+    """Satellite-estimated lightning likelihood (not detected strikes), worldwide where
+    Himawari-9 / GOES-East / GOES-West cover, with its IMERG validation (POD/FAR)."""
+    from app.science import sat_lightning
+
+    pack = await sat_lightning.refresh() if wait else (sat_lightning.peek() or {"ok": False, "status": "warming"})
+    return {k: v for k, v in pack.items() if not k.startswith("_")}
+
+
 @router.get("/research/pn-live")
 async def research_pn_live(wait: bool = Query(default=False)):
     """PN-Net v4 on live IMERG Early: per-lead valid times (IST shown in UI), lightning-proxy

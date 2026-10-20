@@ -81,3 +81,36 @@ def test_pn_live_ascii_parser_orientation():
     assert a is not None and a.shape == (live.H, live.W)
     assert abs(a[5, 7] - (7 + 5 / 1000)) < 1e-4  # [lat, lon], south row first
     assert np.isnan(live._parse_ascii("\n".join(rows).replace("precipitation[0][0], 0.0,", "precipitation[0][0], -9999.9,"))[0, 0])
+
+
+def test_sat_lightning_rule_and_gate():
+    import numpy as np
+
+    from app.science import sat_lightning as sl
+
+    tb = np.full((20, 20), 290.0, np.float32)
+    tb[8:13, 8:13] = 205.0  # cold core
+    prev = tb.copy()
+    prev[8:13, 8:13] = 230.0  # 25 K colder in 20 min → cooling
+    sc = sl.score(tb, prev, 20.0)
+    assert sc["p"][10, 10] >= 0.6 + 0.25 - 1e-6
+    assert sc["p"][0, 0] == 0.0
+    # no previous data must not look like cooling
+    sc2 = sl.score(tb, np.full_like(tb, np.nan), 20.0)
+    assert np.isnan(sc2["cool"][10, 10])
+    assert sl._gate(0.9, 0.0, 5.0) < 0.3  # stable column suppressed below 'possible'
+    assert sl._gate(0.5, 1500.0, -3.0) > 0.5
+
+
+def test_grey_palette_ambiguity_reads_warm_in_clear_sky():
+    import numpy as np
+
+    from app.providers import gibs_ir
+
+    lut = gibs_ir._lut("ir_c")
+    warm = next(k for k, v in lut.items() if v is not None and k[0] == k[1] == k[2] and v + 273.15 > 285)
+    arr = np.zeros((9, 9, 4), np.uint8)
+    arr[...] = (*warm, 255)
+    arr[4, 4] = (102, 102, 102, 255)  # exact entry for 198.5 K in the cold grey band
+    tb = gibs_ir._tb_full(arr)
+    assert tb[4, 4] > 260  # re-read on the warm ramp, not a fake overshooting top

@@ -797,6 +797,13 @@ export function SquareMap({
                             <div key={s.v} className="flex-1" style={{ background: s.color }} title={String(s.v)} />
                           ))}
                         </div>
+                        <div className="flex justify-between text-[9px] text-neo-muted mt-0.5 font-mono">
+                          <span>{legendStops(wxLayer)[0]?.v}</span>
+                          <span>{legendStops(wxLayer)[legendStops(wxLayer).length - 1]?.v} {unitOf(wxLayer)}</span>
+                        </div>
+                        <div className="text-[9px] text-neo-muted mt-0.5">
+                          Valid {grid?.valid ? `${fmtIstShort(String(grid.valid).endsWith("Z") ? String(grid.valid) : `${grid.valid}Z`)} IST` : "—"} · India 1.5° inset over a coarse global field (Open-Meteo model)
+                        </div>
                       </div>
                     </div>
                   ) : wxLayer === "radar" || wxLayer === "satellite" ? (
@@ -1035,6 +1042,18 @@ export function SquareMap({
                           >
                             IMERG Rain
                           </button>
+                          <button
+                            type="button"
+                            title="Satellite-estimated lightning likelihood (cold cloud tops + cooling + CAPE). Not detected strikes."
+                            className={`text-xs px-3 py-1.5 rounded-xl font-black cursor-pointer transition-all border ${
+                              !extraOverlays.includes("sat_ltg_off")
+                                ? "bg-amber-500 text-white border-amber-400 shadow-sm"
+                                : "bg-[var(--card)] text-neo-text hover:text-amber-400"
+                            }`}
+                            onClick={() => toggleOverlay("sat_ltg_off")}
+                          >
+                            ⚡ Sat-estimated lightning
+                          </button>
                         </div>
                       </div>
 
@@ -1193,7 +1212,14 @@ function MapStatusStrip({ storm, loading, fetchedAt }: { storm: StormMapPack | n
           Himawari B13 check: {hc.confirmed}/{hc.n_cells} cells cold-topped{s.himawari_valid ? ` · ${fmtIstShort(s.himawari_valid)} IST` : ""}
         </div>
       ) : null}
-      {sensors.lightning_key_valid === false ? <div className="text-amber-300">Observed lightning off: Weatherbit key rejected (403)</div> : null}
+      {sensors.lightning_key_valid === false ? <div className="text-amber-300">Detected strikes off: Weatherbit key rejected (403)</div> : null}
+      {(s as { sat_lightning?: { ok?: boolean; cells?: unknown[]; valid?: string; confidence?: number | null } }).sat_lightning?.ok ? (
+        <div className="text-amber-200">
+          ⚡ Sat-estimated lightning (not strikes): {((s as any).sat_lightning.cells || []).length} areas
+          {(s as any).sat_lightning.valid ? ` · ${fmtIstShort((s as any).sat_lightning.valid)} IST` : ""}
+          {(s as any).sat_lightning.confidence != null ? ` · verified ${Math.round((s as any).sat_lightning.confidence * 100)}% vs IMERG` : ""}
+        </div>
+      ) : null}
       {fetchedAt ? <div className="text-slate-400">Updated {fmtIstShort(new Date(fetchedAt).toISOString())} IST</div> : null}
     </div>
   );

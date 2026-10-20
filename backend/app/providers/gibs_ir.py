@@ -250,7 +250,46 @@ def _tb_full(arr):
         ok, v = _decode_value(tuple(int(x) for x in u), "ir_c")
         if ok and v is not None:
             vals[i] = v + 273.15
-    return vals[inv.reshape(-1)].reshape(arr.shape[:2])
+    tb = vals[inv.reshape(-1)].reshape(arr.shape[:2])
+    return _fix_grey_ambiguity(arr, tb)
+
+
+def _fix_grey_ambiguity(arr, tb):
+    """The B13 palette uses pure greys twice: 181–203 K (coldest tops) and the warm 254–330 K
+    ramp. Rendered PNGs put e.g. (102,102,102) in warm clear sky, which decoded as 198.5 K —
+    fake 'overshooting tops' in the subtropics and false Himawari confirmations. A cold-grey
+    pixel whose 5×5 surroundings are warm (median > 235 K) is re-read on the warm ramp."""
+    import numpy as np
+
+    rgb = arr[..., :3].astype(np.int16)
+    grey = (rgb[..., 0] == rgb[..., 1]) & (rgb[..., 1] == rgb[..., 2])
+    amb = grey & (tb <= 203.0)
+    if not amb.any():
+        return tb
+    lut = _lut("ir_c")
+    warm = sorted((k[0], v + 273.15) for k, v in lut.items() if v is not None and k[0] == k[1] == k[2] and v + 273.15 > 250)
+    if len(warm) < 2:
+        return tb
+    gx = np.array([g for g, _ in warm], np.float32)
+    kx = np.array([k for _, k in warm], np.float32)
+    slope, icpt = np.polyfit(gx, kx, 1)  # linear grey→K on the warm ramp (extrapolates below 135)
+    base = tb.copy()
+    base[amb] = np.nan
+    H, W = tb.shape
+    ys, xs = np.where(amb)
+    out = tb.copy()
+    oy = np.arange(-2, 3)
+    wy = np.clip(ys[:, None, None] + oy[None, :, None], 0, H - 1)
+    wx = np.clip(xs[:, None, None] + oy[None, None, :], 0, W - 1)
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        med = np.nanmedian(base[wy, wx].reshape(len(ys), -1), axis=1)
+    flip = np.isfinite(med) & (med > 235.0)
+    g = rgb[ys[flip], xs[flip], 0].astype(np.float32)
+    out[ys[flip], xs[flip]] = slope * g + icpt
+    return out
 
 
 async def tb_frame() -> dict[str, Any]:

@@ -253,7 +253,8 @@ def _ledger_pin_warnings(loc: Location) -> list[EarlyWarning]:
                     href_kind="map",
                 )
             )
-        elif gate.get("ok") and row.get("p_cloudburst", 0) and float(row.get("p_cloudburst") or 0) >= 0.4:
+        elif dkm <= 600 and gate.get("ok") and float(row.get("p_cloudburst") or 0) >= 0.4:
+            # Regional (≤600 km), not every pin in India: a Puducherry cell is not news in Srinagar.
             out.append(
                 _ew(
                     id=f"ledger-nat-{row.get('event_id')}",
@@ -392,9 +393,14 @@ def assemble_warnings(
     for item in sachet_rows or []:
         raw = item.get("title") or "SACHET alert"
         body = item.get("body") or ""
+        area = str(item.get("area_desc") or "")
         local_ok = alert_belongs(item, loc)
         sev = imd.severity_from_title(raw + " " + body)
-        hint = imd.extract_region_hint(raw, body)
+        # The CAP file's own <severity> caps the keyword guess (a "Moderate" CAP is not extreme).
+        cap_sev = str(item.get("cap_severity") or "").lower()
+        if cap_sev in {"moderate", "minor"} and sev == "extreme":
+            sev = "warning"
+        hint = imd.extract_region_hint(raw, f"{body} {area}".strip())
         if not local_ok and not is_warning_or_worse(item) and not hint:
             continue
         if not is_live(item, kind=kind_from_text(raw, body)):
@@ -986,6 +992,10 @@ def assemble_warnings(
     for hit in scan_hits or []:
         st = str(hit.get("state") or "")
         kind = str(hit.get("kind") or "flood")
+        # Other-state capital-scan rows: keep fast-onset flood/cyclone (national interest);
+        # slow-onset ones (9 undated "drought advisory" rows at every pin) stay on the map.
+        if st and loc.state and st.lower() != loc.state.lower() and kind not in {"flood", "cyclone"}:
+            continue
         if st.lower() == (loc.state or "").lower() and kind in {w.kind for w in out if w.scope == "local"}:
             continue
         add(

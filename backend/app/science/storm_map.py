@@ -907,6 +907,7 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
         },
     }
     _attach_pn_net(pack, now)
+    _attach_sat_lightning(pack)
     pack["counts"]["predicted"] = len(pack["predicted"])
     pack["counts"]["predicted_storm"] = len(pack["predicted_storms"])
     pack["counts"]["predicted_unverified"] = len(pack["predicted_unverified"])
@@ -977,3 +978,37 @@ def _attach_pn_net(pack: dict[str, Any], now: datetime) -> None:
     summary["n_cells"] = len(added)
     pack["pn_net"] = summary
     pack.setdefault("predicted", []).extend(added)
+
+
+
+def _attach_sat_lightning(pack: dict[str, Any]) -> None:
+    """Satellite-ESTIMATED lightning likelihood (Himawari/GOES IR + CAPE/LI). Kept apart from
+    observed strikes: never counted as 'lightning' and always labelled as an estimate."""
+    try:
+        from app.science import sat_lightning
+    except Exception:  # noqa: BLE001
+        return
+    sl = sat_lightning.peek()
+    if not sl:
+        pack["sat_lightning"] = {"ok": False, "status": "warming", "cells": []}
+        return
+    val = (sl.get("validation") or {}).get("total") or {}
+    pack["sat_lightning"] = {
+        "ok": bool(sl.get("ok")),
+        "label": "Satellite-estimated lightning likelihood — not detected strikes",
+        "valid": sl.get("valid"),
+        "prev_frame": sl.get("prev_frame"),
+        "sources": sl.get("sources"),
+        "rule": sl.get("rule"),
+        "coverage_note": sl.get("coverage_note"),
+        "confidence": sl.get("confidence"),
+        "confidence_basis": (
+            f"{round(100 * sl['confidence'])}% of recent 'likely' boxes had IMERG rain ≥10 mm/h "
+            f"(lightning proxy) in the same hour; POD {val.get('likely', {}).get('pod')}."
+            if sl.get("confidence") is not None
+            else "Not yet validated against IMERG."
+        ),
+        "validation": val,
+        "cells": (sl.get("cells") or [])[:200],
+    }
+    pack.setdefault("counts", {})["sat_lightning_est"] = len(pack["sat_lightning"]["cells"])

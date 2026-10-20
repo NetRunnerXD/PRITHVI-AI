@@ -1001,6 +1001,41 @@ export function MapView({
           noWrap={true}
         />
       ) : null}
+      {!overlays.includes("sat_ltg_off")
+        ? (((storm as { sat_lightning?: { cells?: any[] } } | null)?.sat_lightning?.cells) || []).map((c: any, i: number) => {
+            const sl = (storm as any).sat_lightning || {};
+            const likely = c.category === "likely";
+            return (
+              <CircleMarker
+                key={`satltg-${i}-${c.lat}-${c.lon}`}
+                center={[c.lat, c.lon]}
+                radius={likely ? 7 : 5}
+                pathOptions={{ color: likely ? "#f59e0b" : "#fde047", weight: 2, dashArray: "3 3", fillColor: likely ? "#f59e0b" : "#fde047", fillOpacity: 0.25 }}
+              >
+                <Popup>
+                  <div className="space-y-1 text-xs text-slate-900 max-w-[240px]">
+                    <div className="font-bold text-amber-700">⚡ Satellite-estimated lightning likelihood</div>
+                    <div className="text-[10px] font-semibold text-red-700">Estimate from cloud-top temperature, not detected strikes.</div>
+                    <div>
+                      {likely ? "Likely" : "Possible"} · score {Math.round((c.score || 0) * 100)}/100
+                    </div>
+                    <div>
+                      Coldest top {c.min_tb_k} K{c.cool_k_10min != null ? ` · cooling ${c.cool_k_10min} K/10 min` : ""}
+                      {c.ot ? " · overshooting-top texture" : ""}
+                    </div>
+                    <div>
+                      CAPE {c.cape ?? "—"} J/kg · LI {c.li ?? "—"}
+                    </div>
+                    <div>IR frame {sl.valid ? `${fmtIst(sl.valid) || sl.valid} IST` : "—"}</div>
+                    <div className="text-[10px] text-slate-600">
+                      {sl.confidence != null ? `Confidence ${Math.round(sl.confidence * 100)}% — ${sl.confidence_basis}` : sl.confidence_basis}
+                    </div>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            );
+          })
+        : null}
       {storm?.state && storm.state !== "India" && storm.state !== "All India" ? (
         <StateBoundaryHighlight stateName={storm.state} />
       ) : (
