@@ -1179,7 +1179,9 @@ function SidebarFooter({ storm, loading, fetchedAt }: { storm: StormMapPack | nu
     .filter((k) => v[k] && v[k].verified + v[k].not_verified + v[k].pending > 0)
     .map((k) => {
       const r = v[k];
-      return `${label[k]}: ${r.verified} of ${r.verified + r.not_verified} verified${r.pending ? ` (${r.pending} pending)` : ""}`;
+      const checked = r.verified + r.not_verified;
+      if (!checked) return `${label[k]}: ${r.pending} pending`;
+      return `${label[k]}: ${r.verified} of ${checked} verified${r.pending ? ` (${r.pending} pending)` : ""}`;
     });
   return (
     <div className="shrink-0 border-t border-[var(--line)] px-3 py-1.5 text-[10px] leading-snug text-neo-muted space-y-0.5">
