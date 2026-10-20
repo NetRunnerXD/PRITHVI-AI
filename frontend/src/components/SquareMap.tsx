@@ -3,17 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
 import type { DashboardSnapshot, Location } from "@/types/dashboard";
-import { fetchRadarFrames, fetchStates, fetchWorldGrid, fetchStormMap, fetchWeatherGrid, reverseGeocode, type StormIncident, type StormMapPack } from "@/lib/api";
+import { fetchRadarFrames, fetchStates, fetchStormMap, fetchWeatherGrid, reverseGeocode, type StormIncident, type StormMapPack } from "@/lib/api";
 import { MapWrap } from "./MapWrap";
 import { StormFeed } from "./StormFeed";
 import { WX_LAYERS, legendStops, unitOf, type WeatherGrid, type WxLayer } from "@/lib/weatherScale";
 import { useApp } from "@/lib/store";
+import { fetchGfsGrid, gfsFieldsFor } from "@/lib/gfsGrid";
 import { visibleInterval } from "@/lib/visibility";
 
 let cachedStates: string[] = [];
 let cachedRadarPack: { host: string; radarPath: string | null; satPath: string | null } | null = null;
 const cachedGrids = new Map<number, WeatherGrid>();
-const cachedWorld = new Map<number, WeatherGrid>();
+const cachedWorld = new Map<string, WeatherGrid>();
 const cachedStormMaps = new Map<string, { pack: StormMapPack; ts: number }>();
 
 const BASES = ["dark", "streets", "satellite", "terrain"] as const;
@@ -148,23 +149,37 @@ export function SquareMap({
     }));
 
   const [grid, setGrid] = useState<WeatherGrid | null>(() => cachedGrids.get(hour) || null);
-  const [worldGrid, setWorldGrid] = useState<WeatherGrid | null>(() => cachedWorld.get(hour) || null);
+  const [worldGrid, setWorldGrid] = useState<WeatherGrid | null>(null);
+  const gfsKeys = gfsFieldsFor(wxLayer, particles).join(",");
   useEffect(() => {
-    if (cachedWorld.has(hour)) {
-      setWorldGrid(cachedWorld.get(hour)!);
+    // Worldwide NOAA GFS background, only the fields the current layer needs.
+    const keys = gfsKeys ? gfsKeys.split(",") : [];
+    const ck = `${hour}:${gfsKeys}`;
+    if (cachedWorld.has(ck)) {
+      setWorldGrid(cachedWorld.get(ck)!);
+      return;
+    }
+    if (!keys.length) {
+      setWorldGrid(null);
       return;
     }
     let dead = false;
-    void fetchWorldGrid(hour).then((g) => {
-      if (!dead && g) {
-        cachedWorld.set(hour, g as WeatherGrid);
-        setWorldGrid(g as WeatherGrid);
-      }
-    });
+    let tries = 0;
+    const load = () =>
+      void fetchGfsGrid(hour, keys).then((g) => {
+        if (dead) return;
+        if (g) {
+          cachedWorld.set(ck, g);
+          setWorldGrid(g);
+        } else if (tries++ < 6) {
+          setTimeout(load, 20_000); // server is still downloading the cycle
+        }
+      });
+    load();
     return () => {
       dead = true;
     };
-  }, [hour]);
+  }, [hour, gfsKeys]);
   const [radarHost, setRadarHost] = useState(() => cachedRadarPack?.host || "https://tilecache.rainviewer.com");
   const [radarPath, setRadarPath] = useState<string | null>(() => cachedRadarPack?.radarPath || null);
   const [satPath, setSatPath] = useState<string | null>(() => cachedRadarPack?.satPath || null);
@@ -473,29 +488,6 @@ export function SquareMap({
             </div>
           </div>
 
-          {/* Real-time Threat Counter Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto text-[10px] font-mono font-bold text-neo-muted py-0.5">
-            <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-xs flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 inline-block" />
-              <span>Ltn: {counts.lightning ?? 0}</span>
-            </span>
-            <span className="px-2 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 shadow-xs flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 inline-block" />
-              <span>Pred ⚡ {counts.predicted ?? 0}</span>
-            </span>
-            <span className="px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 shadow-xs flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-purple-500 inline-block" />
-              <span>Pred storm {counts.predicted_storm ?? 0}</span>
-            </span>
-            <span className="px-2 py-0.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 shadow-xs flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-rose-500 inline-block" />
-              <span>Fire: {counts.fire ?? storm?.fires?.length ?? 0}</span>
-            </span>
-            <span className="px-2 py-0.5 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 shadow-xs flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-teal-500 inline-block" />
-              <span>Slide: {counts.landslide ?? storm?.landslides?.length ?? 0}</span>
-            </span>
-          </div>
         </div>
 
         {/* Map Viewport */}
@@ -518,7 +510,6 @@ export function SquareMap({
             </div>
           ) : null}
           {box}
-          <MapStatusStrip storm={storm} loading={stormLoading} fetchedAt={stormFetchedAt} />
           <MapTimeline
             pastHours={pastHours}
             maxLeadMin={maxLeadMin}
@@ -527,7 +518,7 @@ export function SquareMap({
             onLead={(m) => setMapSession({ maxLeadMin: m })}
           />
           <div className="absolute bottom-8 left-2 z-[700] rounded-md bg-slate-950/80 text-[10px] text-slate-100 px-2 py-1.5 space-y-0.5 pointer-events-none">
-            {highlights.includes("lightning") ? <div>⚡ {t.hlLiveLightning}</div> : null}
+            {highlights.includes("lightning") ? <div>⚡ {t.hlLiveLightning} (detected / estimated)</div> : null}
             {highlights.includes("pred_lightning") ? <div>✦ {t.hlPredLightning}</div> : null}
             {highlights.includes("storm") ? <div>☁ {t.hlLiveStorm}</div> : null}
             {highlights.includes("pred_storm") ? <div>◆ {t.hlPredStorm}</div> : null}
@@ -802,7 +793,7 @@ export function SquareMap({
                           <span>{legendStops(wxLayer)[legendStops(wxLayer).length - 1]?.v} {unitOf(wxLayer)}</span>
                         </div>
                         <div className="text-[9px] text-neo-muted mt-0.5">
-                          Valid {grid?.valid ? `${fmtIstShort(String(grid.valid).endsWith("Z") ? String(grid.valid) : `${grid.valid}Z`)} IST` : "—"} · India 1.5° inset over a coarse global field (Open-Meteo model)
+                          Valid {grid?.valid ? `${fmtIstShort(String(grid.valid).endsWith("Z") ? String(grid.valid) : `${grid.valid}Z`)} IST` : "—"} · GFS world · Open-Meteo India
                         </div>
                       </div>
                     </div>
@@ -1042,18 +1033,6 @@ export function SquareMap({
                           >
                             IMERG Rain
                           </button>
-                          <button
-                            type="button"
-                            title="Satellite-estimated lightning likelihood (cold cloud tops + cooling + CAPE). Not detected strikes."
-                            className={`text-xs px-3 py-1.5 rounded-xl font-black cursor-pointer transition-all border ${
-                              !extraOverlays.includes("sat_ltg_off")
-                                ? "bg-amber-500 text-white border-amber-400 shadow-sm"
-                                : "bg-[var(--card)] text-neo-text hover:text-amber-400"
-                            }`}
-                            onClick={() => toggleOverlay("sat_ltg_off")}
-                          >
-                            ⚡ Sat-estimated lightning
-                          </button>
                         </div>
                       </div>
 
@@ -1163,6 +1142,7 @@ export function SquareMap({
               </div>
             )}
           </div>
+          <SidebarFooter storm={storm} loading={stormLoading} fetchedAt={stormFetchedAt} />
         </aside>
       )}
     </div>
@@ -1177,50 +1157,41 @@ const fmtIstShort = (iso?: string | null) => {
   return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
 };
 
-/** Data provenance + freshness on the map: which IR source, its valid time (IST), the
- * independent Himawari check, lightning-key status, and a loading indicator. */
-function MapStatusStrip({ storm, loading, fetchedAt }: { storm: StormMapPack | null; loading: boolean; fetchedAt: number | null }) {
+const fmtHm = (iso?: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+};
+
+/** One-line provenance at the bottom of the right sidebar, plus the 24 h verification hit rate. */
+function SidebarFooter({ storm, loading, fetchedAt }: { storm: StormMapPack | null; loading: boolean; fetchedAt: number | null }) {
   const s = (storm || {}) as StormMapPack & {
     cell_source?: string | null;
     ir_image_time?: string | null;
-    himawari_valid?: string | null;
-    himawari_check?: { n_cells: number; confirmed: number; not_confirmed: number };
-    sensors?: Record<string, unknown>;
+    verification_24h?: Record<string, { verified: number; not_verified: number; pending: number }>;
   };
-  const sensors = (s.sensors || {}) as Record<string, unknown>;
   const src =
-    s.cell_source === "insat-3ds-ir1"
-      ? "INSAT-3DS IR1"
-      : s.cell_source?.startsWith("himawari")
-        ? "Himawari-9 B13 (INSAT unavailable)"
-        : "no IR frame";
-  const hc = s.himawari_check;
-  const ageMin = s.ir_image_time ? Math.round((Date.now() - new Date(s.ir_image_time).getTime()) / 60000) : null;
-  const old = ageMin != null && ageMin > 90;
+    s.cell_source === "insat-3ds-ir1" ? "INSAT-3DS" : s.cell_source?.startsWith("himawari") ? "Himawari-9" : storm ? "unavailable" : "—";
+  const v = s.verification_24h || {};
+  const label: Record<string, string> = { storms: "Storms", lightning: "Lightning", cloudbursts: "Cloudbursts" };
+  const parts = Object.keys(label)
+    .filter((k) => v[k] && v[k].verified + v[k].not_verified + v[k].pending > 0)
+    .map((k) => {
+      const r = v[k];
+      return `${label[k]}: ${r.verified} of ${r.verified + r.not_verified} verified${r.pending ? ` (${r.pending} pending)` : ""}`;
+    });
   return (
-    <div className="absolute top-2 right-2 z-[690] max-w-[min(92%,340px)] rounded-lg bg-slate-950/80 text-slate-100 text-[10px] leading-snug px-2.5 py-1.5 space-y-0.5 pointer-events-none">
-      <div className="flex items-center gap-1.5 font-bold">
-        {loading ? <span className="h-2 w-2 rounded-full bg-sky-400 animate-ping" aria-label="loading" /> : <span className={`h-2 w-2 rounded-full ${old ? "bg-amber-400" : "bg-emerald-400"}`} />}
+    <div className="shrink-0 border-t border-[var(--line)] px-3 py-1.5 text-[10px] leading-snug text-neo-muted space-y-0.5">
+      {parts.length ? <div title="Last 24 h">24 h · {parts.join(" · ")}</div> : null}
+      <div className="flex items-center gap-1.5">
+        {loading ? <span className="h-1.5 w-1.5 rounded-full bg-sky-400 animate-ping" aria-label="loading" /> : null}
         <span>
-          Cells: {src}
-          {s.ir_image_time ? ` · ${fmtIstShort(s.ir_image_time)} IST` : ""}
-          {ageMin != null ? ` (${ageMin} min old)` : ""}
+          Satellite: {src}
+          {s.ir_image_time ? ` · ${fmtHm(s.ir_image_time)} IST` : ""}
+          {fetchedAt ? ` · Updated ${fmtHm(new Date(fetchedAt).toISOString())}` : ""}
         </span>
       </div>
-      {hc && hc.n_cells > 0 ? (
-        <div>
-          Himawari B13 check: {hc.confirmed}/{hc.n_cells} cells cold-topped{s.himawari_valid ? ` · ${fmtIstShort(s.himawari_valid)} IST` : ""}
-        </div>
-      ) : null}
-      {sensors.lightning_key_valid === false ? <div className="text-amber-300">Detected strikes off: Weatherbit key rejected (403)</div> : null}
-      {(s as { sat_lightning?: { ok?: boolean; cells?: unknown[]; valid?: string; confidence?: number | null } }).sat_lightning?.ok ? (
-        <div className="text-amber-200">
-          ⚡ Sat-estimated lightning (not strikes): {((s as any).sat_lightning.cells || []).length} areas
-          {(s as any).sat_lightning.valid ? ` · ${fmtIstShort((s as any).sat_lightning.valid)} IST` : ""}
-          {(s as any).sat_lightning.confidence != null ? ` · verified ${Math.round((s as any).sat_lightning.confidence * 100)}% vs IMERG` : ""}
-        </div>
-      ) : null}
-      {fetchedAt ? <div className="text-slate-400">Updated {fmtIstShort(new Date(fetchedAt).toISOString())} IST</div> : null}
     </div>
   );
 }

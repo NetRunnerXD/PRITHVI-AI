@@ -336,6 +336,7 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
             "closes_ms": thunder_predict._ms(closes),
             "engine": s.get("engine") or "weatherbit-lightning",
         }
+        row["detection"] = "detected" if row["engine"] in {"weatherbit-lightning", "lightning-feed"} else "estimated"
         strokes.append(row)
         incidents.append(
             _incident(
@@ -908,6 +909,13 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
     }
     _attach_pn_net(pack, now)
     _attach_sat_lightning(pack)
+    try:
+        from app.science import verify_items
+
+        verify_items.attach(pack, htb, now)
+    except Exception as e:  # never break the map on a verification error
+        pack["verification_24h"] = {}
+        pack["verification_error"] = type(e).__name__
     pack["counts"]["predicted"] = len(pack["predicted"])
     pack["counts"]["predicted_storm"] = len(pack["predicted_storms"])
     pack["counts"]["predicted_unverified"] = len(pack["predicted_unverified"])

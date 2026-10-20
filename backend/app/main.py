@@ -66,6 +66,11 @@ async def lifespan(_: FastAPI):
 
         if embedded_mode() != "off":
             ingest_task = asyncio.create_task(embedded_loop())
+        if role != "ingest":
+            # Warm the worldwide GFS background (loads the on-disk cycle, or downloads ~20 MB).
+            from app.providers import gfs
+
+            gfs.kick()
     try:
         yield
     finally:

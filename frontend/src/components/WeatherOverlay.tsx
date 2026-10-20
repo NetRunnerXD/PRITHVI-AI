@@ -16,8 +16,9 @@ function paint(grid: WeatherGrid, layer: WxLayer, key: string, dem: Dem | null):
   // real ground height with the standard lapse rate. Validated on 10 cities: MAE 2.97 → 1.4 °C
   // (Srinagar −1.3 → 4.1 vs 6.8 observed-analysis; Guwahati 12.6 → 21.3 vs 22.2).
   const lapse = key === "temp_c" && dem != null && Array.isArray(grid.fields.elev_m);
-  const w = 640;
-  const h = 680;
+  const world = grid.nx >= 300; // worldwide GFS background: wider canvas, same Mercator rows
+  const w = world ? 1440 : 640;
+  const h = world ? 720 : 680;
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
@@ -96,15 +97,23 @@ export function WeatherOverlay({
 
 export function WindParticles({
   grid,
+  fallback,
   on,
 }: {
   grid: WeatherGrid | null;
+  /** Worldwide grid used where `grid` (India inset) has no data. */
+  fallback?: WeatherGrid | null;
   on: boolean;
 }) {
   const map = useMap();
   useEffect(() => {
     if (!on || !grid) return;
-    const field = grid;
+    const primary = grid;
+    const world = fallback && fallback !== grid ? fallback : null;
+    const sampleAny = (lat: number, lon: number, k: string) => {
+      const v = sampleGrid(primary, lat, lon, k);
+      return v != null || !world ? v : sampleGrid(world, lat, lon, k);
+    };
     const canvas = document.createElement("canvas");
     const pane = map.getPanes().overlayPane;
     canvas.style.position = "absolute";
@@ -177,10 +186,10 @@ export function WindParticles({
 
       for (let i = 0; i < parts.length; i++) {
         const p = parts[i];
-        const u = sampleGrid(field, p.lat, p.lon, "wind_u");
-        const v = sampleGrid(field, p.lat, p.lon, "wind_v");
-        const spd = sampleGrid(field, p.lat, p.lon, "wind_kmh") ?? 0;
-        const dir = sampleGrid(field, p.lat, p.lon, "wind_dir_deg");
+        const u = sampleAny(p.lat, p.lon, "wind_u");
+        const v = sampleAny(p.lat, p.lon, "wind_v");
+        const spd = sampleAny(p.lat, p.lon, "wind_kmh") ?? 0;
+        const dir = sampleAny(p.lat, p.lon, "wind_dir_deg");
 
         let ue = u;
         let vn = v;
@@ -238,6 +247,6 @@ export function WindParticles({
       map.off("zoomend moveend resize", sizeCanvas);
       canvas.remove();
     };
-  }, [map, grid, on]);
+  }, [map, grid, fallback, on]);
   return null;
 }

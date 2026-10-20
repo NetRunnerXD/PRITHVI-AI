@@ -556,7 +556,7 @@ export async function fetchGibsLatest(): Promise<GibsLatest | null> {
   }
 }
 
-export type CycloneTrackPoint = { t?: string | null; lat: number; lon: number; cat?: string | null; forecast?: boolean };
+export type CycloneTrackPoint = { t?: string | null; lat: number; lon: number; cat?: string | null; wind_kt?: number | null; forecast?: boolean };
 export type CycloneSystem = {
   id: string;
   name: string;
@@ -564,6 +564,7 @@ export type CycloneSystem = {
   lon: number;
   basin?: string | null;
   peak_wind_kt?: number | null;
+  current_wind_kt?: number | null;
   current_category?: string | null;
   peak_category?: string | null;
   category_scale?: string;
@@ -582,7 +583,7 @@ let cycMemo: { at: number; v: CyclonePack } | null = null;
 export async function fetchCyclones(): Promise<CyclonePack | null> {
   if (cycMemo && Date.now() - cycMemo.at < 5 * 60_000) return cycMemo.v;
   try {
-    const r = await fetch(`${apiUrl("/cyclones")}?region=india`);
+    const r = await fetch(`${apiUrl("/cyclones")}?region=all`);
     if (!r.ok) return cycMemo?.v ?? null;
     const v = (await r.json()) as CyclonePack;
     cycMemo = { at: Date.now(), v };

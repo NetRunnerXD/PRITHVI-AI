@@ -432,11 +432,45 @@ const CELL_COLOR: Record<string, string> = {
   landslide: "#92400e",
 };
 
+type Verification = { status?: string; by?: string | null; value?: number | null; at?: string | null } | null | undefined;
+
+function bandLabel(band?: string | null, c?: number | null): string {
+  const b = String(band || "").toLowerCase();
+  if (b.startsWith("high")) return "High";
+  if (b.startsWith("med")) return "Medium";
+  if (b.startsWith("low")) return "Low";
+  if (c == null) return "—";
+  return c >= 0.62 ? "High" : c >= 0.38 ? "Medium" : "Low";
+}
+
+function vstat(x: unknown): string | null {
+  return ((x as { verification?: Verification } | null)?.verification?.status as string) || null;
+}
+
+/** "Verified · Himawari" / "Not verified" / "Pending" — no formulas. */
+function VBadge({ v }: { v?: Verification }) {
+  if (!v?.status) return null;
+  const map: Record<string, [string, string]> = {
+    verified: ["✓ Verified", "bg-emerald-100 text-emerald-800 border-emerald-300"],
+    not_verified: ["✕ Not verified", "bg-slate-200 text-slate-600 border-slate-300"],
+    pending: ["… Pending", "bg-amber-50 text-amber-800 border-amber-300"],
+  };
+  const [label, cls] = map[v.status] || map.pending;
+  return (
+    <span className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-bold ${cls}`}>
+      {label}
+      {v.status !== "pending" && v.by ? ` · ${v.by}` : ""}
+    </span>
+  );
+}
+
 function eventIcon(opts: {
   kind: string;
   phase?: string;
   selected?: boolean;
   count?: number;
+  verify?: string | null;
+  tag?: "detected" | "estimated" | null;
 }) {
   const kind = opts.kind || "storm";
   const phase = opts.phase || "live";
@@ -460,12 +494,17 @@ function eventIcon(opts: {
     ? `<span style="position:absolute;top:-4px;right:-4px;min-width:14px;height:14px;padding:0 3px;border-radius:9999px;background:#0f172a;color:#fff;font:700 9px/14px ui-sans-serif;border:1px solid ${color}">${opts.count > 99 ? "99+" : opts.count}</span>`
     : "";
   const bg = past ? "#334155" : "#0f172a";
+  const grey = opts.verify === "not_verified";
+  const tag = opts.tag
+    ? `<span style="position:absolute;left:50%;bottom:-9px;transform:translateX(-50%);padding:0 3px;border-radius:4px;background:${opts.tag === "detected" ? "#15803d" : "#475569"};color:#fff;font:700 7px/10px ui-sans-serif;white-space:nowrap">${opts.tag === "detected" ? "detected" : "estimated"}</span>`
+    : "";
+  const filt = grey ? "grayscale(1)" : opts.selected ? "drop-shadow(0 0 8px " + color + ")" : "none";
   return L.divIcon({
     className: "prithvi-event-icon",
-    html: `<div style="position:relative;width:${size}px;height:${size}px;filter:${opts.selected ? "drop-shadow(0 0 8px " + color + ")" : "none"}">
+    html: `<div style="position:relative;width:${size}px;height:${size}px;filter:${filt};opacity:${grey ? 0.45 : opts.verify === "pending" ? 0.8 : 1}">
       ${ring}
       <div style="position:absolute;inset:${live ? 5 : 3}px;border-radius:9999px;background:${bg};border:2px solid ${past ? "#94a3b8" : "#fff"};display:flex;align-items:center;justify-content:center;font-size:${past ? 11 : 13}px;box-shadow:0 0 10px ${color}99">${glyph}</div>
-      ${badge}
+      ${badge}${tag}
     </div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
@@ -873,7 +912,7 @@ export function MapView({
         <WeatherOverlay grid={worldGrid} layer={weatherLayer} opacity={opt.overlayOpacity * 0.85} />
       ) : null}
       {showField ? <WeatherOverlay grid={weatherGrid!} layer={weatherLayer!} opacity={opt.overlayOpacity} /> : null}
-      {particles && weatherGrid ? <WindParticles grid={weatherGrid} on /> : null}
+      {particles && (weatherGrid || worldGrid) ? <WindParticles grid={weatherGrid || worldGrid || null} fallback={worldGrid} on /> : null}
       {radarUrl ? (
         <TileLayer
           url={radarUrl}
@@ -914,9 +953,7 @@ export function MapView({
       ) : null}
       {showImerg ? (
         <div className="pointer-events-none absolute left-2 bottom-8 z-[1000] rounded-md bg-white/90 px-2 py-1 text-[10px] font-semibold text-slate-800 shadow">
-          {gibs?.imerg?.ok && gibs.imerg.time
-            ? `IMERG rain: ${gibs.imerg.time} (daily image, not live)`
-            : "IMERG rain: not yet available (shown as missing, not dry)"}
+          {gibs?.imerg?.ok && gibs.imerg.time ? `IMERG rain · ${gibs.imerg.time}` : "IMERG rain · not available yet"}
         </div>
       ) : null}
       {(cyc?.systems || []).map((c) => {
@@ -938,8 +975,8 @@ export function MapView({
               <CircleMarker key={`fc-${c.id}-${i}`} center={[p.lat, p.lon]} radius={3} pathOptions={{ color: "#dc2626", fillOpacity: 0.6 }}>
                 <Popup>
                   <div className="text-xs text-slate-900">
-                    <b>{c.name}</b> forecast {p.cat || ""}
-                    <div>{p.t ? `${fmtIst(p.t) || p.t} IST` : ""}</div>
+                    <b>{c.name}</b> · forecast{p.wind_kt != null ? ` · ${Math.round(p.wind_kt)} kt` : p.cat ? ` · ${p.cat}` : ""}
+                    {p.t ? ` · ${fmtIst(p.t) || p.t} IST` : ""}
                   </div>
                 </Popup>
               </CircleMarker>
@@ -949,30 +986,21 @@ export function MapView({
                 <Popup>
                   <div className="text-xs text-slate-900">
                     <b>PN-Blend 12 h position</b>
-                    <div>{c.pn_blend.valid ? `${fmtIst(c.pn_blend.valid) || c.pn_blend.valid} IST` : ""}</div>
-                    <div className="text-[10px] text-slate-600">{c.pn_blend.method}</div>
+                    {c.pn_blend.valid ? ` · ${fmtIst(c.pn_blend.valid) || c.pn_blend.valid} IST` : ""}
                   </div>
                 </Popup>
               </CircleMarker>
             ) : null}
             <CircleMarker center={[c.lat, c.lon]} radius={9} pathOptions={{ color: "#b91c1c", weight: 3, fillColor: "#ef4444", fillOpacity: 0.7 }}>
               <Popup>
-                <div className="space-y-1 text-xs text-slate-900">
+                <div className="space-y-0.5 text-xs text-slate-900">
                   <div className="text-sm font-bold text-red-700">🌀 {c.name}</div>
                   <div>
-                    Now: <b>{cat}</b> · peak {c.peak_category || "?"} ({c.category_scale})
-                    {c.peak_wind_kt != null ? ` · ${Math.round(c.peak_wind_kt)} kt` : ""}
+                    <b>{cat}</b>
+                    {c.current_wind_kt != null ? ` · ${Math.round(c.current_wind_kt)} kt` : ""}
+                    {c.advisory_time ? ` · ${fmtIst(c.advisory_time) || c.advisory_time} IST` : ""}
                   </div>
-                  <div>Advisory: {c.advisory_time ? `${fmtIst(c.advisory_time) || c.advisory_time} IST` : "—"} ({c.advisory_source || "GDACS"})</div>
-                  <div>
-                    Track: {c.observed_track.length} fixes · forecast {c.forecast_track.length} points
-                  </div>
-                  <div className="text-[10px] text-slate-600">{cyc?.note}</div>
-                  {c.links?.imd_rsmc ? (
-                    <a className="text-blue-700 underline" href={c.links.imd_rsmc} target="_blank" rel="noreferrer">
-                      IMD RSMC bulletins
-                    </a>
-                  ) : null}
+                  <div className="text-[10px] text-slate-600">{c.advisory_source || "GDACS"}</div>
                 </div>
               </Popup>
             </CircleMarker>
@@ -1001,10 +1029,12 @@ export function MapView({
           noWrap={true}
         />
       ) : null}
-      {!overlays.includes("sat_ltg_off")
+      {highlights.includes("lightning")
         ? (((storm as { sat_lightning?: { cells?: any[] } } | null)?.sat_lightning?.cells) || []).map((c: any, i: number) => {
             const sl = (storm as any).sat_lightning || {};
             const likely = c.category === "likely";
+            const sc = Number(c.score || 0);
+            const level = sc >= 0.7 ? "High" : sc >= 0.45 ? "Medium" : "Low";
             return (
               <CircleMarker
                 key={`satltg-${i}-${c.lat}-${c.lon}`}
@@ -1013,23 +1043,12 @@ export function MapView({
                 pathOptions={{ color: likely ? "#f59e0b" : "#fde047", weight: 2, dashArray: "3 3", fillColor: likely ? "#f59e0b" : "#fde047", fillOpacity: 0.25 }}
               >
                 <Popup>
-                  <div className="space-y-1 text-xs text-slate-900 max-w-[240px]">
-                    <div className="font-bold text-amber-700">⚡ Satellite-estimated lightning likelihood</div>
-                    <div className="text-[10px] font-semibold text-red-700">Estimate from cloud-top temperature, not detected strikes.</div>
-                    <div>
-                      {likely ? "Likely" : "Possible"} · score {Math.round((c.score || 0) * 100)}/100
+                  <div className="space-y-1 text-xs text-slate-900">
+                    <div className="font-bold text-amber-700">
+                      ⚡ Lightning {likely ? "likely" : "possible"} · {level}
+                      {sl.valid ? ` · ${fmtIstHm(sl.valid)} IST` : ""}
                     </div>
-                    <div>
-                      Coldest top {c.min_tb_k} K{c.cool_k_10min != null ? ` · cooling ${c.cool_k_10min} K/10 min` : ""}
-                      {c.ot ? " · overshooting-top texture" : ""}
-                    </div>
-                    <div>
-                      CAPE {c.cape ?? "—"} J/kg · LI {c.li ?? "—"}
-                    </div>
-                    <div>IR frame {sl.valid ? `${fmtIst(sl.valid) || sl.valid} IST` : "—"}</div>
-                    <div className="text-[10px] text-slate-600">
-                      {sl.confidence != null ? `Confidence ${Math.round(sl.confidence * 100)}% — ${sl.confidence_basis}` : sl.confidence_basis}
-                    </div>
+                    <span className="inline-block rounded bg-slate-600 px-1.5 py-0.5 text-[10px] font-bold text-white">estimated</span>
                   </div>
                 </Popup>
               </CircleMarker>
@@ -1101,7 +1120,7 @@ export function MapView({
             <Marker
               key={`past-ltn-${i}-${s.lat}-${s.lon}`}
               position={[s.lat, s.lon]}
-              icon={eventIcon({ kind: "lightning", phase: "past" })}
+              icon={eventIcon({ kind: "lightning", phase: "past", verify: vstat(s), tag: (s as { detection?: string }).detection === "detected" ? "detected" : "estimated" })}
               eventHandlers={{
                 click: () => {
                   if (onSelectIncident) {
@@ -1128,11 +1147,7 @@ export function MapView({
                   {eventAgeMs(s as unknown as Record<string, unknown>, now) != null ? (
                     <div className="text-[11px] text-amber-800 font-bold">{Math.round((eventAgeMs(s as unknown as Record<string, unknown>, now) || 0) / 60000)} min ago</div>
                   ) : null}
-                  {s.engine === "open-meteo-thunder" ? (
-                    <div className="text-[10px] text-slate-600">Model thunder (not GPS)</div>
-                  ) : s.engine ? (
-                    <div className="text-[10px] text-slate-600">{s.engine}</div>
-                  ) : null}
+                  <VBadge v={(s as { verification?: Verification }).verification} />
                   <button
                     type="button"
                     className="mt-2 w-full px-2 py-1 text-xs font-semibold rounded bg-sky-700 hover:bg-sky-600 text-white shadow-sm flex items-center justify-center gap-1 cursor-pointer"
@@ -1155,12 +1170,24 @@ export function MapView({
           ))
         : null}
       {highlights.includes("lightning")
-        ? liveByKind("lightning")
-            .map((s, i) => (
+        ? [
+            ...liveByKind("lightning"),
+            // Detected strokes from a lightning network in the last 20 min also count as live.
+            ...pastStrokes
+              .filter((x) => (x as { detection?: string }).detection === "detected" && (eventAgeMs(x as unknown as Record<string, unknown>, now) ?? 1e12) <= 20 * 60_000)
+              .map((x, k) => ({ ...(x as any), id: (x as any).id || `det-${k}-${x.lat}-${x.lon}`, phase: "live", place: x.place || "" })),
+          ]
+            .map((s: any, i: number) => (
               <Marker
                 key={`live-ltn-${s.id || i}`}
                 position={[s.lat, s.lon]}
-                icon={eventIcon({ kind: "lightning", phase: "live", selected: Boolean(selectedId && s.id === selectedId) })}
+                icon={eventIcon({
+                  kind: "lightning",
+                  phase: "live",
+                  selected: Boolean(selectedId && s.id === selectedId),
+                  verify: vstat(s),
+                  tag: s.detection === "detected" ? "detected" : "estimated",
+                })}
                 eventHandlers={{
                   click: () => {
                     if (onSelectIncident) {
@@ -1178,7 +1205,11 @@ export function MapView({
               >
                 <Popup>
                   <div className="text-xs space-y-1 text-slate-900">
-                    <div className="font-bold text-sm text-amber-700">{t.hlLiveLightning}</div>
+                    <div className="font-bold text-sm text-amber-700">
+                      ⚡ {t.hlLiveLightning} · {s.detection === "detected" ? "detected" : "estimated"}
+                      {fmtIstHm(s.occurred_ms ?? s.started_ms ?? s.occurred_at ?? s.started_at) ? ` · ${fmtIstHm(s.occurred_ms ?? s.started_ms ?? s.occurred_at ?? s.started_at)} IST` : ""}
+                    </div>
+                    <VBadge v={s.verification} />
                     <div className="font-bold text-slate-900">{s.place || `${s.lat.toFixed(3)}, ${s.lon.toFixed(3)}`}</div>
                     <div className="font-mono text-[11px] text-slate-700 font-semibold">{s.lat.toFixed(3)}, {s.lon.toFixed(3)}</div>
                     <button
@@ -1239,16 +1270,8 @@ export function MapView({
                   ) : null}
                   {s.confidence != null ? (
                     <div className="text-[11px] text-slate-800 font-medium">
-                      Confidence {(s.confidence * 100).toFixed(0)}% ({s.confidence_band || "—"})
-                      {(s as { confidence_basis?: string }).confidence_basis ? (
-                        <div className="text-[10px] text-slate-600 font-normal">{(s as { confidence_basis?: string }).confidence_basis}</div>
-                      ) : null}
+                      Confidence: {bandLabel(s.confidence_band, s.confidence)}
                     </div>
-                  ) : null}
-                  {s.p_lightning != null ? <div className="text-[11px] text-slate-800 font-medium">P(lightning) {(s.p_lightning * 100).toFixed(0)}%</div> : null}
-                  {s.engine === "open-meteo-thunder" ? <div className="text-[10px] text-slate-600">Model thunder (not GPS)</div> : null}
-                  {(s as { verify?: { note?: string } }).verify?.note ? (
-                    <div className="text-[10px] text-slate-600">{(s as { verify?: { note?: string } }).verify?.note}</div>
                   ) : null}
                   <button
                     type="button"
@@ -1307,10 +1330,7 @@ export function MapView({
                   ) : null}
                   {s.confidence != null ? (
                     <div className="text-[11px] text-slate-800 font-medium">
-                      Confidence {(s.confidence * 100).toFixed(0)}% ({s.confidence_band || "—"})
-                      {(s as { confidence_basis?: string }).confidence_basis ? (
-                        <div className="text-[10px] text-slate-600 font-normal">{(s as { confidence_basis?: string }).confidence_basis}</div>
-                      ) : null}
+                      Confidence: {bandLabel(s.confidence_band, s.confidence)}
                     </div>
                   ) : null}
                   <button
@@ -1340,6 +1360,7 @@ export function MapView({
             const popupContent = (
               <div className="text-xs space-y-1 text-slate-900">
                 <div className="font-bold text-sm text-slate-800">Past {(c.kind || "storm").toUpperCase()}</div>
+                <VBadge v={(c as { verification?: Verification }).verification} />
                 <div className="font-bold text-slate-900">{c.place || `${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`}</div>
                 <div className="font-mono text-[11px] text-slate-700 font-semibold">{c.lat.toFixed(3)}, {c.lon.toFixed(3)}</div>
                 {fmtIst(c.occurred_at || c.first_seen || c.started_at) ? (
@@ -1371,7 +1392,7 @@ export function MapView({
               <div key={c.id || `past-cell-grp-${i}`}>
                 <Marker
                   position={[c.lat, c.lon]}
-                  icon={eventIcon({ kind: c.kind || "storm", phase: "past" })}
+                  icon={eventIcon({ kind: c.kind || "storm", phase: "past", verify: vstat(c) })}
                   eventHandlers={{
                     click: () => {
                       if (onSelectIncident) {
@@ -1392,7 +1413,7 @@ export function MapView({
                 <ZoomCircle
                   center={[c.lat, c.lon]}
                   geoRadius={cellRadiusM(Number(c.area_km2 || 60))}
-                  pathOptions={{ color, fillColor: color, fillOpacity: 0.12, weight: 1.5, dashArray: "3 6" }}
+                  pathOptions={vstat(c) === "not_verified" ? { color: "#94a3b8", fillColor: "#94a3b8", fillOpacity: 0.08, weight: 1, dashArray: "3 6" } : { color, fillColor: color, fillOpacity: 0.12, weight: 1.5, dashArray: "3 6" }}
                 >
                   <Popup>{popupContent}</Popup>
                 </ZoomCircle>
@@ -1455,15 +1476,13 @@ export function MapView({
                     {predicted ? "◆ " : "☁ "}
                     {title}
                   </div>
+                  {!predicted ? <VBadge v={(p as { verification?: Verification }).verification} /> : null}
                   {p.place ? <div className="font-bold text-slate-900">{p.place}</div> : null}
                   <div className="font-mono text-[11px] text-slate-700 font-semibold">{centerLat.toFixed(3)}, {centerLon.toFixed(3)}</div>
                   {p.lead_min ? <div className="text-amber-800 font-bold">+{p.lead_min} min</div> : null}
                   {p.confidence != null ? (
                     <div className="text-[11px] text-slate-800 font-medium">
-                      Confidence {(p.confidence * 100).toFixed(0)}% ({p.confidence_band || "—"})
-                      {(p as { confidence_basis?: string }).confidence_basis ? (
-                        <div className="text-[10px] text-slate-600 font-normal">{(p as { confidence_basis?: string }).confidence_basis}</div>
-                      ) : null}
+                      Confidence: {bandLabel(p.confidence_band, p.confidence)}
                     </div>
                   ) : null}
                   <button
@@ -1500,7 +1519,8 @@ export function MapView({
           return arr.findIndex((x) => `${Number(x.lat).toFixed(3)}:${Number(x.lon).toFixed(3)}:${x.kind || "storm"}` === key) === i;
         })
         .map((c, i) => {
-          const color = CELL_COLOR[c.kind || "cloud"] || CELL_COLOR.cloud;
+          const grey = vstat(c) === "not_verified";
+          const color = grey ? "#94a3b8" : CELL_COLOR[c.kind || "cloud"] || CELL_COLOR.cloud;
           const selected = Boolean(selectedId && c.id === selectedId);
           return (
             <ZoomCircle
@@ -1514,6 +1534,7 @@ export function MapView({
                   <div className="font-bold text-sm" style={{ color }}>
                     {(c.kind || "cell").toUpperCase()}
                   </div>
+                  <VBadge v={(c as { verification?: Verification }).verification} />
                   <div className="font-bold text-slate-900">{c.place || `${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`}</div>
                   <div className="font-mono text-[11px] text-slate-700 font-semibold">{c.lat.toFixed(3)}, {c.lon.toFixed(3)}</div>
                   {c.rain_ir_mm_h != null ? <div className="text-[11px] text-sky-800 font-bold">{c.rain_ir_mm_h} mm/h IR</div> : null}
@@ -1635,6 +1656,7 @@ export function MapView({
               title: s.place,
               window_start: s.window_start,
               window_end: s.window_end,
+              verification: (s as any).verification,
               t: (s as any).t,
               timestamp_utc: (s as any).timestamp_utc,
               occurred_at: (s as any).occurred_at,
@@ -1650,7 +1672,7 @@ export function MapView({
               <Marker
                 key={`slide-${h.id || i}-${h.lat}-${h.lon}`}
                 position={[h.lat, h.lon]}
-                icon={eventIcon({ kind: "landslide", phase: h.phase || "live", selected: Boolean(selectedId && h.id === selectedId) })}
+                icon={eventIcon({ kind: "landslide", phase: h.phase || "live", selected: Boolean(selectedId && h.id === selectedId), verify: vstat(h) || "not_verified" })}
                 zIndexOffset={350}
                 eventHandlers={{
                   click: () => {
@@ -1668,6 +1690,7 @@ export function MapView({
                 <Popup>
                   <div className="text-xs space-y-1 text-slate-900">
                     <div className="font-bold text-sm text-amber-800">⛰ Landslide</div>
+                    <VBadge v={(h as { verification?: Verification }).verification || { status: "not_verified" }} />
                     <div className="font-bold text-slate-900">{h.place || h.title}</div>
                     <div className="font-mono text-[11px] text-slate-700 font-semibold">{h.lat.toFixed(3)}, {h.lon.toFixed(3)}</div>
                     {fmtIst((h as { occurred_at?: string }).occurred_at || h.window_start) ? (

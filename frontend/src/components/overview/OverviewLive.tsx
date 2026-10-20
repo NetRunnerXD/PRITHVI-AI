@@ -48,16 +48,22 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
       // Filter out negative non-threat bulletins
       if (w.hazard === "tsunami" && /no threat|does not exist|all clear|nil/.test(combined)) continue;
       if (w.hazard === "seismic" && /no damage|no threat|all clear/.test(combined)) continue;
-      if (!["extreme", "warning"].includes(w.severity)) continue;
+      if (!["extreme", "warning", "alert"].includes(w.severity)) continue;
+      // One list: only rows with a real end time that has not passed.
+      const endMs = Date.parse(String(w.window_end || w.expires_at || ""));
+      if (!Number.isFinite(endMs) || endMs < Date.now()) continue;
 
       // Normalize key for deduplication
       const normTitle = lowTitle.replace(/[^a-z0-9]/g, "");
       const normBody = lowBody.slice(0, 40).replace(/[^a-z0-9]/g, "");
       const key = `${w.hazard || "gen"}_${normTitle}_${normBody}`;
+      const area = String((w as { area_desc?: string }).area_desc || (w as { state?: string }).state || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const key2 = `${w.hazard || "gen"}_${area}_${String(w.window_end || w.expires_at || "").slice(0, 13)}`;
 
-      if (seen.has(key) || seen.has(normTitle)) continue;
+      if (seen.has(key) || seen.has(normTitle) || (area && seen.has(key2))) continue;
       seen.add(key);
       seen.add(normTitle);
+      if (area) seen.add(key2);
 
       // Clean up body so it doesn't just duplicate the title verbatim
       let cleanBody = (w.body || "").trim();
@@ -71,7 +77,8 @@ export function OverviewLive({ dash, locale, onNavigateData }: { dash: Dashboard
       });
     }
 
-    return out;
+    // Local rows first, then other active official alerts across India.
+    return out.sort((a, b) => Number(a.scope === "india") - Number(b.scope === "india"));
   })();
 
   const viewMode = useApp((s) => s.viewMode);

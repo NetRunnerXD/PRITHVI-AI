@@ -184,7 +184,7 @@ export function parseAlertLocation(w: any, currentLoc?: Location | null) {
   }
 
   // 7. Fallback to current dashboard location if completely blank
-  if (!city && !state && currentLoc) {
+  if (!city && !state && currentLoc && w.scope !== "india") {
     city = currentLoc.district || currentLoc.place_name || "Local Area";
     state = currentLoc.state || "India";
     if (lat == null) lat = currentLoc.lat;
@@ -394,13 +394,13 @@ export function groupAlertsByLocation(
     });
   });
 
-  // Extreme first -> Active location -> Closest distance
+  // Local first (pin, then other local-scope rows) -> then India; severity, then distance.
+  const isLocal = (c: AlertCluster) => c.isCurrentLoc || c.alerts.some((a: any) => a.scope !== "india");
   return clusters.sort((a, b) => {
+    if (a.isCurrentLoc !== b.isCurrentLoc) return a.isCurrentLoc ? -1 : 1;
+    if (isLocal(a) !== isLocal(b)) return isLocal(a) ? -1 : 1;
     if (a.isExtreme && !b.isExtreme) return -1;
     if (!a.isExtreme && b.isExtreme) return 1;
-
-    if (a.isCurrentLoc && !b.isCurrentLoc) return -1;
-    if (!a.isCurrentLoc && b.isCurrentLoc) return 1;
 
     const distA = a.distKm ?? 9999;
     const distB = b.distKm ?? 9999;
