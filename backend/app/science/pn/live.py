@@ -47,14 +47,13 @@ def stale_h() -> float:
 
 
 async def _granules(n: int = 24) -> list[dict[str, Any]]:
-    from app.providers.gpm_imerg import _headers
     from app.providers.http import client
 
     r = await client().get(
         CMR,
         params={"short_name": "GPM_3IMERGHHE", "version": "07", "page_size": n, "sort_key": "-start_date"},
-        headers={**_headers(), "Accept": "application/json"},
-        timeout=30.0,
+        headers={"Accept": "application/json"},  # CMR search is public; no token sent
+        timeout=60.0,
     )
     r.raise_for_status()
     out = []
@@ -70,10 +69,13 @@ async def _granules(n: int = 24) -> list[dict[str, Any]]:
 
 def _parse_ascii(text: str) -> np.ndarray | None:
     """Hyrax DAP2 ASCII for precipitation[0][lon][lat] → array [lat, lon] (south first)."""
+    import re
+
     rows: list[list[float]] = []
+    row_re = re.compile(r"^(?:\w+)?\[0\]\[\d+\],")  # "precipitation[0][j], v, v, ..."
     for line in text.splitlines():
         line = line.strip()
-        if not line.startswith("[0]["):
+        if not row_re.match(line):
             continue
         parts = line.split(",")
         try:
@@ -101,8 +103,10 @@ async def _frame(href: str) -> np.ndarray | None:
     if r.status_code >= 400:
         raise RuntimeError(f"opendap http_{r.status_code}")
     a = _parse_ascii(r.text)
-    if a is not None:
-        cache.set(key, a, 6 * 3600)
+    if a is None:
+        ct = r.headers.get("content-type", "")
+        raise RuntimeError(f"opendap unparsable ({ct[:40]}, {len(r.text)} chars)")
+    cache.set(key, a, 6 * 3600)
     return a
 
 

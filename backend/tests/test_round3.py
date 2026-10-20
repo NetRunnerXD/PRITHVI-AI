@@ -76,8 +76,8 @@ def test_pn_live_ascii_parser_orientation():
 
     from app.science.pn import live
 
-    rows = [f"[0][{j}], " + ", ".join(str(round(j * 1.0 + i / 1000, 4)) for i in range(live.H)) for j in range(live.W)]
-    a = live._parse_ascii("precipitation[1][348][320]\n" + "\n".join(rows))
+    rows = [f"precipitation[0][{j}], " + ", ".join(str(round(j * 1.0 + i / 1000, 4)) for i in range(live.H)) for j in range(live.W)]
+    a = live._parse_ascii("Dataset: x.HDF5\n" + "\n".join(rows))
     assert a is not None and a.shape == (live.H, live.W)
     assert abs(a[5, 7] - (7 + 5 / 1000)) < 1e-4  # [lat, lon], south row first
-    assert np.isnan(live._parse_ascii("\n".join(rows).replace("[0][0], 0.0,", "[0][0], -9999.9,"))[0, 0])
+    assert np.isnan(live._parse_ascii("\n".join(rows).replace("precipitation[0][0], 0.0,", "precipitation[0][0], -9999.9,"))[0, 0])

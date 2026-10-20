@@ -36,10 +36,16 @@ def status() -> dict[str, Any]:
         needs.append("PN_MODEL_PATH (ONNX from tools/pn_export_onnx.py)")
     if not static or not os.path.exists(static):
         needs.append("PN_STATIC_PATH (static .npy from the training bundle)")
-    if not (os.environ.get("NASA_EARTHDATA_USER") and os.environ.get("NASA_EARTHDATA_PASS")):
-        needs.append("NASA_EARTHDATA_USER / NASA_EARTHDATA_PASS (hourly IMERG Late input)")
-    if not (os.environ.get("MOSDAC_USER") and os.environ.get("MOSDAC_PASS")):
-        needs.append("MOSDAC_USER / MOSDAC_PASS + MOSDAC_ALLOW_L1B (INSAT L1C Tb input, optional)")
+    from app.config import get_settings
+    from app.providers.gpm_imerg import earthdata_token
+
+    s = get_settings()
+    if not earthdata_token():
+        needs.append("NASA_EARTHDATA_API (Earthdata bearer token for IMERG Early OPeNDAP)")
+    if not (getattr(s, "mosdac_user", None) and getattr(s, "mosdac_pass", None)):
+        needs.append("MOSDAC_USER / MOSDAC_PASS (INSAT L1C Tb input, optional)")
+    else:
+        needs.append("INSAT L1C Tb group not wired live yet (masked, as in training when missing)")
     return {"enabled": bool(net_enabled() and ort_ok and not any("PN_MODEL_PATH" in n for n in needs)), "flag": net_enabled(), "needs": needs}
 
 
