@@ -132,7 +132,30 @@ async def alerts(state: str | None = None) -> tuple[list[dict[str, Any]], str]:
             out.append(it)
     out = await enrich_cap(out)
     cache.set(key_all, out, 5 * 60)
+    if out:
+        _LAST["rows"] = out
     return out, "ok" if out else "empty"
+
+
+_LAST: dict[str, list[dict[str, Any]]] = {"rows": []}
+_WARM: dict[str, asyncio.Task] = {}
+
+
+async def alerts_fast(state: str | None = None, budget_s: float = 2.0) -> tuple[list[dict[str, Any]], str]:
+    """`alerts()` within a time budget. On a slow link the pinned state's feed + CAP files can
+    take longer than the dashboard budget; instead of returning nothing (which dropped every
+    India-wide alert for that pin), keep the fetch running in the background and serve the
+    last merged All-India rows (the per-pin locality filter runs downstream)."""
+    key = (state or "").lower().strip()
+    task = _WARM.get(key)
+    if task is None or task.done():
+        task = asyncio.ensure_future(alerts(state))
+        _WARM[key] = task
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), timeout=budget_s)
+    except asyncio.TimeoutError:
+        rows = _LAST["rows"] or cache.peek("sachet:in") or []
+        return list(rows), "partial" if rows else "timeout"
 
 
 _CAP_NS = "{urn:oasis:names:tc:emergency:cap:1.2}"

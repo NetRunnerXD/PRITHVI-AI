@@ -226,7 +226,7 @@ async def gather_observations(
         run_pair("waqi", waqi.nearest(loc.lat, loc.lon), None, timeout=2.5),
         run_pair("openweather-air", openweather_air.current(loc.lat, loc.lon), None, timeout=2.5),
         run("mosdac", mosdac.fetch_live(), {}, timeout=2.0),
-        run_pair("sachet", sachet.alerts(loc.state), [], timeout=2.0),
+        run_pair("sachet", sachet.alerts_fast(loc.state, budget_s=2.0), [], timeout=2.5),
         run_pair("imd-port", port_signal.hooghly(), {}, timeout=2.0),
         run("open-meteo-models", open_meteo.forecast_models(loc.lat, loc.lon), {}, timeout=3.0),
         run("nasa-power-clim", nasa_power.daily_years(loc.lat, loc.lon, 8), {}, timeout=2.5),
