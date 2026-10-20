@@ -253,26 +253,96 @@ def _ledger_pin_warnings(loc: Location) -> list[EarlyWarning]:
                     href_kind="map",
                 )
             )
-        elif dkm <= 600 and gate.get("ok") and float(row.get("p_cloudburst") or 0) >= 0.4:
-            # Regional (≤600 km), not every pin in India: a Puducherry cell is not news in Srinagar.
-            out.append(
-                _ew(
-                    id=f"ledger-nat-{row.get('event_id')}",
-                    severity="warning",
-                    title=f"Severe Convective Storm — {row.get('place') or 'India'}",
-                    body=(row.get("verify") or {}).get("note") or row.get("note") or "Deep convective system detected by satellite.",
-                    source="prithvi-ai-ledger",
-                    hazard="weather",
-                    kind=kind if kind != "cloud" else "thunderstorm",
-                    scope="india",
-                    lat=rlat,
-                    lon=rlon,
-                    distance_km=round(dkm, 1),
-                    window_start=row.get("started_at"),
-                    window_end=row.get("closes_at"),
-                    href_kind="map",
-                )
+    out.extend(_nowcast_india_warnings(rows, lat, lon))
+    return out
+
+
+_NC_LABEL = {
+    "cloudburst": "Cloudburst risk",
+    "downburst": "Downburst / squall",
+    "storm": "Thunderstorm",
+    "lightning": "Lightning",
+    "landslide": "Landslide watch",
+}
+_NC_RANK = {"cloudburst": 0, "downburst": 1, "storm": 2, "landslide": 3, "lightning": 4}
+
+
+def _nowcast_india_warnings(rows: list[dict[str, Any]], lat: float, lon: float, cap: int = 30) -> list[EarlyWarning]:
+    """PRITHVI nowcast events across India (beyond the pin's 80 km), one row per hazard + place,
+    with the event window (earliest start .. latest close). Only gated / live / NWP-backed
+    events, plus landslide watches from the latest India storm pack; ended ones are dropped."""
+    now = datetime.now(timezone.utc)
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def take(row: dict[str, Any], kind: str, start: Any, end: Any) -> None:
+        try:
+            rlat, rlon = float(row["lat"]), float(row["lon"])
+        except (KeyError, TypeError, ValueError):
+            return
+        if ((rlat - lat) ** 2 + (rlon - lon) ** 2) ** 0.5 * 111.3 <= 80:
+            return  # the pin's own events are the local rows above
+        e = _parse_dt(end)
+        if e is None:
+            return  # no end time -> never listed
+        if e.tzinfo is None:
+            e = e.replace(tzinfo=timezone.utc)
+        if e < now:
+            return
+        s0 = _parse_dt(start) or now
+        if s0.tzinfo is None:
+            s0 = s0.replace(tzinfo=timezone.utc)
+        place = str(row.get("place") or "").strip() or f"{rlat:.1f}, {rlon:.1f}"
+        g = groups.setdefault((kind, place.lower()), {"kind": kind, "place": place, "lat": rlat, "lon": rlon, "start": s0, "end": e, "n": 0, "live": False})
+        g["start"], g["end"] = min(g["start"], s0), max(g["end"], e)
+        g["n"] += 1
+        g["live"] = g["live"] or row.get("phase") == "live"
+
+    for row in rows:
+        kind = str(row.get("kind") or "")
+        if kind not in _NC_LABEL or kind == "landslide":
+            continue
+        phase = row.get("phase")
+        if phase not in {"live", "predicted"}:
+            continue
+        gate_ok = bool((row.get("gate") or {}).get("ok"))
+        if phase == "predicted" and not gate_ok and row.get("engine") != "open-meteo-thunder":
+            continue
+        take(row, kind, row.get("started_at"), row.get("closes_at"))
+    try:
+        from app import cache
+
+        for k in ("stormpack:india:6", "stormpack:india:12", "stormpack:india:3", "stormpack:india:1"):
+            pack = cache.peek(k)
+            if isinstance(pack, dict):
+                for sl in pack.get("landslides") or []:
+                    if sl.get("phase") == "live":
+                        take(sl, "landslide", sl.get("window_start"), sl.get("window_end"))
+                break
+    except Exception:
+        pass
+
+    ordered = sorted(groups.values(), key=lambda g: (not g["live"], _NC_RANK.get(g["kind"], 9), g["start"]))
+    out: list[EarlyWarning] = []
+    for g in ordered[:cap]:
+        state = g["place"].rsplit(",", 1)[-1].strip() if "," in g["place"] else ""
+        out.append(
+            _ew(
+                id=f"nc-{g['kind']}-{re.sub(r'[^a-z0-9]', '', g['place'].lower())[:40]}",
+                severity="warning",
+                title=f"{_NC_LABEL[g['kind']]} (PRITHVI nowcast) — {g['place']}",
+                body=f"{'Live' if g['live'] else 'Predicted'} · {g['n']} satellite/nowcast cell{'s' if g['n'] != 1 else ''}",
+                source="prithvi-nowcast",
+                hazard="weather",
+                kind={"storm": "thunderstorm", "downburst": "wind"}.get(g["kind"], g["kind"]),
+                scope="india",
+                states=[state] if state else [],
+                lat=g["lat"],
+                lon=g["lon"],
+                window_start=g["start"].isoformat(),
+                window_end=g["end"].isoformat(),
+                href_kind="map",
             )
+        )
     return out
 
 

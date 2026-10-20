@@ -357,7 +357,7 @@ export function SquareMap({
         onSelectIncident={pickIncident}
       />
     ),
-    [dash.location, rain, zoom, mapBasemap, dash.ogd?.nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, maxLeadMin, fitNonce, locale, wxLayer, grid, particles, radarHost, radarPath, satPath, hazardEvents, isVisible]
+    [dash.location, rain, zoom, mapBasemap, dash.ogd?.nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, maxLeadMin, fitNonce, locale, wxLayer, grid, worldGrid, particles, radarHost, radarPath, satPath, hazardEvents, isVisible]
   );
 
   function toggleOverlay(id: string) {
@@ -488,6 +488,29 @@ export function SquareMap({
             </div>
           </div>
 
+          {/* Event counts: own row under the controls, wraps instead of overlapping them */}
+          <div className="flex flex-wrap items-center gap-1 pt-1 mt-1 border-t border-[var(--line)] text-[10px] font-semibold" aria-label="Event counts">
+            {(
+              [
+                ["⚡", "Lightning", counts.lightning, "bg-amber-500"],
+                ["✦", "Pred. lightning", counts.predicted, "bg-indigo-500"],
+                ["◆", "Pred. storm", counts.predicted_storm, "bg-purple-500"],
+                ["🔥", "Fire", counts.fire ?? storm?.fires?.length, "bg-rose-500"],
+                ["⛰", "Landslide", counts.landslide ?? storm?.landslides?.length, "bg-teal-500"],
+              ] as [string, string, number | undefined, string][]
+            ).map(([icon, label, n, dot]) => (
+              <span
+                key={label}
+                className={`inline-flex items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--card)] px-2 py-0.5 text-neo-text whitespace-nowrap ${n ? "" : "opacity-50"}`}
+                title={`${label}: ${n ?? 0}`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+                <span aria-hidden>{icon}</span>
+                <span className="hidden md:inline text-neo-muted">{label}</span>
+                <span className="font-mono font-bold">{n ?? 0}</span>
+              </span>
+            ))}
+          </div>
         </div>
 
         {/* Map Viewport */}
@@ -518,7 +541,7 @@ export function SquareMap({
             onLead={(m) => setMapSession({ maxLeadMin: m })}
           />
           <div className="absolute bottom-8 left-2 z-[700] rounded-md bg-slate-950/80 text-[10px] text-slate-100 px-2 py-1.5 space-y-0.5 pointer-events-none">
-            {highlights.includes("lightning") ? <div>⚡ {t.hlLiveLightning} (detected / estimated)</div> : null}
+            {highlights.includes("lightning") ? <div>⚡ {t.hlLiveLightning}</div> : null}
             {highlights.includes("pred_lightning") ? <div>✦ {t.hlPredLightning}</div> : null}
             {highlights.includes("storm") ? <div>☁ {t.hlLiveStorm}</div> : null}
             {highlights.includes("pred_storm") ? <div>◆ {t.hlPredStorm}</div> : null}
@@ -530,6 +553,20 @@ export function SquareMap({
             {highlights.includes("downburst") ? <div>↘ {t.downburst}</div> : null}
             {highlights.includes("fire") ? <div>🔥 {t.hlFire}</div> : null}
             {highlights.includes("landslide") ? <div>⛰ {t.hlLandslide}</div> : null}
+            <div className="flex items-center gap-2 pt-1 mt-1 border-t border-white/15">
+              {(
+                [
+                  ["#16a34a", "Verified"],
+                  ["#dc2626", "Not verified"],
+                  ["#f59e0b", "Pending"],
+                ] as const
+              ).map(([c, l]) => (
+                <span key={l} className="inline-flex items-center gap-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ border: `2px solid ${c}` }} />
+                  {l}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>

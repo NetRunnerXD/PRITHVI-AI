@@ -432,6 +432,8 @@ const CELL_COLOR: Record<string, string> = {
   landslide: "#92400e",
 };
 
+export const VERIFY_COLOR: Record<string, string> = { verified: "#16a34a", not_verified: "#dc2626", pending: "#f59e0b" };
+
 type Verification = { status?: string; by?: string | null; value?: number | null; at?: string | null } | null | undefined;
 
 function bandLabel(band?: string | null, c?: number | null): string {
@@ -494,17 +496,19 @@ function eventIcon(opts: {
     ? `<span style="position:absolute;top:-4px;right:-4px;min-width:14px;height:14px;padding:0 3px;border-radius:9999px;background:#0f172a;color:#fff;font:700 9px/14px ui-sans-serif;border:1px solid ${color}">${opts.count > 99 ? "99+" : opts.count}</span>`
     : "";
   const bg = past ? "#334155" : "#0f172a";
-  const grey = opts.verify === "not_verified";
-  const tag = opts.tag
-    ? `<span style="position:absolute;left:50%;bottom:-9px;transform:translateX(-50%);padding:0 3px;border-radius:4px;background:${opts.tag === "detected" ? "#15803d" : "#475569"};color:#fff;font:700 7px/10px ui-sans-serif;white-space:nowrap">${opts.tag === "detected" ? "detected" : "estimated"}</span>`
+  // Verification ring (no text on the map): green verified, red not verified, amber pending.
+  const vc = opts.verify ? VERIFY_COLOR[opts.verify] : null;
+  const vring = vc
+    ? `<div style="position:absolute;inset:-3px;border-radius:9999px;border:2.5px solid ${vc};box-shadow:0 0 4px ${vc}aa"></div>`
     : "";
-  const filt = grey ? "grayscale(1)" : opts.selected ? "drop-shadow(0 0 8px " + color + ")" : "none";
+  const filt = opts.selected ? "drop-shadow(0 0 8px " + color + ")" : "none";
   return L.divIcon({
     className: "prithvi-event-icon",
-    html: `<div style="position:relative;width:${size}px;height:${size}px;filter:${filt};opacity:${grey ? 0.45 : opts.verify === "pending" ? 0.8 : 1}">
+    html: `<div style="position:relative;width:${size}px;height:${size}px;filter:${filt}">
+      ${vring}
       ${ring}
       <div style="position:absolute;inset:${live ? 5 : 3}px;border-radius:9999px;background:${bg};border:2px solid ${past ? "#94a3b8" : "#fff"};display:flex;align-items:center;justify-content:center;font-size:${past ? 11 : 13}px;box-shadow:0 0 10px ${color}99">${glyph}</div>
-      ${badge}${tag}
+      ${badge}
     </div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
@@ -909,9 +913,9 @@ export function MapView({
       />
       <ScaleControl imperial={false} position="bottomleft" />
       {weatherLayer && fieldKey(weatherLayer) && worldGrid ? (
-        <WeatherOverlay grid={worldGrid} layer={weatherLayer} opacity={opt.overlayOpacity * 0.85} />
+        <WeatherOverlay grid={worldGrid} layer={weatherLayer} opacity={opt.overlayOpacity} zIndex={340} mask={weatherGrid} />
       ) : null}
-      {showField ? <WeatherOverlay grid={weatherGrid!} layer={weatherLayer!} opacity={opt.overlayOpacity} /> : null}
+      {showField ? <WeatherOverlay grid={weatherGrid!} layer={weatherLayer!} opacity={opt.overlayOpacity} zIndex={355} /> : null}
       {particles && (weatherGrid || worldGrid) ? <WindParticles grid={weatherGrid || worldGrid || null} fallback={worldGrid} on /> : null}
       {radarUrl ? (
         <TileLayer
@@ -1046,9 +1050,8 @@ export function MapView({
                   <div className="space-y-1 text-xs text-slate-900">
                     <div className="font-bold text-amber-700">
                       ⚡ Lightning {likely ? "likely" : "possible"} · {level}
-                      {sl.valid ? ` · ${fmtIstHm(sl.valid)} IST` : ""}
+                      {sl.valid ? ` · ${fmtIstHm(sl.valid)} IST` : ""} · estimated
                     </div>
-                    <span className="inline-block rounded bg-slate-600 px-1.5 py-0.5 text-[10px] font-bold text-white">estimated</span>
                   </div>
                 </Popup>
               </CircleMarker>
@@ -1413,7 +1416,7 @@ export function MapView({
                 <ZoomCircle
                   center={[c.lat, c.lon]}
                   geoRadius={cellRadiusM(Number(c.area_km2 || 60))}
-                  pathOptions={vstat(c) === "not_verified" ? { color: "#94a3b8", fillColor: "#94a3b8", fillOpacity: 0.08, weight: 1, dashArray: "3 6" } : { color, fillColor: color, fillOpacity: 0.12, weight: 1.5, dashArray: "3 6" }}
+                  pathOptions={{ color: VERIFY_COLOR[vstat(c) || ""] || color, fillColor: color, fillOpacity: 0.12, weight: vstat(c) ? 2.5 : 1.5, dashArray: "3 6" }}
                 >
                   <Popup>{popupContent}</Popup>
                 </ZoomCircle>
@@ -1519,15 +1522,15 @@ export function MapView({
           return arr.findIndex((x) => `${Number(x.lat).toFixed(3)}:${Number(x.lon).toFixed(3)}:${x.kind || "storm"}` === key) === i;
         })
         .map((c, i) => {
-          const grey = vstat(c) === "not_verified";
-          const color = grey ? "#94a3b8" : CELL_COLOR[c.kind || "cloud"] || CELL_COLOR.cloud;
+          const color = CELL_COLOR[c.kind || "cloud"] || CELL_COLOR.cloud;
+          const ring = VERIFY_COLOR[vstat(c) || ""] || color;
           const selected = Boolean(selectedId && c.id === selectedId);
           return (
             <ZoomCircle
               key={c.id || `cell-${i}`}
               center={[c.lat, c.lon]}
               geoRadius={cellRadiusM(Number(c.area_km2 || 80))}
-              pathOptions={{ color, fillColor: color, fillOpacity: selected ? 0.4 : 0.22, weight: selected ? 3 : 2 }}
+              pathOptions={{ color: ring, fillColor: color, fillOpacity: selected ? 0.4 : 0.22, weight: selected ? 3.5 : 2.5 }}
             >
               <Popup>
                 <div className="text-xs space-y-1 text-slate-900">

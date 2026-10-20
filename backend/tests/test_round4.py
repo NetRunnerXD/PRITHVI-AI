@@ -102,3 +102,27 @@ def test_verify_live_badge_and_landslide(tmp_path, monkeypatch):
     pack3 = {"cell_source": "insat-3ds-ir1", "incidents": [{"kind": "storm", "phase": "live", "lat": 25.0, "lon": 80.0, "started_ms": int(now.timestamp() * 1000)}]}
     verify_items.attach(pack3, old, now)
     assert pack3["incidents"][0]["verification"]["status"] == "pending"
+
+
+def test_nowcast_india_alerts_grouped_windowed():
+    from datetime import datetime, timedelta, timezone
+
+    from app.services.alerts import _nowcast_india_warnings
+
+    now = datetime.now(timezone.utc)
+    iso = lambda m: (now + timedelta(minutes=m)).isoformat()
+    rows = [
+        {"kind": "lightning", "phase": "predicted", "gate": {"ok": True}, "lat": 13.08, "lon": 80.27, "place": "Chennai, Tamil Nadu", "started_at": iso(0), "closes_at": iso(30)},
+        {"kind": "lightning", "phase": "predicted", "gate": {"ok": True}, "lat": 13.1, "lon": 80.3, "place": "Chennai, Tamil Nadu", "started_at": iso(10), "closes_at": iso(60)},
+        {"kind": "storm", "phase": "predicted", "gate": {"ok": False}, "lat": 20, "lon": 85, "place": "Puri, Odisha", "started_at": iso(0), "closes_at": iso(30)},
+        {"kind": "cloudburst", "phase": "live", "lat": 30.7, "lon": 79.0, "place": "Chamoli, Uttarakhand", "started_at": iso(-10), "closes_at": iso(20)},
+        {"kind": "lightning", "phase": "predicted", "gate": {"ok": True}, "lat": 26.1, "lon": 91.7, "place": "Kamrup, Assam", "started_at": iso(-90), "closes_at": iso(-5)},
+        {"kind": "lightning", "phase": "predicted", "gate": {"ok": True}, "lat": 22.6, "lon": 88.4, "place": "Kolkata, West Bengal", "started_at": iso(0), "closes_at": None},
+    ]
+    out = _nowcast_india_warnings(rows, 28.6, 77.2)
+    titles = [w.title for w in out]
+    assert len(out) == 2  # ungated, expired and end-less rows dropped; Chennai merged
+    assert "Cloudburst" in titles[0]  # live first
+    ch = out[1]
+    assert ch.scope == "india" and ch.states == ["Tamil Nadu"] and ch.window_end == iso(60)[:0] + ch.window_end
+    assert ch.window_end > ch.window_start

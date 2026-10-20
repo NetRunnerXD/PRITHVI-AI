@@ -11,7 +11,7 @@ const invMercY = (m: number) => (360 / Math.PI) * Math.atan(Math.exp(m)) - 90;
 /** Rows are spaced evenly in *Web-Mercator* y, because Leaflet stretches an ImageOverlay
  * linearly in projected space. (Painting rows evenly in latitude shifted features by up to
  * ~1.5° at 30°N on the India grid, and by ~10° on the old world grid.) */
-function paint(grid: WeatherGrid, layer: WxLayer, key: string, dem: Dem | null): string {
+function paint(grid: WeatherGrid, layer: WxLayer, key: string, dem: Dem | null, mask: WeatherGrid | null = null): string {
   // Temperature: model nodes sit at their own (smoothed) height; correct each pixel to the
   // real ground height with the standard lapse rate. Validated on 10 cities: MAE 2.97 → 1.4 °C
   // (Srinagar −1.3 → 4.1 vs 6.8 observed-analysis; Guwahati 12.6 → 21.3 vs 22.2).
@@ -36,7 +36,9 @@ function paint(grid: WeatherGrid, layer: WxLayer, key: string, dem: Dem | null):
     const lat = invMercY(mN - ((mN - mS) * y) / (h - 1));
     for (let x = 0; x < w; x++) {
       const lon = west + ((east - west) * x) / (w - 1);
-      let v = sampleGrid(grid, lat, lon, key);
+      // Worldwide background leaves a hole wherever the India detail grid has data, so the
+      // two layers never stack (no darker box over India).
+      let v = mask && sampleGrid(mask, lat, lon, key) != null ? null : sampleGrid(grid, lat, lon, key);
       if (lapse && v != null) {
         const zn = sampleGrid(grid, lat, lon, "elev_m");
         const zp = demAt(dem!, lat, lon);
@@ -58,10 +60,16 @@ export function WeatherOverlay({
   grid,
   layer,
   opacity,
+  zIndex = 350,
+  mask = null,
 }: {
   grid: WeatherGrid | null;
   layer: WxLayer;
   opacity: number;
+  /** Worldwide background sits below the India detail regardless of mount order. */
+  zIndex?: number;
+  /** Detail grid drawn on top; this overlay is left transparent where it has data. */
+  mask?: WeatherGrid | null;
 }) {
   const key = fieldKey(layer);
   const [dem, setDem] = useState<Dem | null>(null);
@@ -76,7 +84,8 @@ export function WeatherOverlay({
     };
   }, [key, dem]);
   const useDem = key === "temp_c" ? dem : null;
-  const url = useMemo(() => (grid && key ? paint(grid, layer, key, useDem) : ""), [grid, layer, key, useDem]);
+  const m = mask && key && Array.isArray(mask.fields[key]) ? mask : null;
+  const url = useMemo(() => (grid && key ? paint(grid, layer, key, useDem, m) : ""), [grid, layer, key, useDem, m]);
   if (!grid || !key || !url) return null;
   const south = grid.lats[0];
   const north = grid.lats[grid.ny - 1];
@@ -90,7 +99,7 @@ export function WeatherOverlay({
         [north, east],
       ]}
       opacity={opacity}
-      zIndex={350}
+      zIndex={zIndex}
     />
   );
 }
