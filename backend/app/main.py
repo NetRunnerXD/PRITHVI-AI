@@ -49,7 +49,14 @@ async def lifespan(_: FastAPI):
 
             script = _P(__file__).resolve().parents[1] / "scripts" / "fetch_pn_models.py"
             if script.is_file():
-                await asyncio.to_thread(runpy.run_path, str(script), run_name="__main__")
+                # run_name must NOT be __main__ or SystemExit from the script aborts startup
+                def _fetch() -> None:
+                    ns = runpy.run_path(str(script), run_name="fetch_pn_models")
+                    fn = ns.get("main")
+                    if callable(fn):
+                        fn()
+
+                await asyncio.to_thread(_fetch)
         except Exception:
             pass
     task = None if skip_loop else asyncio.create_task(_snapshot_loop())
