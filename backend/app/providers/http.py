@@ -154,6 +154,21 @@ def client() -> httpx.AsyncClient:
     return _client
 
 
+async def read_body(url: str, *, timeout: float | httpx.Timeout = 20.0, headers: dict | None = None, params: dict | None = None, on_progress=None):
+    """GET a body. Calls on_progress(bytes_read, bytes_total | None) when Content-Length is known."""
+    async with client().stream("GET", url, timeout=timeout, headers=headers, params=params) as r:
+        raw = r.headers.get("content-length")
+        total = int(raw) if raw and str(raw).isdigit() else None
+        parts: list[bytes] = []
+        n = 0
+        async for chunk in r.aiter_bytes():
+            parts.append(chunk)
+            n += len(chunk)
+            if on_progress and total:
+                on_progress(n, total)
+        return r.status_code, {k.lower(): v for k, v in r.headers.items()}, b"".join(parts)
+
+
 async def aclose() -> None:
     global _client
     if _client is None:

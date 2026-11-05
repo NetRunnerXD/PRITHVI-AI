@@ -4,7 +4,8 @@ import type { ChatMsg, DashboardSnapshot, Density, Location, TabId, ThemeId, UiA
 import { resolveTab } from "@/types/dashboard";
 import type { Locale } from "@/i18n/copy";
 
-export type ReplyLocale = Locale | "auto";
+/** "auto", "en", "hinglish" or any scheduled-language code (as, bn, brx, … ur). */
+export type ReplyLocale = Locale | "auto" | (string & {});
 import { fetchDashboard,
   fetchDashboardCore,
   fetchDashboardEnrich, reverseGeocode } from "./api";
@@ -25,6 +26,8 @@ export type MapSessionState = {
   pastHours: number;
   minConfidence: number;
   maxLeadMin: number;
+  /** Last press on the map time strip: "now", "past:12", "lead:180". */
+  timePick: string;
   state: string;
   sidebarTab: "maps" | "events";
   sidebarCollapsed: boolean;
@@ -43,6 +46,7 @@ export const DEFAULT_MAP_SESSION: MapSessionState = {
   pastHours: 6,
   minConfidence: 0,
   maxLeadMin: 720,
+  timePick: "lead:720",
   state: "India",
   sidebarTab: "maps",
   sidebarCollapsed: false,
@@ -88,6 +92,8 @@ export type AppSettings = {
   showEvidence?: boolean;
   displayNullValues?: boolean;
   showAdvancedTabs?: boolean;
+  /** Weather-box tab. Off skips the Device section and its API calls. */
+  deviceEnabled?: boolean;
   devDisabledProviders?: string[];
 };
 
@@ -105,6 +111,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showEvidence: false,
   displayNullValues: false,
   showAdvancedTabs: false,
+  deviceEnabled: false,
   devDisabledProviders: ["nasa-power", "nasa-power-clim"],
 };
 
@@ -277,7 +284,7 @@ function newConversationId(): string {
   return `c-${Date.now()}`;
 }
 
-const TABS = new Set<TabId>(["home", "analytics", "data", "map", "model", "chat", "settings"]);
+const TABS = new Set<TabId>(["home", "analytics", "data", "map", "model", "chat", "device", "settings"]);
 
 let dashAbort: AbortController | null = null;
 
@@ -429,7 +436,10 @@ export const useApp = create<State>((set, get) => ({
     const keepAuto = get().outputLocale === "auto";
     set({ locale, outputLocale: keepAuto ? "auto" : locale, settings });
   },
-  setOutputLocale: (outputLocale) => set({ outputLocale }),
+  setOutputLocale: (outputLocale) => {
+    if (typeof window !== "undefined") window.localStorage.setItem("prithvi.replyLang", outputLocale);
+    set({ outputLocale });
+  },
   setTab: (tab) => set({ tab }),
   applySnapshot: (dashboard) => {
     writeCachedSnapshot(dashboard);

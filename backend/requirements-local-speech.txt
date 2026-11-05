@@ -1,0 +1,3 @@
+# Local-only speech (ESP32 / laptop demo). Do NOT install on Render Free.
+# pip install -r requirements-local-speech.txt
+faster-whisper>=1.1.0

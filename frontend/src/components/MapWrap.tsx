@@ -24,7 +24,6 @@ export function MapWrap(props: {
   tools?: StormMapTools;
   locale?: Locale;
   weatherLayer?: WxLayer | null;
-  weatherGrid?: WeatherGrid | null;
   worldGrid?: WeatherGrid | null;
   particles?: boolean;
   radarUrl?: string | null;

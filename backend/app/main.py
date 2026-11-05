@@ -44,6 +44,11 @@ async def lifespan(_: FastAPI):
     task = None if skip_loop else asyncio.create_task(_snapshot_loop())
     sms_task = None if not sms_should_start() or role == "ingest" else asyncio.create_task(sms_loop())
     prefetch_task = None
+    beacon_task = None
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        from app.services.device_link import beacon_loop
+
+        beacon_task = asyncio.create_task(beacon_loop())
     if (
         role != "ingest"
         and not os.environ.get("PYTEST_CURRENT_TEST")
@@ -76,7 +81,7 @@ async def lifespan(_: FastAPI):
     finally:
         # Bounded shutdown: an ingest cycle / prefetch can sit in a worker thread that cannot
         # be cancelled; waiting on it made `--reload` hang and the launcher then exit.
-        for t in (task, sms_task, ingest_task, prefetch_task):
+        for t in (task, sms_task, ingest_task, prefetch_task, beacon_task):
             if t is not None:
                 t.cancel()
                 try:

@@ -113,6 +113,35 @@ def test_cyclone_geometry_parse_splits_observed_and_forecast():
     assert out["forecast"][0]["t"] == "2026-10-20T00:00:00Z" and out["cone"]
 
 
+def _spans_world(a: float, b: float) -> bool:
+    return abs(a - b) > 180
+
+
+def test_cyclone_dateline_does_not_cross_the_map():
+    from app.providers.cyclones import cone_polygon, split_cone, split_latlon_track
+
+    pts = [(10.0, 170.0), (10.2, -170.0), (10.4, -160.0)]
+    parts = split_latlon_track(pts)
+    assert len(parts) >= 2
+    for part in parts:
+        for a, b in zip(part, part[1:]):
+            assert not _spans_world(a[1], b[1])
+    cone = cone_polygon([
+        {"h": 0, "lat": 10.0, "lon": 170.0},
+        {"h": 12, "lat": 10.2, "lon": -170.0},
+        {"h": 24, "lat": 10.4, "lon": -160.0},
+    ])
+    assert cone and cone["type"] == "MultiPolygon"
+    rings = [poly[0] for poly in cone["coordinates"]]
+    assert len(rings) >= 2
+    for ring in rings:
+        for a, b in zip(ring, ring[1:]):
+            assert not _spans_world(a[0], b[0])
+    # A cone already split stays a geometry Leaflet can draw.
+    again = split_cone(cone)
+    assert again["type"] in {"Polygon", "MultiPolygon"}
+
+
 def test_cv_motion_keyed_to_image_time(tmp_path, monkeypatch):
     from app.science import cv_nowcast
 

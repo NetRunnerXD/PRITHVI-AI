@@ -58,3 +58,19 @@ EXPO_PUBLIC_API_BASE=https://<your-service>.onrender.com
 ```
 
 Local `uvicorn` on the laptop is unchanged.
+
+
+## PN v7 weights (private)
+
+ONNX weights are **not** in the public git tree. On Render build, `scripts/fetch_pn_models.py` downloads
+them from private repo release tag `pn-models-v7` when:
+
+- `PN_ENABLED=1`
+- `PN_MODEL_DOWNLOAD_TOKEN` is set (fine-grained PAT: Contents read on `PRITHVI-AI-Archive` only)
+
+Without the token, the API still boots; PN degrades to persistence / disabled with honest status flags.
+
+## Speech
+
+TTS/STT and `faster-whisper` are **local demo / ESP32 only**. They are not installed on Render
+(`requirements-local-speech.txt`). Keep `LLM_FALLBACK=gemini,groq` for the web API.

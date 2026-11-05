@@ -5,7 +5,7 @@ from typing import Any
 
 from app.agents.binder import looks_like_dump
 from app.agents.facts import has_null_metrics, is_dash_soup
-from app.i18n.detect import has_script
+from app.i18n.detect import has_script, script_of
 from app.i18n.mt import inbound as mt_inbound, outbound as mt_outbound
 from app.i18n.mt import MTResult
 from app.i18n.number_lock import NUM
@@ -55,12 +55,16 @@ _LANG_NAME = {
     "sd": "Sindhi",
     "sa": "Sanskrit (Devanagari script)",
     "mai": "Maithili (Devanagari script)",
-    "kok": "Konkani",
-    "mni": "Manipuri",
+    "kok": "Konkani (Devanagari script)",
+    "mni": "Manipuri (Meetei Mayek script)",
     "brx": "Bodo (Devanagari script)",
     "doi": "Dogri (Devanagari script)",
-    "sat": "Santali",
-    "ks": "Kashmiri",
+    "sat": "Santali (Ol Chiki script)",
+    "ks": "Kashmiri (Perso-Arabic script)",
+    "hinglish": (
+        "Hinglish: everyday Hindi written in Latin (Roman) letters, the way people text in India, "
+        "e.g. 'Kal Kolkata mein halki barish ho sakti hai'. Do not use Devanagari"
+    ),
 }
 
 
@@ -104,8 +108,10 @@ async def _llm_translate(text: str, tgt: str) -> MTResult:
     if body.startswith("```"):
         body = re.sub(r"^```[a-zA-Z0-9_-]*\n?", "", body)
         body = re.sub(r"\n?```$", "", body).strip()
-    if not body or body == blob:
+    if not body or (body == blob and tgt != "hinglish"):
         return MTResult(text=text, src="en", tgt=tgt, engine="llm", ok=False)
+    if tgt == "hinglish" and script_of(body):
+        return MTResult(text=text, src="en", tgt=tgt, engine="llm-no-script", ok=False)
     if not has_script(body, tgt):
         return MTResult(text=text, src="en", tgt=tgt, engine="llm-no-script", ok=False)
     if not _mt_kept_numbers(blob, body):
@@ -122,11 +128,21 @@ async def _localize_validated(content_en: str, out_locale: str, *, native: bool 
     if native and has_script(content_en, out_locale):
         ident = MTResult(text=content_en, src=out_locale, tgt=out_locale, engine="gemini-native", ok=True)
         return content_en, ident, "gemini-native"
+    if out_locale == "hinglish":
+        # A chat model writes natural Hinglish; rule-based romanised Hindi is the fallback.
+        llm_first = await _llm_translate(content_en, out_locale)
+        if _usable_translation(content_en, llm_first, out_locale):
+            return llm_first.text, llm_first, f"llm-en+{llm_first.engine}"
     outbound = await mt_outbound(content_en, out_locale)
     if _usable_translation(content_en, outbound, out_locale):
         return outbound.text, outbound, f"llm-en+{outbound.engine}"
-    llm_out = await _llm_translate(content_en, out_locale)
-    if _usable_translation(content_en, llm_out, out_locale):
+    from app.i18n.mt import VIA
+
+    llm_tgt = VIA.get(out_locale, out_locale)
+    if out_locale == "hinglish":
+        return content_en, outbound, "en-fallback"
+    llm_out = await _llm_translate(content_en, llm_tgt)
+    if _usable_translation(content_en, llm_out, llm_tgt):
         return llm_out.text, llm_out, f"llm-en+{llm_out.engine}"
     return content_en, outbound or llm_out, "en-fallback"
 

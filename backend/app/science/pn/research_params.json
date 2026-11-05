@@ -1,5 +1,5 @@
 {
- "source": "NetRunnerXD/PRITHVI-AI-Research, branch severe-weather-nowcast (paper_journal/results_v4_gpu.json, paper_nowcast/results_rain_ts.json, paper_journal/results_bob06.json)",
+ "source": "NetRunnerXD/PRITHVI-AI-Research, branch severe-weather-nowcast (paper_journal/results_v4_gpu.json, paper_nowcast/results_rain_ts.json, paper_journal/results_bob06.json); v7: results_v7/frozen_v7.json + v7_results_test.json",
  "pn_net_v4": {
   "calibration": {
    "rain": {
@@ -134,7 +134,7 @@
  "skill": {
   "note": "Success ratio = 1 - FAR = share of issued forecasts that verified, from the research hold-out tests. Used as the displayed confidence (not a heuristic).",
   "pn_net_ltg_0p5": {
-   "source": "PN-Net v4 lightning head, test year 2026, 0.5\u00b0 (results_v4_gpu.json)",
+   "source": "PN-Net v4 lightning head, test year 2026, 0.5° (results_v4_gpu.json)",
    "by_lead_h": {
     "1": {
      "sr": 0.722,
@@ -199,7 +199,7 @@
    }
   },
   "pn_net_rain_0p5": {
-   "source": "PN-Net v4 rain head (>=1 mm/h), test year 2026, 0.5\u00b0",
+   "source": "PN-Net v4 rain head (>=1 mm/h), test year 2026, 0.5°",
    "by_lead_h": {
     "1": {
      "sr": 0.866,
@@ -464,5 +464,788 @@
    "pod": 0.506,
    "csi": 0.063
   }
+ },
+ "pn_nowcast_v7": {
+  "source": "PRITHVI-AI-Research severe-weather-nowcast: results_v7/frozen_v7.json (chosen_run r2, final blend), v7_results_test.json",
+  "test_period": "2026-09-01..2026-10-13 (1,010 samples, scored once)",
+  "verification_scale_deg": 0.5,
+  "event": "rain >= 1 mm/h",
+  "criteria": {
+   "C1": true,
+   "C2": true,
+   "C3": true,
+   "C4": false
+  },
+  "test_by_lead_h": {
+   "1": {
+    "final": {
+     "csi": 0.643,
+     "pod": 0.772,
+     "far": 0.207,
+     "fa": 124903
+    },
+    "final_facap": {
+     "csi": 0.643,
+     "pod": 0.772,
+     "far": 0.207,
+     "fa": 124903
+    },
+    "gfs": {
+     "csi": 0.229,
+     "pod": 0.286,
+     "far": 0.465,
+     "fa": 154709
+    },
+    "ifs": {
+     "csi": 0.262,
+     "pod": 0.344,
+     "far": 0.475,
+     "fa": 192956
+    },
+    "persistence": {
+     "csi": 0.598,
+     "pod": 0.749,
+     "far": 0.252,
+     "fa": 156267
+    }
+   },
+   "2": {
+    "final": {
+     "csi": 0.525,
+     "pod": 0.687,
+     "far": 0.311,
+     "fa": 191830
+    },
+    "final_facap": {
+     "csi": 0.512,
+     "pod": 0.63,
+     "far": 0.268,
+     "fa": 142865
+    },
+    "gfs": {
+     "csi": 0.228,
+     "pod": 0.285,
+     "far": 0.468,
+     "fa": 155432
+    },
+    "ifs": {
+     "csi": 0.262,
+     "pod": 0.344,
+     "far": 0.475,
+     "fa": 192954
+    },
+    "persistence": {
+     "csi": 0.446,
+     "pod": 0.617,
+     "far": 0.384,
+     "fa": 238115
+    }
+   },
+   "3": {
+    "final": {
+     "csi": 0.466,
+     "pod": 0.684,
+     "far": 0.407,
+     "fa": 290712
+    },
+    "final_facap": {
+     "csi": 0.433,
+     "pod": 0.532,
+     "far": 0.302,
+     "fa": 142571
+    },
+    "gfs": {
+     "csi": 0.227,
+     "pod": 0.284,
+     "far": 0.47,
+     "fa": 156302
+    },
+    "ifs": {
+     "csi": 0.262,
+     "pod": 0.344,
+     "far": 0.475,
+     "fa": 192919
+    },
+    "persistence": {
+     "csi": 0.362,
+     "pod": 0.532,
+     "far": 0.469,
+     "fa": 291205
+    }
+   },
+   "4": {
+    "final": {
+     "csi": 0.431,
+     "pod": 0.642,
+     "far": 0.432,
+     "fa": 302851
+    },
+    "final_facap": {
+     "csi": 0.388,
+     "pod": 0.478,
+     "far": 0.326,
+     "fa": 143513
+    },
+    "gfs": {
+     "csi": 0.226,
+     "pod": 0.283,
+     "far": 0.473,
+     "fa": 157216
+    },
+    "ifs": {
+     "csi": 0.262,
+     "pod": 0.344,
+     "far": 0.475,
+     "fa": 192875
+    },
+    "persistence": {
+     "csi": 0.309,
+     "pod": 0.472,
+     "far": 0.529,
+     "fa": 328262
+    }
+   },
+   "5": {
+    "final": {
+     "csi": 0.408,
+     "pod": 0.61,
+     "far": 0.447,
+     "fa": 306063
+    },
+    "final_facap": {
+     "csi": 0.356,
+     "pod": 0.437,
+     "far": 0.343,
+     "fa": 141434
+    },
+    "gfs": {
+     "csi": 0.224,
+     "pod": 0.282,
+     "far": 0.475,
+     "fa": 158065
+    },
+    "ifs": {
+     "csi": 0.262,
+     "pod": 0.344,
+     "far": 0.475,
+     "fa": 192845
+    },
+    "persistence": {
+     "csi": 0.271,
+     "pod": 0.427,
+     "far": 0.574,
+     "fa": 356148
+    }
+   },
+   "6": {
+    "final": {
+     "csi": 0.393,
+     "pod": 0.592,
+     "far": 0.46,
+     "fa": 312356
+    },
+    "final_facap": {
+     "csi": 0.334,
+     "pod": 0.41,
+     "far": 0.357,
+     "fa": 140820
+    },
+    "gfs": {
+     "csi": 0.223,
+     "pod": 0.281,
+     "far": 0.477,
+     "fa": 158771
+    },
+    "ifs": {
+     "csi": 0.261,
+     "pod": 0.342,
+     "far": 0.477,
+     "fa": 193567
+    },
+    "persistence": {
+     "csi": 0.245,
+     "pod": 0.394,
+     "far": 0.607,
+     "fa": 377097
+    }
+   },
+   "7": {
+    "final": {
+     "csi": 0.384,
+     "pod": 0.578,
+     "far": 0.467,
+     "fa": 314107
+    },
+    "final_facap": {
+     "csi": 0.319,
+     "pod": 0.39,
+     "far": 0.363,
+     "fa": 137637
+    },
+    "gfs": {
+     "csi": 0.223,
+     "pod": 0.28,
+     "far": 0.479,
+     "fa": 159425
+    },
+    "ifs": {
+     "csi": 0.26,
+     "pod": 0.341,
+     "far": 0.479,
+     "fa": 194286
+    },
+    "persistence": {
+     "csi": 0.227,
+     "pod": 0.37,
+     "far": 0.631,
+     "fa": 391732
+    }
+   },
+   "8": {
+    "final": {
+     "csi": 0.378,
+     "pod": 0.573,
+     "far": 0.473,
+     "fa": 318483
+    },
+    "final_facap": {
+     "csi": 0.312,
+     "pod": 0.382,
+     "far": 0.369,
+     "fa": 138207
+    },
+    "gfs": {
+     "csi": 0.222,
+     "pod": 0.279,
+     "far": 0.481,
+     "fa": 160184
+    },
+    "ifs": {
+     "csi": 0.259,
+     "pod": 0.34,
+     "far": 0.481,
+     "fa": 195049
+    },
+    "persistence": {
+     "csi": 0.214,
+     "pod": 0.353,
+     "far": 0.648,
+     "fa": 402261
+    }
+   },
+   "9": {
+    "final": {
+     "csi": 0.373,
+     "pod": 0.566,
+     "far": 0.478,
+     "fa": 321094
+    },
+    "final_facap": {
+     "csi": 0.306,
+     "pod": 0.374,
+     "far": 0.373,
+     "fa": 137973
+    },
+    "gfs": {
+     "csi": 0.221,
+     "pod": 0.278,
+     "far": 0.483,
+     "fa": 160925
+    },
+    "ifs": {
+     "csi": 0.258,
+     "pod": 0.339,
+     "far": 0.483,
+     "fa": 195723
+    },
+    "persistence": {
+     "csi": 0.204,
+     "pod": 0.34,
+     "far": 0.661,
+     "fa": 410468
+    }
+   },
+   "10": {
+    "final": {
+     "csi": 0.369,
+     "pod": 0.561,
+     "far": 0.481,
+     "fa": 321817
+    },
+    "final_facap": {
+     "csi": 0.3,
+     "pod": 0.366,
+     "far": 0.376,
+     "fa": 136200
+    },
+    "gfs": {
+     "csi": 0.219,
+     "pod": 0.277,
+     "far": 0.486,
+     "fa": 161721
+    },
+    "ifs": {
+     "csi": 0.256,
+     "pod": 0.338,
+     "far": 0.485,
+     "fa": 196459
+    },
+    "persistence": {
+     "csi": 0.198,
+     "pod": 0.331,
+     "far": 0.671,
+     "fa": 416416
+    }
+   },
+   "11": {
+    "final": {
+     "csi": 0.367,
+     "pod": 0.562,
+     "far": 0.487,
+     "fa": 329126
+    },
+    "final_facap": {
+     "csi": 0.297,
+     "pod": 0.364,
+     "far": 0.381,
+     "fa": 138781
+    },
+    "gfs": {
+     "csi": 0.218,
+     "pod": 0.276,
+     "far": 0.488,
+     "fa": 162522
+    },
+    "ifs": {
+     "csi": 0.255,
+     "pod": 0.336,
+     "far": 0.487,
+     "fa": 197189
+    },
+    "persistence": {
+     "csi": 0.193,
+     "pod": 0.325,
+     "far": 0.677,
+     "fa": 420295
+    }
+   },
+   "12": {
+    "final": {
+     "csi": 0.364,
+     "pod": 0.562,
+     "far": 0.492,
+     "fa": 336884
+    },
+    "final_facap": {
+     "csi": 0.294,
+     "pod": 0.361,
+     "far": 0.387,
+     "fa": 140632
+    },
+    "gfs": {
+     "csi": 0.217,
+     "pod": 0.275,
+     "far": 0.491,
+     "fa": 163350
+    },
+    "ifs": {
+     "csi": 0.254,
+     "pod": 0.336,
+     "far": 0.488,
+     "fa": 197565
+    },
+    "persistence": {
+     "csi": 0.19,
+     "pod": 0.32,
+     "far": 0.681,
+     "fa": 422949
+    }
+   }
+  },
+  "ops_blend": {
+   "0.1": {
+    "csi": [
+     0.4,
+     0.3,
+     0.25,
+     0.25,
+     0.25,
+     0.25,
+     0.25,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2
+    ],
+    "facap": [
+     0.4,
+     0.3,
+     0.25,
+     0.3,
+     0.3,
+     0.25,
+     0.25,
+     0.25,
+     0.25,
+     0.25,
+     0.25,
+     0.25
+    ]
+   },
+   "0.3": {
+    "csi": [
+     0.25,
+     0.2,
+     0.15,
+     0.15,
+     0.15,
+     0.15,
+     0.15,
+     0.15,
+     0.15,
+     0.15,
+     0.15,
+     0.15
+    ],
+    "facap": [
+     0.25,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2
+    ]
+   },
+   "0.5": {
+    "csi": [
+     0.2,
+     0.15,
+     0.1,
+     0.1,
+     0.1,
+     0.1,
+     0.1,
+     0.1,
+     0.1,
+     0.1,
+     0.1,
+     0.1
+    ],
+    "facap": [
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2,
+     0.2
+    ]
+   }
+  },
+  "norm_nenv": {
+   "nenv0": [
+    5.30579948425293,
+    2.4525973796844482
+   ],
+   "nenv1": [
+    -26.626323699951172,
+    61.437679290771484
+   ],
+   "nenv2": [
+    44.0152473449707,
+    20.49371337890625
+   ],
+   "nenv3": [
+    69.74136352539062,
+    21.85100555419922
+   ],
+   "nenv4": [
+    5.136947154998779,
+    6.274707794189453
+   ],
+   "nenv5": [
+    0.611399233341217,
+    3.551321268081665
+   ],
+   "nenv6": [
+    5.893840789794922,
+    2.467733383178711
+   ],
+   "nenv7": [
+    44.63761520385742,
+    20.650636672973633
+   ],
+   "nenv8": [
+    74.20674133300781,
+    20.27632713317871
+   ],
+   "nenv9": [
+    5.5207109451293945,
+    6.2673420906066895
+   ],
+   "nenv10": [
+    0.5403121113777161,
+    3.4876708984375
+   ],
+   "nenv11": [
+    -0.15872380137443542,
+    3.929924249649048
+   ]
+  },
+  "latency_rule": {
+   "gfs_min_age_h": 6,
+   "ifs_min_age_h": 8
+  },
+  "note": "Operating point = max CSI on tune-B (OPcsi), as in the headline test table."
+ },
+ "pn_correct_v6": {
+  "source": "PRITHVI-AI-Research export_v7_app/pn_correct (pn_correct_params.json) + nwpc_v6/results_v6.json (test = Sep 2026)",
+  "model": "PN-Correct v6 (UNet base 32, 1,937,542 params)",
+  "target": "P(IMERG-Late rain >= 1 mm/h anywhere within 25 km) in hour [T+L-1, T+L)",
+  "leads_h": [
+   6,
+   9,
+   12
+  ],
+  "channels": [
+   "gfs_r6",
+   "gfs_r9",
+   "gfs_r12",
+   "gfs_cape",
+   "gfs_ncin",
+   "gfs_pwat",
+   "gfs_rh850",
+   "gfs_u850",
+   "gfs_v850",
+   "gfs_conv",
+   "gfs_ok",
+   "ifs_r6",
+   "ifs_r9",
+   "ifs_r12",
+   "ifs_cape",
+   "ifs_tcwv",
+   "ifs_r850",
+   "ifs_u850",
+   "ifs_v850",
+   "ifs_conv",
+   "ifs_shear",
+   "ifs_ok",
+   "obs_r1",
+   "obs_r2",
+   "obs_r3",
+   "tir_mean",
+   "tir_min",
+   "tir_cool",
+   "sat_id",
+   "sat_ok",
+   "lat",
+   "lon",
+   "hsin",
+   "hcos"
+  ],
+  "lohi": [
+   [
+    0.0,
+    3.4339871406555176
+   ],
+   [
+    0.0,
+    3.4339871406555176
+   ],
+   [
+    0.0,
+    3.4339871406555176
+   ],
+   [
+    0.0,
+    8.699681282043457
+   ],
+   [
+    0.0,
+    6.216606140136719
+   ],
+   [
+    0.0,
+    80.0
+   ],
+   [
+    0.0,
+    100.0
+   ],
+   [
+    -30.0,
+    30.0
+   ],
+   [
+    -30.0,
+    30.0
+   ],
+   [
+    -10.0,
+    10.0
+   ],
+   [
+    0.0,
+    1.0
+   ],
+   [
+    0.0,
+    3.4339871406555176
+   ],
+   [
+    0.0,
+    3.4339871406555176
+   ],
+   [
+    0.0,
+    3.4339871406555176
+   ],
+   [
+    0.0,
+    8.699681282043457
+   ],
+   [
+    0.0,
+    80.0
+   ],
+   [
+    0.0,
+    100.0
+   ],
+   [
+    -30.0,
+    30.0
+   ],
+   [
+    -30.0,
+    30.0
+   ],
+   [
+    -10.0,
+    10.0
+   ],
+   [
+    0.0,
+    50.0
+   ],
+   [
+    0.0,
+    1.0
+   ],
+   [
+    0.0,
+    3.931825637817383
+   ],
+   [
+    0.0,
+    3.931825637817383
+   ],
+   [
+    0.0,
+    3.931825637817383
+   ],
+   [
+    180.0,
+    310.0
+   ],
+   [
+    180.0,
+    310.0
+   ],
+   [
+    -20.0,
+    20.0
+   ],
+   [
+    0.0,
+    1.0
+   ],
+   [
+    0.0,
+    1.0
+   ],
+   [
+    5.0,
+    38.0
+   ],
+   [
+    65.0,
+    100.0
+   ],
+   [
+    -1.0,
+    1.0
+   ],
+   [
+    -1.0,
+    1.0
+   ]
+  ],
+  "missing_flag_channels": [
+   0,
+   11,
+   22,
+   25,
+   27
+  ],
+  "temperatures": [
+   1.0000000000000004,
+   1.0500000000000005,
+   1.0500000000000005
+  ],
+  "cut": {
+   "6": 0.3,
+   "9": 0.28,
+   "12": 0.26
+  },
+  "grid": {
+   "nlat": 133,
+   "nlon": 141,
+   "lat_first": 38.0,
+   "lat_step": -0.25,
+   "lon_first": 65.0,
+   "lon_step": 0.25,
+   "note": "row 0 = 38N (north), col 0 = 65E"
+  },
+  "latency": {
+   "gfs": "newest 6-hourly init <= T-6 h",
+   "ifs": "newest 00/12 init <= T-8 h"
+  },
+  "test_0p25": {
+   "6": {
+    "csi": 0.385,
+    "pod": 0.621,
+    "far": 0.497,
+    "gfs_csi": 0.275,
+    "ifs_csi": 0.308
+   },
+   "9": {
+    "csi": 0.373,
+    "pod": 0.634,
+    "far": 0.525,
+    "gfs_csi": 0.271,
+    "ifs_csi": 0.304
+   },
+   "12": {
+    "csi": 0.367,
+    "pod": 0.635,
+    "far": 0.534,
+    "gfs_csi": 0.268,
+    "ifs_csi": 0.3
+   }
+  },
+  "note": "Separate 'rain within 25 km' layer; never replaces the v7 field. Birth head not issued."
  }
 }

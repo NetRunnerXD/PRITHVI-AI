@@ -53,9 +53,14 @@ def _load() -> dict[str, dict[str, Any]]:
     return _LOG
 
 
-def _save() -> None:
+def _save(now: datetime | None = None) -> None:
     lg = _load()
-    cut = (datetime.now(UTC) - timedelta(hours=36)).isoformat()
+    # Prune relative to the cycle clock (or wall clock). Using only wall clock would
+    # drop fixtures / replay packs whose event times are days behind deploy time.
+    ref = now if now is not None else datetime.now(UTC)
+    if ref.tzinfo is None:
+        ref = ref.replace(tzinfo=UTC)
+    cut = (ref - timedelta(hours=36)).isoformat()
     for k in [k for k, v in lg.items() if str(v.get("t") or "") < cut]:
         lg.pop(k, None)
     try:
@@ -184,7 +189,7 @@ def attach(pack: dict[str, Any], htb: dict[str, Any] | None, now: datetime) -> N
     for k, v in lg.items():
         if k not in have and v.get("by") != "IMERG" and v.get("kind") != "landslide" and str(v.get("t") or "") >= cut:
             todo.append({"key": k, "kind": v["kind"], "t": v["t"], "lat": v["lat"], "lon": v["lon"]})
-    _save()
+    _save(now)
     pack["verification_24h"] = stats_24h(now)
     pack["verification_rule"] = {"live": f"Himawari B13 <= {TB_COLD_K:.0f} K", "past": "IMERG rain", "imerg_mm_h": IMERG_MM_H}
     if todo:

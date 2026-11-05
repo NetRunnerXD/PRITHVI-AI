@@ -6,6 +6,8 @@ import type { WeatherGrid, WxLayer } from "./weatherScale";
 type Quant = { min: number; max: number; transform: "lin" | "log1p" };
 type Meta = {
   ok: boolean;
+  status?: string;
+  error?: string | null;
   cycle?: string;
   step?: number;
   valid?: string;
@@ -13,6 +15,8 @@ type Meta = {
   quant?: Record<string, Quant>;
   fields?: string[];
 };
+
+export type GfsLoad = { grid: WeatherGrid | null; status: string };
 
 const fieldCache = new Map<string, Float32Array>();
 let metaCache: { hour: number; at: number; meta: Meta } | null = null;
@@ -71,10 +75,12 @@ async function decode(url: string, nx: number, ny: number, q: Quant): Promise<Fl
   return out;
 }
 
-export async function fetchGfsGrid(hour: number, keys: string[]): Promise<WeatherGrid | null> {
-  if (!keys.length) return null;
+export async function fetchGfsGrid(hour: number, keys: string[]): Promise<GfsLoad> {
+  if (!keys.length) return { grid: null, status: "" };
   const m = await getMeta(hour);
-  if (!m?.ok || !m.grid || !m.quant || m.step == null) return null;
+  if (!m?.ok || !m.grid || !m.quant || m.step == null) {
+    return { grid: null, status: m?.status || m?.error || "loading" };
+  }
   const { nx, ny, south, west, dlat, dlon } = m.grid;
   const fields: Record<string, (number | null)[]> = {};
   await Promise.all(
@@ -99,15 +105,18 @@ export async function fetchGfsGrid(hour: number, keys: string[]): Promise<Weathe
     fields.wind_kmh = u.map((uu, i) => Math.hypot(uu, v[i]) * 3.6);
     fields.wind_dir_deg = u.map((uu, i) => ((Math.atan2(-uu, -v[i]) * 180) / Math.PI + 360) % 360);
   }
-  if (!Object.keys(fields).length) return null;
+  if (!Object.keys(fields).length) return { grid: null, status: m.status || "empty" };
   return {
-    nx,
-    ny,
-    lats: Array.from({ length: ny }, (_, i) => south + i * dlat),
-    lons: Array.from({ length: nx }, (_, j) => west + j * dlon),
-    hour,
-    valid: m.valid,
-    source: "NOAA GFS",
-    fields,
+    grid: {
+      nx,
+      ny,
+      lats: Array.from({ length: ny }, (_, i) => south + i * dlat),
+      lons: Array.from({ length: nx }, (_, j) => west + j * dlon),
+      hour,
+      valid: m.valid,
+      source: "NOAA GFS",
+      fields,
+    },
+    status: "ok",
   };
 }

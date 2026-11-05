@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ReplyLangSelect } from "./ReplyLangSelect";
 import { COPY, type Locale } from "@/i18n/copy";
 import { apiUrl, SHOW_DEV } from "@/lib/config";
 import { gpsFix, patchAlertLocation, patchProfile } from "@/lib/auth";
@@ -404,13 +405,12 @@ export function SettingsPanel() {
           {t.showEvidence}
         </label>
         <p className="text-xs text-neo-muted">{t.replyIn}</p>
-        <div className="flex gap-2">
-          {(["en", "hi", "bn", "auto"] as const).map((l) => (
-            <button key={l} className={`neo-btn flex-1 ${outputLocale === l ? "neo-btn-on" : ""}`} onClick={() => setOutputLocale(l)}>
-              {l === "auto" ? t.replyAuto : l.toUpperCase()}
-            </button>
-          ))}
-        </div>
+        <ReplyLangSelect
+          value={outputLocale}
+          onChange={setOutputLocale}
+          autoLabel={t.replyAuto}
+          className="neo-in w-full px-3 py-2 text-sm"
+        />
         <label className="block text-sm">
           {t.units}
           <select className="neo-in mt-1 w-full px-3 py-2" value={settings.units} onChange={(e) => setSettings({ units: e.target.value as UnitSys })}>
@@ -487,6 +487,15 @@ export function SettingsPanel() {
             ? "সাইডবারে মডেল, উপাত্ত ও বিশ্লেষণ ট্যাব দৃশ্যমান বা লুকান।"
             : "Display or hide deep-dive Analytics, Raw Data, and ML Model tabs in the sidebar."}
         </p>
+        <label className="flex items-center gap-2 text-sm pt-1">
+          <input
+            type="checkbox"
+            checked={Boolean(settings.deviceEnabled)}
+            onChange={(e) => setSettings({ deviceEnabled: e.target.checked })}
+          />
+          {t.deviceSection}
+        </label>
+        <p className="text-xs text-neo-muted">{t.deviceSectionHint}</p>
       </section>
 
 

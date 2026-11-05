@@ -50,6 +50,188 @@ def _in(box: dict[str, float], lat: float, lon: float) -> bool:
     return box["south"] <= lat <= box["north"] and box["west"] <= lon <= box["east"]
 
 
+def norm_lon(lon: float) -> float:
+    """Longitude in (-180, 180]. The antimeridian is stored as +180."""
+    x = (float(lon) + 180.0) % 360.0 - 180.0
+    if x == -180.0:
+        return 180.0
+    return x
+
+
+def _continuous(lons: list[float]) -> list[float]:
+    """Pick the representative of each longitude closest to the previous point."""
+    if not lons:
+        return []
+    out = [norm_lon(lons[0])]
+    for raw in lons[1:]:
+        lon = norm_lon(raw)
+        prev = out[-1]
+        out.append(min((lon, lon + 360.0, lon - 360.0), key=lambda x: abs(x - prev)))
+    return out
+
+
+def _bounds_between(lo0: float, lo1: float) -> list[float]:
+    if lo1 == lo0:
+        return []
+    out: list[float] = []
+    if lo1 > lo0:
+        b = math.floor(lo0 / 360.0) * 360.0 + 180.0
+        if b <= lo0:
+            b += 360.0
+        while b < lo1 - 1e-9:
+            out.append(b)
+            b += 360.0
+    else:
+        b = math.ceil(lo0 / 360.0) * 360.0 - 180.0
+        if b >= lo0:
+            b -= 360.0
+        while b > lo1 + 1e-9:
+            out.append(b)
+            b -= 360.0
+    return out
+
+
+def _display_lon(lon: float) -> float:
+    x = (float(lon) + 180.0) % 360.0 - 180.0
+    if abs(x + 180.0) < 1e-8:
+        return 180.0 if float(lon) > 0 else -180.0
+    return x
+
+
+def split_latlon_track(points: list[tuple[float, float]]) -> list[list[tuple[float, float]]]:
+    """Split a (lat, lon) line so no piece spans more than 180° of longitude.
+
+    A segment from 170°E to 170°W is two pieces, one ending at +180 and one
+    starting at -180. Leaflet then does not draw the chord through longitude 0.
+    """
+    if not points:
+        return []
+    lons = _continuous([p[1] for p in points])
+    seq = [(points[i][0], lons[i]) for i in range(len(points))]
+    parts: list[list[tuple[float, float]]] = [[(seq[0][0], _display_lon(seq[0][1]))]]
+    for i in range(len(seq) - 1):
+        la0, lo0 = seq[i]
+        la1, lo1 = seq[i + 1]
+        for b in _bounds_between(lo0, lo1):
+            t = (b - lo0) / (lo1 - lo0)
+            lat = la0 + (la1 - la0) * t
+            east = lo1 > lo0
+            parts[-1].append((lat, 180.0 if east else -180.0))
+            parts.append([(lat, -180.0 if east else 180.0)])
+        parts[-1].append((la1, _display_lon(lo1)))
+    return [p for p in parts if p]
+
+
+def _same_ll(a: tuple[float, float], b: tuple[float, float]) -> bool:
+    return abs(a[0] - b[0]) < 1e-3 and abs(a[1] - b[1]) < 1e-3
+
+
+def split_ring_lonlat(ring: list) -> list[list[list[float]]]:
+    """Closed GeoJSON ring [lon, lat] → one or more rings that do not cross ±180 the long way."""
+    pts = [p for p in ring if isinstance(p, (list, tuple)) and len(p) >= 2]
+    if len(pts) < 4:
+        return [pts]
+    latlon = [(float(p[1]), float(p[0])) for p in pts]
+    if _same_ll(latlon[0], latlon[-1]):
+        latlon = latlon[:-1]
+    if len(latlon) < 3:
+        return [pts]
+    parts = split_latlon_track(latlon + [latlon[0]])
+    if len(parts) >= 2 and _same_ll(parts[-1][-1], parts[0][0]):
+        parts = [parts[-1] + parts[0][1:]] + parts[1:-1]
+    rings: list[list[list[float]]] = []
+    for part in parts:
+        if len(part) < 3:
+            continue
+        gj = [[round(lon, 3), round(lat, 3)] for lat, lon in part]
+        if gj[0] != gj[-1]:
+            gj.append(list(gj[0]))
+        if any(abs(gj[i][0] - gj[i - 1][0]) > 180 for i in range(1, len(gj))):
+            continue
+        rings.append(gj)
+    return rings
+
+
+def split_cone(geom: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Turn a date-line-crossing cone into a MultiPolygon Leaflet can fill."""
+    if not isinstance(geom, dict):
+        return geom
+    kind = geom.get("type")
+
+    def polys_from_ring(ring: list) -> list[list[list[list[float]]]]:
+        return [[r] for r in split_ring_lonlat(ring)]
+
+    if kind == "Polygon":
+        coords = geom.get("coordinates") or []
+        if not coords:
+            return geom
+        polys = polys_from_ring(coords[0])
+        if not polys:
+            return None
+        if len(polys) == 1:
+            return {"type": "Polygon", "coordinates": polys[0]}
+        return {"type": "MultiPolygon", "coordinates": polys}
+    if kind == "MultiPolygon":
+        polys = []
+        for poly in geom.get("coordinates") or []:
+            if poly:
+                polys.extend(polys_from_ring(poly[0]))
+        if not polys:
+            return None
+        if len(polys) == 1:
+            return {"type": "Polygon", "coordinates": polys[0]}
+        return {"type": "MultiPolygon", "coordinates": polys}
+    return geom
+
+
+def clean_track(points: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Normalize longitudes and drop a lone null-island vertex."""
+    out: list[dict[str, Any]] = []
+    for p in points or []:
+        if not isinstance(p, dict):
+            continue
+        try:
+            lat = float(p["lat"])
+            lon = float(p["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not math.isfinite(lat) or not math.isfinite(lon) or not -90.0 <= lat <= 90.0:
+            continue
+        q = dict(p)
+        q["lat"] = round(lat, 2)
+        q["lon"] = round(norm_lon(lon), 2)
+        out.append(q)
+    if len(out) < 2:
+        return out
+
+    def origin(p: dict[str, Any]) -> bool:
+        return abs(p["lat"]) < 0.05 and abs(p["lon"]) < 0.05
+
+    if any(origin(p) for p in out) and any(abs(p["lat"]) > 1 or abs(p["lon"]) > 1 for p in out):
+        out = [p for p in out if not origin(p)]
+    return out
+
+
+def prepare_system_geometry(sysd: dict[str, Any]) -> None:
+    try:
+        if sysd.get("lat") is not None:
+            sysd["lat"] = round(float(sysd["lat"]), 2)
+        if sysd.get("lon") is not None:
+            sysd["lon"] = round(norm_lon(float(sysd["lon"])), 2)
+    except (TypeError, ValueError):
+        pass
+    sysd["observed_track"] = clean_track(sysd.get("observed_track") or [])
+    sysd["forecast_track"] = clean_track(sysd.get("forecast_track") or [])
+    if sysd.get("cone"):
+        sysd["cone"] = split_cone(sysd["cone"])
+    pn = sysd.get("pn_blend")
+    if isinstance(pn, dict) and pn.get("lon") is not None:
+        try:
+            pn["lon"] = round(norm_lon(float(pn["lon"])), 2)
+        except (TypeError, ValueError):
+            pass
+
+
 def imd_category(kt: float | None) -> str | None:
     """IMD scale (3-min mean wind, kt)."""
     if kt is None:
@@ -113,7 +295,7 @@ def parse_geometry(geo: dict[str, Any]) -> dict[str, Any]:
             if cs:
                 segs.append({"start": (cs[0][1], cs[0][0]), "cat": p.get("polygonlabel"), "forecast": bool(p.get("forecast"))})
         elif cls == "Poly_Cones" and g.get("type") in {"Polygon", "MultiPolygon"}:
-            cone = g
+            cone = split_cone(g)
     pts.sort(key=lambda r: r["i"])
 
     def seg_for(lat: float, lon: float) -> dict[str, Any]:
@@ -254,6 +436,8 @@ def cone_polygon(track: list[dict[str, Any]]) -> dict[str, Any] | None:
     """GeoJSON polygon around forecast points using the NHC average-error radii."""
     if len(track) < 2:
         return None
+    lons = _continuous([float(p["lon"]) for p in track])
+    track = [dict(p, lon=lon, lat=float(p["lat"])) for p, lon in zip(track, lons)]
 
     def rad_nm(h: float) -> float:
         for (h0, r0), (h1, r1) in zip(CONE_NM, CONE_NM[1:]):
@@ -282,7 +466,7 @@ def cone_polygon(track: list[dict[str, Any]]) -> dict[str, Any] | None:
     ]
     ring = left + cap + right[::-1]
     ring.append(ring[0])
-    return {"type": "Polygon", "coordinates": [ring]}
+    return split_cone({"type": "Polygon", "coordinates": [ring]})
 
 
 async def _jtwc() -> list[dict[str, Any]]:
@@ -494,6 +678,7 @@ async def active(region: str = "india") -> dict[str, Any]:
                 sysd["pn_blend"] = await asyncio.wait_for(blend_track(sysd), timeout=12.0)
             except Exception as e:
                 sysd["pn_blend"] = {"ok": False, "status": type(e).__name__}
+        prepare_system_geometry(sysd)
     return {
         "ok": True,
         "as_of": _iso(datetime.now(timezone.utc)),

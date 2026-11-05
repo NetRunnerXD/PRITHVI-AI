@@ -2,7 +2,6 @@ import type { ChatMsg, DashboardSnapshot, Location } from "@/types/dashboard";
 import { apiUrl } from "./config";
 import { getLastOmPack, type OmClientPack } from "./openMeteoClient";
 import type { ClientObsPack } from "./clientObs";
-import { questionToEnglish } from "./mtClient";
 
 export { apiUrl, API_BASE } from "./config";
 
@@ -473,7 +472,8 @@ export async function streamChat(
   regenerate?: boolean,
   conversationId?: string,
   llm?: string,
-  showEvidence?: boolean
+  showEvidence?: boolean,
+  inputLang?: string
 ): Promise<ChatMsg | null> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 180000);
@@ -502,7 +502,7 @@ export async function streamChat(
             }
           : undefined,
         fetched_at: getLastOmPack()?.fetched_at,
-        question_en: await questionToEnglish(message, locale),
+        input_lang: inputLang && inputLang !== "auto" ? inputLang : undefined,
       }),
       signal: ac.signal,
     });

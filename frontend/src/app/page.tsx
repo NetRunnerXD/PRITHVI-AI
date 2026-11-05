@@ -30,11 +30,12 @@ const OutlookTable = dynamic(() => import("@/components/OutlookTable").then((m) 
 const PredictionsPanel = dynamic(() => import("@/components/PredictionsPanel").then((m) => m.PredictionsPanel), { ssr: false, loading: TabLoading });
 const SciencePanel = dynamic(() => import("@/components/SciencePanel").then((m) => m.SciencePanel), { ssr: false, loading: TabLoading });
 const SettingsPanel = dynamic(() => import("@/components/SettingsPanel").then((m) => m.SettingsPanel), { ssr: false, loading: TabLoading });
+const DevicePanel = dynamic(() => import("@/components/DevicePanel").then((m) => m.DevicePanel), { ssr: false, loading: TabLoading });
 const SquareMap = dynamic(() => import("@/components/SquareMap").then((m) => m.SquareMap), { ssr: false, loading: TabLoading });
 const ChatDock = dynamic(() => import("@/components/ChatDock").then((m) => m.ChatDock), { ssr: false, loading: TabLoading });
 const QualityCatalog = dynamic(() => import("@/components/QualityCatalog").then((m) => m.QualityCatalog), { ssr: false, loading: TabLoading });
 
-const TAB_ORDER: TabId[] = ["home", "analytics", "data", "map", "model", "chat", "settings"];
+const TAB_ORDER: TabId[] = ["home", "analytics", "data", "map", "model", "chat", "device", "settings"];
 
 export default function Page() {
   const {
@@ -124,6 +125,15 @@ export default function Page() {
   }, [quietRefresh, settings.refreshSec]);
 
   useEffect(() => {
+    if (!settings.deviceEnabled && tab === "device") setTab("home");
+  }, [settings.deviceEnabled, tab, setTab]);
+
+  const tabOrder = useMemo(
+    () => TAB_ORDER.filter((id) => settings.deviceEnabled || id !== "device"),
+    [settings.deviceEnabled],
+  );
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "0") {
@@ -131,11 +141,14 @@ export default function Page() {
         return;
       }
       const n = Number(e.key);
-      if (n >= 1 && n <= 9) setTab(TAB_ORDER[n - 1]);
+      if (n >= 1 && n <= 9) {
+        const next = tabOrder[n - 1];
+        if (next) setTab(next);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setTab]);
+  }, [setTab, tabOrder]);
 
   async function runCompare() {
     if (!dashboard) return;
@@ -232,7 +245,7 @@ export default function Page() {
           </div>
         ) : null}
 
-        {(!dashboard || status === "loading") && tab !== "settings" ? (
+        {(!dashboard || status === "loading") && tab !== "settings" && tab !== "device" ? (
           <div className="space-y-4 py-6" role="status" aria-label={t.loading}>
             {/* Top Hero Skeleton Card */}
             <div className="neo p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden bg-[var(--card)]">
@@ -494,6 +507,12 @@ export default function Page() {
               <div className="h-[calc(100dvh-5rem)] lg:h-auto space-y-3">
                 <ChatDock />
                 <SourcesBox tab="chat" locale={locale} />
+              </div>
+            ) : null}
+
+            {tab === "device" && settings.deviceEnabled ? (
+              <div className="space-y-3">
+                <DevicePanel />
               </div>
             ) : null}
 

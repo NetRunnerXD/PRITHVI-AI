@@ -127,6 +127,45 @@ def _decode(blob: bytes) -> dict[str, np.ndarray]:
     return out
 
 
+def _decode_child(blob: bytes, conn) -> None:
+    try:
+        conn.send(_decode(blob))
+    except Exception as exc:
+        conn.send(exc)
+    finally:
+        conn.close()
+
+
+def _decode_isolated(blob: bytes) -> dict[str, np.ndarray]:
+    """Decode in a child process.
+
+    A truncated GRIB makes ecCodes call exit() from its scanner. That would
+    kill the API if it ran in this process.
+    """
+    import multiprocessing as mp
+
+    ctx = mp.get_context("spawn")
+    parent, child = ctx.Pipe(duplex=False)
+    proc = ctx.Process(target=_decode_child, args=(blob, child))
+    proc.start()
+    child.close()
+    proc.join(180)
+    if proc.is_alive():
+        proc.kill()
+        proc.join(5)
+        parent.close()
+        raise RuntimeError("grib_decode_timeout")
+    try:
+        if not parent.poll(2):
+            raise RuntimeError(f"grib_decode_exit_{proc.exitcode}")
+        result = parent.recv()
+    finally:
+        parent.close()
+    if isinstance(result, BaseException):
+        raise result
+    return result
+
+
 def _to_1deg(a: np.ndarray) -> np.ndarray:
     """0.5° GFS (lat 90→−90, lon 0→359.5) → 1°, lat −80…80 ascending, lon −180…179."""
     a = a[::2, ::2]  # 181×360, lat 90..-90, lon 0..359
@@ -156,7 +195,7 @@ async def _fetch_step(c: datetime, step: int) -> dict[str, np.ndarray]:
     r = await client().get(FILTER, params=params, timeout=120.0)
     if r.status_code >= 400 or not r.content.startswith(b"GRIB"):
         raise RuntimeError(f"nomads http_{r.status_code}")
-    raw = await asyncio.to_thread(_decode, r.content)
+    raw = await asyncio.to_thread(_decode_isolated, r.content)
     return {k: _quant(k, _to_1deg(v)) for k, v in raw.items()}
 
 

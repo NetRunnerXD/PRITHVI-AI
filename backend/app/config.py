@@ -65,6 +65,8 @@ class Settings(BaseSettings):
 
     # Google gtx + MyMemory, no key. Off = skip inbound/outbound MT.
     translate_enabled: bool = True
+    # Optional IndicTrans2 sidecar (empty = Google, then MyMemory). Weights stay out of this process.
+    mt_sidecar_url: str = ""
 
     default_lat: float = 22.0667
     default_lon: float = 88.0698
@@ -114,6 +116,12 @@ class Settings(BaseSettings):
     vexyl_stt_url: str = ""
     vexyl_tts_url: str = ""
     vexyl_api_key: str = ""
+    # FastSpeech2 server from the local ai-tts app. English plus the Indic voices it has loaded.
+    local_tts_url: str = "http://127.0.0.1:7860"
+    # English speech-to-text for the ESP32 box. Optional: pip install faster-whisper.
+    whisper_model: str = "small"
+    whisper_device: str = "cpu"
+    whisper_compute: str = "int8"
 
     # Insight chat canary. Both flag and percent required. Default off.
     insight_chat: bool = False

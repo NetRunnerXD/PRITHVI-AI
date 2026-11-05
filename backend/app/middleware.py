@@ -78,7 +78,12 @@ class SelectiveGZipMiddleware:
             headers = dict(scope.get("headers") or [])
             accept = headers.get(b"accept", b"").decode("latin-1").lower()
             path = str(scope.get("path") or "")
-            if "text/event-stream" in accept or path.endswith("/chat") or "/stream" in path:
+            if (
+                "text/event-stream" in accept
+                or path.endswith("/chat")
+                or path.endswith("/device/turn")
+                or "/stream" in path
+            ):
                 await self.app(scope, receive, send)
                 return
             await self.gzip(scope, receive, send)

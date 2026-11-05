@@ -1,0 +1,15 @@
+# Optional IndicTrans2 sidecar (scripts/mt_sidecar.py). Not imported by the API.
+# Install into a separate environment if you do not want torch in the API env:
+#   pip install -r requirements-mt.txt
+torch>=2.2
+# IndicTrans2's remote code does not load on transformers 5 (onnx module removed,
+# tokenizer special-token init changed). Stay on the 4.x line.
+# 4.57 injects EncoderDecoderCache; mt_sidecar opts the loaded model out of that.
+transformers>=4.46,<5
+sentencepiece>=0.2.0
+protobuf>=4.25
+sacremoses>=0.1.1
+indic-nlp-library>=0.92
+# IndicTransToolkit's package needs MSVC on Windows.
+# scripts/it2_processor.py is that processor in pure Python.
+regex>=2024.5.15

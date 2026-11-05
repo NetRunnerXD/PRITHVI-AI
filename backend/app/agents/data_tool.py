@@ -178,6 +178,11 @@ def strip_tool_syntax(text: str) -> str:
     blob = text or ""
     cleaned = _TOOL_LINE.sub("", blob)
     cleaned = re.sub(r"\bdata\s*\([^)]*\)", "", cleaned, flags=re.I)
+    cleaned = re.sub(
+        r"\b(?:get_forecast|get_nowcast|get_alerts|get_air_quality|get_risks|compare_places|rank_districts)\s*\([^)]*\)",
+        "",
+        cleaned,
+    )
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip(" \t\r\n.,;:")
     return cleaned.strip()
 

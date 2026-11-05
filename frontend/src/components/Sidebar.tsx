@@ -17,6 +17,7 @@ import {
   IconPin,
   IconPredicted,
   IconRefresh,
+  IconDevice,
   IconSettings,
   IconUser,
 } from "./Icons";
@@ -28,6 +29,7 @@ const TABS: { id: TabId; Icon: ComponentType<{ className?: string }> }[] = [
   { id: "map", Icon: IconMap },
   { id: "model", Icon: IconPredicted },
   { id: "chat", Icon: IconAdvisor },
+  { id: "device", Icon: IconDevice },
   { id: "settings", Icon: IconSettings },
 ];
 
@@ -84,23 +86,17 @@ export function Sidebar() {
     model: t.tabModel,
     chat: t.tabChat,
     settings: t.tabSettings,
+    device: t.tabDevice || "Device",
   };
 
-  const visibleTabs = TABS.filter(({ id }) => {
+  const allowTab = (id: TabId) => {
+    if (id === "device" && !settings.deviceEnabled) return false;
     if (settings.showAdvancedTabs) return true;
-    if (["analytics", "data", "model"].includes(id)) {
-      return tab === id;
-    }
+    if (["analytics", "data", "model"].includes(id)) return tab === id;
     return true;
-  });
-
-  const mobileVisibleTabs = TABS.filter(({ id }) => {
-    if (settings.showAdvancedTabs) return true;
-    if (["analytics", "data", "model"].includes(id)) {
-      return tab === id;
-    }
-    return true;
-  });
+  };
+  const visibleTabs = TABS.filter(({ id }) => allowTab(id));
+  const mobileVisibleTabs = visibleTabs;
 
   return (
     <>

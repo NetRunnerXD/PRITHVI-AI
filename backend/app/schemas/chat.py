@@ -46,6 +46,10 @@ class ChatRequest(BaseModel):
     fetched_at: float | str | None = None
     question_en: str | None = None
     client_mt: bool = False
+    # Language the user picked (chat language control). Trusted when scripts are shared.
+    input_lang: str | None = None
+    # ESP32 voice turn. Keep the website chat path unchanged.
+    voice_box: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -65,7 +69,7 @@ class ChatRequest(BaseModel):
             data.pop("location", None)
         return data
 
-    @field_validator("stream", "regenerate", "show_evidence", mode="before")
+    @field_validator("stream", "regenerate", "show_evidence", "voice_box", mode="before")
     @classmethod
     def _bool(cls, v: Any) -> Any:
         if isinstance(v, str):

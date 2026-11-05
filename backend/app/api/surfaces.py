@@ -7,7 +7,7 @@ Aliases are omitted from OpenAPI so /docs stays a single contract.
 
 from fastapi import FastAPI, APIRouter
 
-from app.api import chat, dashboard, geo, llm_worker, meta, speech
+from app.api import chat, dashboard, device, geo, llm_worker, meta, speech
 from app.auth.router import router as auth_router
 
 # (prefix, surface id, include in OpenAPI)
@@ -45,3 +45,4 @@ def mount_surfaces(app: FastAPI) -> None:
         _include(app, llm_worker.router, prefix, schema=schema, tags=["llm"])
         _include(app, auth_router, prefix, schema=schema, tags=["account"])
         _include(app, speech.router, prefix, schema=schema, tags=["speech"])
+        _include(app, device.router, prefix, schema=schema, tags=["device"])

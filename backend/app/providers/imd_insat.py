@@ -321,7 +321,7 @@ _JPEG_LOCK = None
 _JPEG_TTL_S = 120.0
 
 
-async def fetch_frame() -> dict[str, Any]:
+async def fetch_frame(on_progress=None) -> dict[str, Any]:
     """Latest Asia-sector IR JPEG (raw, uncropped) + its valid time. Single-flight, cached 120 s."""
     import asyncio
     from email.utils import parsedate_to_datetime
@@ -339,15 +339,16 @@ async def fetch_frame() -> dict[str, Any]:
         last = "empty"
         for url in IR_URLS:
             try:
-                r = await client().get(url, timeout=8.0)
+                from app.providers.http import read_body
+
+                status, headers, body = await read_body(url, timeout=20.0, on_progress=on_progress)
             except Exception as e:
                 last = f"error:{type(e).__name__}"
                 continue
-            if r.status_code >= 400:
-                last = f"http_{r.status_code}"
+            if status >= 400:
+                last = f"http_{status}"
                 continue
-            ctype = (r.headers.get("content-type") or "").lower()
-            body = r.content
+            ctype = (headers.get("content-type") or "").lower()
             if len(body) < 400:
                 last = "tiny"
                 continue
@@ -355,7 +356,7 @@ async def fetch_frame() -> dict[str, Any]:
                 last = "html"
                 continue
             image_time = None
-            lm = r.headers.get("last-modified")
+            lm = headers.get("last-modified")
             if lm:
                 try:
                     image_time = parsedate_to_datetime(lm).isoformat()
@@ -369,9 +370,9 @@ async def fetch_frame() -> dict[str, Any]:
         return fail
 
 
-async def fetch_jpeg() -> tuple[bytes | None, str | None, str]:
+async def fetch_jpeg(on_progress=None) -> tuple[bytes | None, str | None, str]:
     """Latest Asia-sector IR JPEG (raw bytes; georeference with Georef.for_size)."""
-    fr = await fetch_frame()
+    fr = await fetch_frame(on_progress=on_progress)
     return fr.get("body"), fr.get("url"), fr.get("status") or "empty"
 
 

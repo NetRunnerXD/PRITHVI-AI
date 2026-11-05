@@ -248,7 +248,7 @@ def test_default_fallback_skips_missing_gemini():
 
 
 @pytest.mark.asyncio
-async def test_gemini_chat_never_sends_tools(monkeypatch):
+async def test_gemini_chat_sends_native_tools(monkeypatch):
     from app.agents.data_tool import SCHEMA
     from app.llm import ollama_client
 
@@ -267,7 +267,7 @@ async def test_gemini_chat_never_sends_tools(monkeypatch):
         out = await ollama_client.chat([{"role": "user", "content": "rain?"}], tools=[SCHEMA])
     finally:
         ollama_client.reset_provider(tok)
-    assert seen.get("tools") is None
+    assert seen.get("tools") and seen["tools"][0]["function"]["name"] == "data"
     assert "12.2" in out["content"]
     assert out.get("provider") == "gemini" or out.get("content")
 

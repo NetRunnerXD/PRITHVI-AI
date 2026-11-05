@@ -1,5 +1,5 @@
-# Render Blueprint — native Python, single Free web service.
-# Dashboard: New → Blueprint → this repo. Instance: Free.
+# Render Blueprint — native Python Free web API (Gemini fallback unchanged).
+# Speech/TTS/STT stay local-only; do not add voice sidecars here.
 services:
   - type: web
     name: rituchakra-api
@@ -7,7 +7,7 @@ services:
     plan: free
     region: oregon
     rootDir: backend
-    buildCommand: python -m pip install -r requirements.txt
+    buildCommand: python -m pip install -r requirements.txt -r requirements-pn.txt && python scripts/fetch_pn_models.py
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 75
     healthCheckPath: /api/ready
     autoDeploy: true
@@ -61,4 +61,22 @@ services:
       - key: NASA_EARTHDATA_API
         sync: false
       - key: WEATHERBIT_API_KEY
+        sync: false
+      - key: PN_ENABLED
+        value: "1"
+      - key: PN_VERSION
+        value: "v7"
+      - key: PN_CORRECT_ENABLED
+        value: "0"
+      - key: PN_JUDGE_ENABLED
+        value: "0"
+      - key: PN_STALE_OBS_H
+        value: "6"
+      - key: PN_MODEL_RELEASE_REPO
+        value: "NetRunnerXD/PRITHVI-AI-Archive"
+      - key: PN_MODEL_RELEASE_TAG
+        value: "pn-models-v7"
+      - key: PN_MODEL_DOWNLOAD_TOKEN
+        sync: false
+      - key: INGEST_CRON_SECRET
         sync: false

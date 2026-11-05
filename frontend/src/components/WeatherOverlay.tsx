@@ -100,6 +100,7 @@ export function WeatherOverlay({
       ]}
       opacity={opacity}
       zIndex={zIndex}
+      interactive={false}
     />
   );
 }

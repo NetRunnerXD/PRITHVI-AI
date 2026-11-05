@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import uuid
@@ -66,6 +67,8 @@ def snapshot() -> dict[str, Any]:
         "satellites": sats,
         "started_ms": blob.get("started_ms"),
         "updated_ms": blob.get("updated_ms"),
+        "finished_at": blob.get("finished_at") or _slot_downloaded_at(),
+        "data_time": blob.get("data_time") or _slot_data_time(),
         "age_s": age_s,
         "as_of": iso_z(now),
     }
@@ -85,6 +88,7 @@ def begin(satellites: list[dict[str, Any]]) -> str:
         "started_ms": ms(now),
         "updated_ms": ms(now),
         "started_at": iso_z(now),
+        "finished_at": _MEM.get("finished_at"),
     }
     _write(doc)
     return cid
@@ -129,7 +133,52 @@ def finish(*, ok: bool = True, message: str | None = None) -> None:
         blob["message"] = message
     elif ok:
         blob["message"] = ""
+    if ok:
+        blob["finished_at"] = iso_z(now)
     _write(blob)
+
+
+def _slot_data_time() -> str | None:
+    """Latest product observation time saved in a slot file. Independent of this process's cycle."""
+    best = ""
+    for blob in _slot_blobs():
+        products = blob.get("products") if isinstance(blob.get("products"), dict) else {}
+        for raw in products.values():
+            text = str(raw or "")
+            if text > best:
+                best = text
+    return best or None
+
+
+def _slot_downloaded_at() -> str | None:
+    """Newest IST slot file, so a restart still shows the last successful download."""
+    newest = None
+    newest_at = ""
+    for blob in _slot_blobs():
+        at = str(blob.get("downloaded_at") or "")
+        if at >= newest_at:
+            newest_at = at
+            newest = at or None
+    return newest
+
+
+def _slot_blobs() -> list[dict[str, Any]]:
+    try:
+        from app.ingest.worker import slot_dir
+    except Exception:
+        return []
+    root = slot_dir()
+    if root is None or not root.is_dir():
+        return []
+    out: list[dict[str, Any]] = []
+    for p in root.glob("*.json"):
+        try:
+            blob = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(blob, dict):
+            out.append(blob)
+    return out
 
 
 def _write(doc: dict[str, Any]) -> None:

@@ -458,7 +458,17 @@ async def storm_map_api(
         from app.store import ingest_status
 
         proc = ingest_status.snapshot()
-        if proc:
+        age = proc.get("age_s") if proc else None
+        # A background cycle must not freeze the map. Only a cycle that started
+        # in the last 90s may show "Analyzing…". After that the storm pack stands.
+        blocking = bool(
+            proc
+            and proc.get("ready") is False
+            and not proc.get("stale")
+            and age is not None
+            and age < 90
+        )
+        if blocking:
             pack = {**pack, "processing": {**(pack.get("processing") or {}), **proc}}
     except Exception:
         pass
@@ -494,17 +504,31 @@ async def nowcast_sat_lightning(wait: bool = Query(default=False)):
 
 @router.get("/research/pn-live")
 async def research_pn_live(wait: bool = Query(default=False)):
-    """PN-Net v4 on live IMERG Early: per-lead valid times (IST shown in UI), lightning-proxy
-    cells, and a live validation of leads 1–3 against IMERG observed afterwards."""
-    from app.science.pn import live, net
+    """Live PN nowcast (PN_VERSION=v4 PN-Net or v7 PRITHVI-Nowcast) on IMERG Early: per-lead
+    valid times, event cells, input groups live/masked, and a live validation of leads 1–3."""
+    from app.science.pn import live
 
-    if not net.status().get("enabled"):
-        return {"ok": False, "status": "disabled", **net.status()}
+    st = live.engine_status()
+    if not st.get("enabled"):
+        return {"ok": False, "status": "disabled", **st}
     if wait:
         pack = await live.refresh()
     else:
         pack = live.peek() or {"ok": False, "status": "warming", "note": "First run started; retry in ~30–60 s."}
     return {k: v for k, v in pack.items() if not k.startswith("_")}
+
+
+@router.get("/research/pn-track")
+async def research_pn_track(days: int = Query(default=30, ge=1, le=90)):
+    """Live track record of the v7 nowcast: CSI/POD/FAR per lead from verified runs (0.5°)."""
+    import asyncio
+
+    from app.science.pn import params
+    from app.store import pn_runs
+
+    tr = await asyncio.to_thread(pn_runs.track, float(days), "v7")
+    test = params()["pn_nowcast_v7"]["test_by_lead_h"]
+    return {**tr, "test_csi": {L: test[L]["final"]["csi"] for L in ("1", "3", "6", "12")}}
 
 
 @router.get("/states")

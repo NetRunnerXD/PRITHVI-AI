@@ -3,17 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
 import type { DashboardSnapshot, Location } from "@/types/dashboard";
-import { fetchRadarFrames, fetchStates, fetchStormMap, fetchWeatherGrid, reverseGeocode, type StormIncident, type StormMapPack } from "@/lib/api";
+import { fetchRadarFrames, fetchStates, fetchStormMap, reverseGeocode, type StormIncident, type StormMapPack } from "@/lib/api";
 import { MapWrap } from "./MapWrap";
 import { StormFeed } from "./StormFeed";
 import { WX_LAYERS, legendStops, unitOf, type WeatherGrid, type WxLayer } from "@/lib/weatherScale";
 import { useApp } from "@/lib/store";
 import { fetchGfsGrid, gfsFieldsFor } from "@/lib/gfsGrid";
 import { visibleInterval } from "@/lib/visibility";
+import { apiUrl } from "@/lib/config";
 
 let cachedStates: string[] = [];
 let cachedRadarPack: { host: string; radarPath: string | null; satPath: string | null } | null = null;
-const cachedGrids = new Map<number, WeatherGrid>();
 const cachedWorld = new Map<string, WeatherGrid>();
 const cachedStormMaps = new Map<string, { pack: StormMapPack; ts: number }>();
 
@@ -60,6 +60,7 @@ const HIGHLIGHT_IDS = [
   "past_lightning",
   "past_storm",
   "cloud",
+  "cyclone",
 ] as const;
 
 const SAT_HIGHLIGHTS = new Set<string>([
@@ -74,6 +75,119 @@ const SAT_HIGHLIGHTS = new Set<string>([
 ]);
 
 const HORIZON_H = [1, 3, 6, 12] as const;
+
+type IngestSat = { id?: string; name?: string; status?: string; detail?: string; bytes_read?: number; bytes_total?: number };
+type IngestSnap = { phase?: string; message?: string; satellites?: IngestSat[]; finished_at?: string | null; data_time?: string | null };
+
+function dataTimeLabel(iso?: string | null): string {
+  if (!iso) return "No data time";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "No data time";
+  const text = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+  return `${text} IST`;
+}
+
+const INGEST_FALLBACK: IngestSat[] = [
+  { id: "imd_ir1", name: "INSAT-3DS IR1 JPEG", status: "pending" },
+  { id: "mosdac_hem", name: "INSAT-3DS HEM", status: "pending" },
+  { id: "mosdac_l1b", name: "INSAT-3DS L1B TIR1", status: "pending" },
+  { id: "gibs", name: "GIBS Himawari Band 13", status: "pending" },
+  { id: "imerg", name: "GPM IMERG Early", status: "pending" },
+];
+
+function analysisOf(phase?: string): { pct: number; label: string } {
+  if (phase === "cv" || phase === "predict") return { pct: 50, label: "Storm map" };
+  if (phase === "alerts") return { pct: 85, label: "Saving events" };
+  if (phase === "ready") return { pct: 100, label: "Done" };
+  if (phase === "error") return { pct: 100, label: "Error" };
+  return { pct: 0, label: "Waiting for downloads" };
+}
+
+function satTone(status?: string): string {
+  if (status === "fail") return "bg-rose-500";
+  if (status === "disabled") return "bg-slate-500";
+  return "bg-sky-500";
+}
+
+function satBar(s: IngestSat): { pct: number; indeterminate: boolean } {
+  const st = s.status || "pending";
+  if (st === "fetching") {
+    const total = Number(s.bytes_total);
+    const read = Number(s.bytes_read);
+    if (total > 0 && Number.isFinite(read)) return { pct: Math.max(0, Math.min(100, (read / total) * 100)), indeterminate: false };
+    return { pct: 0, indeterminate: true };
+  }
+  if (st === "pending") return { pct: 0, indeterminate: false };
+  return { pct: 100, indeterminate: false };
+}
+
+function IngestProgress({ open, dataTime }: { open: boolean; dataTime?: string | null }) {
+  const [ing, setIng] = useState<IngestSnap | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let dead = false;
+    const tick = () =>
+      void fetch(apiUrl("/ready"))
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => {
+          if (!dead && j?.ingest) setIng(j.ingest as IngestSnap);
+        })
+        .catch(() => {});
+    tick();
+    const id = window.setInterval(tick, 2000);
+    return () => {
+      dead = true;
+      window.clearInterval(id);
+    };
+  }, [open]);
+  const sats = ing?.satellites?.length ? ing.satellites : INGEST_FALLBACK;
+  const analysis = analysisOf(ing?.phase);
+  return (
+    <div className="pt-2 border-t border-[var(--line)] space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-black uppercase tracking-wider text-neo-text">Satellite downloads</p>
+        <p className="text-[9px] font-mono text-neo-muted shrink-0" title="Observation time of the satellite frame in use">
+          {dataTimeLabel(dataTime || ing?.data_time)}
+        </p>
+      </div>
+      {sats.map((s) => {
+        const bar = satBar(s);
+        return (
+          <div key={s.id || s.name} className="space-y-0.5">
+            <div className="flex items-center justify-between gap-2 text-[10px]">
+              <span className="font-bold text-neo-text truncate">{s.name || s.id}</span>
+              <span className={`font-mono shrink-0 ${s.status === "fail" ? "text-rose-500" : s.status === "disabled" ? "text-neo-muted" : "text-sky-400"}`}>{s.status || "pending"}</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-slate-900/60 overflow-hidden">
+              <div
+                className={`h-full ${satTone(s.status)} ${bar.indeterminate ? "w-1/3 animate-pulse" : ""}`}
+                style={bar.indeterminate ? undefined : { width: `${bar.pct}%` }}
+              />
+            </div>
+            {s.detail ? <p className="text-[9px] text-neo-muted truncate">{s.detail}</p> : null}
+          </div>
+        );
+      })}
+      <div className="pt-1 space-y-0.5">
+        <div className="flex items-center justify-between text-[10px]">
+          <span className="font-black uppercase tracking-wider text-neo-text">Analysis</span>
+          <span className="font-mono text-neo-muted">{analysis.label}</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-slate-900/60 overflow-hidden">
+          <div className="h-full bg-indigo-500" style={{ width: `${analysis.pct}%` }} />
+        </div>
+        {ing?.phase === "error" && ing.message ? <p className="text-[9px] text-rose-500">{ing.message}</p> : null}
+      </div>
+    </div>
+  );
+}
 
 export function SquareMap({
   dash,
@@ -148,36 +262,44 @@ export function SquareMap({
       openSection: typeof v === "function" ? v(prev.openSection) : v,
     }));
 
-  const [grid, setGrid] = useState<WeatherGrid | null>(() => cachedGrids.get(hour) || null);
   const [worldGrid, setWorldGrid] = useState<WeatherGrid | null>(null);
+  const [gfsNote, setGfsNote] = useState<string | null>(null);
   const gfsKeys = gfsFieldsFor(wxLayer, particles).join(",");
   useEffect(() => {
-    // Worldwide NOAA GFS background, only the fields the current layer needs.
+    // NOAA GFS only. Past-horizon and max-lead do not change this raster.
     const keys = gfsKeys ? gfsKeys.split(",") : [];
     const ck = `${hour}:${gfsKeys}`;
     if (cachedWorld.has(ck)) {
       setWorldGrid(cachedWorld.get(ck)!);
+      setGfsNote(null);
       return;
     }
     if (!keys.length) {
       setWorldGrid(null);
+      setGfsNote(null);
       return;
     }
     let dead = false;
     let tries = 0;
+    let timer = 0;
     const load = () =>
-      void fetchGfsGrid(hour, keys).then((g) => {
+      void fetchGfsGrid(hour, keys).then((res) => {
         if (dead) return;
-        if (g) {
-          cachedWorld.set(ck, g);
-          setWorldGrid(g);
-        } else if (tries++ < 6) {
-          setTimeout(load, 20_000); // server is still downloading the cycle
+        if (res.grid) {
+          cachedWorld.set(ck, res.grid);
+          setWorldGrid(res.grid);
+          setGfsNote(null);
+          return;
         }
+        setWorldGrid(null);
+        setGfsNote(res.status || "loading");
+        const terminal = res.status === "eccodes_missing" || res.status === "error";
+        if (!terminal && tries++ < 40) timer = window.setTimeout(load, 15_000);
       });
     load();
     return () => {
       dead = true;
+      window.clearTimeout(timer);
     };
   }, [hour, gfsKeys]);
   const [radarHost, setRadarHost] = useState(() => cachedRadarPack?.host || "https://tilecache.rainviewer.com");
@@ -201,23 +323,6 @@ export function SquareMap({
       }
     });
   }, []);
-
-  useEffect(() => {
-    if (cachedGrids.has(hour)) {
-      setGrid(cachedGrids.get(hour)!);
-      return;
-    }
-    let dead = false;
-    void fetchWeatherGrid(hour).then((g) => {
-      if (!dead && g) {
-        cachedGrids.set(hour, g as WeatherGrid);
-        setGrid(g as WeatherGrid);
-      }
-    });
-    return () => {
-      dead = true;
-    };
-  }, [hour]);
 
   useEffect(() => {
     if (cachedRadarPack) return;
@@ -329,7 +434,6 @@ export function SquareMap({
         nearby={dash.ogd?.nearby || []}
         overlays={extraOverlays}
         weatherLayer={wxLayer}
-        weatherGrid={grid}
         worldGrid={worldGrid}
         particles={particles}
         radarUrl={
@@ -357,7 +461,7 @@ export function SquareMap({
         onSelectIncident={pickIncident}
       />
     ),
-    [dash.location, rain, zoom, mapBasemap, dash.ogd?.nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, maxLeadMin, fitNonce, locale, wxLayer, grid, worldGrid, particles, radarHost, radarPath, satPath, hazardEvents, isVisible]
+    [dash.location, rain, zoom, mapBasemap, dash.ogd?.nearby, extraOverlays, onPick, focus, storm, highlights, selected, overlayOpacity, showPin, pastHours, minConfidence, maxLeadMin, fitNonce, locale, wxLayer, worldGrid, particles, radarHost, radarPath, satPath, hazardEvents, isVisible]
   );
 
   function toggleOverlay(id: string) {
@@ -401,6 +505,7 @@ export function SquareMap({
     fire: t.hlFire || "Forest fire",
     landslide: t.hlLandslide || "Landslide",
     cloud: t.hlColdCloud,
+    cyclone: t.cyclone,
   };
 
   const processing = storm?.processing;
@@ -533,13 +638,14 @@ export function SquareMap({
             </div>
           ) : null}
           {box}
-          <MapTimeline
-            pastHours={pastHours}
-            maxLeadMin={maxLeadMin}
-            onPast={(h) => setMapSession({ pastHours: h, maxLeadMin: 0 })}
-            onNow={() => setMapSession({ maxLeadMin: 0 })}
-            onLead={(m) => setMapSession({ maxLeadMin: m })}
-          />
+          {highlights.length ? (
+            <MapTimeline
+              timePick={mapSession.timePick || "lead:720"}
+              onPast={(h) => setMapSession({ pastHours: h, timePick: `past:${h}` })}
+              onNow={() => setMapSession({ maxLeadMin: 0, timePick: "now" })}
+              onLead={(m) => setMapSession({ maxLeadMin: m, timePick: `lead:${m}` })}
+            />
+          ) : null}
           <div className="absolute bottom-8 left-2 z-[700] rounded-md bg-slate-950/80 text-[10px] text-slate-100 px-2 py-1.5 space-y-0.5 pointer-events-none">
             {highlights.includes("lightning") ? <div>⚡ {t.hlLiveLightning}</div> : null}
             {highlights.includes("pred_lightning") ? <div>✦ {t.hlPredLightning}</div> : null}
@@ -553,20 +659,6 @@ export function SquareMap({
             {highlights.includes("downburst") ? <div>↘ {t.downburst}</div> : null}
             {highlights.includes("fire") ? <div>🔥 {t.hlFire}</div> : null}
             {highlights.includes("landslide") ? <div>⛰ {t.hlLandslide}</div> : null}
-            <div className="flex items-center gap-2 pt-1 mt-1 border-t border-white/15">
-              {(
-                [
-                  ["#16a34a", "Verified"],
-                  ["#dc2626", "Not verified"],
-                  ["#f59e0b", "Pending"],
-                ] as const
-              ).map(([c, l]) => (
-                <span key={l} className="inline-flex items-center gap-1">
-                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ border: `2px solid ${c}` }} />
-                  {l}
-                </span>
-              ))}
-            </div>
           </div>
         </div>
       </div>
@@ -688,6 +780,39 @@ export function SquareMap({
                         ▼
                       </div>
                     </div>
+                    <div className="pt-2 space-y-2">
+                      <div className="flex items-center justify-between text-[10px] text-neo-text font-bold">
+                        <span className="uppercase tracking-wider text-neo-muted text-[9px] font-black">
+                          {t.stormOpacity || "Overlay Opacity"}
+                        </span>
+                        <span className="font-mono text-[10px] font-black text-neo-accent bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] px-2 py-0.5 rounded-md border border-[color-mix(in_srgb,var(--accent)_30%,transparent)]">
+                          {Math.round(overlayOpacity * 100)}%
+                        </span>
+                      </div>
+                      <div className="relative h-5 flex items-center select-none group">
+                        <div className="w-full h-2 rounded-full bg-slate-900/60 dark:bg-black/60 border border-slate-700/60 dark:border-white/10 shadow-inner relative overflow-hidden">
+                          <div
+                            className="absolute top-0 bottom-0 left-0 bg-gradient-to-r from-sky-500 to-indigo-500 rounded-full"
+                            style={{ width: `${opacityPct}%` }}
+                          />
+                        </div>
+                        <div
+                          className="absolute h-4 w-4 -ml-2 rounded-full bg-white shadow-[0_0_10px_rgba(56,189,248,0.8)] border-2 border-sky-500 pointer-events-none z-10"
+                          style={{ left: `${opacityPct}%` }}
+                        />
+                        <input
+                          id="overlay-opacity"
+                          type="range"
+                          min={0.2}
+                          max={0.95}
+                          step={0.05}
+                          value={overlayOpacity}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                          onChange={(e) => setOverlayOpacity(Number(e.target.value))}
+                          aria-label="Overlay opacity"
+                        />
+                      </div>
+                    </div>
                     {/* Wind Particles Toggle */}
                     <div className="flex items-center justify-between pt-2 border-t border-[var(--line)]">
                       <span className="text-[11px] font-bold text-neo-text flex items-center gap-1.5">
@@ -720,15 +845,15 @@ export function SquareMap({
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                               </span>
-                              <span>Live Stream</span>
+                              <span>GFS now</span>
                             </div>
                           ) : hour < 0 ? (
                             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[10px] font-black tracking-wider uppercase shadow-xs">
-                              <span>Replay ({hour}h)</span>
+                              <span>GFS {hour}h</span>
                             </div>
                           ) : (
                             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black tracking-wider uppercase shadow-xs">
-                              <span>Nowcast (+{hour}h)</span>
+                              <span>GFS +{hour}h</span>
                             </div>
                           )}
                         </div>
@@ -737,16 +862,15 @@ export function SquareMap({
                           <span className="text-[9px] font-bold text-sky-400/60">IST</span>
                           <span>
                             {(() => {
-                              if (grid?.valid) {
-                                const iso = String(grid.valid).endsWith("Z") ? String(grid.valid) : `${String(grid.valid)}:00Z`;
+                              if (worldGrid?.valid) {
+                                const iso = String(worldGrid.valid).endsWith("Z") ? String(worldGrid.valid) : `${String(worldGrid.valid)}:00Z`;
                                 const d = new Date(iso);
                                 if (!Number.isNaN(d.getTime())) {
                                   return d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
                                 }
-                                return String(grid.valid).slice(11, 16);
+                                return String(worldGrid.valid).slice(11, 16);
                               }
-                              const target = new Date(Date.now() + hour * 3600_000);
-                              return target.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+                              return gfsNote || "loading";
                             })()}
                           </span>
                         </div>
@@ -830,7 +954,9 @@ export function SquareMap({
                           <span>{legendStops(wxLayer)[legendStops(wxLayer).length - 1]?.v} {unitOf(wxLayer)}</span>
                         </div>
                         <div className="text-[9px] text-neo-muted mt-0.5">
-                          Valid {grid?.valid ? `${fmtIstShort(String(grid.valid).endsWith("Z") ? String(grid.valid) : `${grid.valid}Z`)} IST` : "—"} · GFS world · Open-Meteo India
+                          {worldGrid?.valid
+                            ? `Valid ${fmtIstShort(String(worldGrid.valid).endsWith("Z") ? String(worldGrid.valid) : `${worldGrid.valid}Z`)} IST · NOAA GFS`
+                            : `NOAA GFS · ${gfsNote || "loading"}`}
                         </div>
                       </div>
                     </div>
@@ -840,8 +966,9 @@ export function SquareMap({
                         <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                         <span>{wxLayer === "radar" ? "Doppler Radar Active" : "Infrared Sat Active"}</span>
                       </span>
-                      <span className="text-[10px] text-neo-muted font-mono">
-                        {wxLayer === "radar" ? "RainViewer Tile Feed" : "NASA GIBS Himawari"}
+                      <span className="text-[10px] text-neo-muted font-mono text-right">
+                        {wxLayer === "radar" ? "RainViewer tiles" : "NASA GIBS IR"}
+                        <span className="block">Hour scrubber does not move this feed</span>
                       </span>
                     </div>
                   ) : null}
@@ -902,7 +1029,7 @@ export function SquareMap({
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-amber-400 inline-block shadow-[0_0_6px_#fbbf24]" />
                       <span className="text-[11px] font-black uppercase tracking-wider text-neo-text">
-                        {t.stormHighlights || "Hazard Filters & Timeline"}
+                        {t.stormHighlights || "Hazard filters"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-xs font-bold text-neo-accent">
@@ -1104,41 +1231,7 @@ export function SquareMap({
                         </div>
                       </div>
 
-                      {/* Opacity Slider */}
-                      <div className="pt-2 border-t border-[var(--line)] space-y-2">
-                        <div className="flex items-center justify-between text-[10px] text-neo-text font-bold">
-                          <span className="uppercase tracking-wider text-neo-muted text-[9px] font-black">
-                            {t.stormOpacity || "Overlay Opacity"}
-                          </span>
-                          <span className="font-mono text-[10px] font-black text-neo-accent bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] px-2 py-0.5 rounded-md border border-[color-mix(in_srgb,var(--accent)_30%,transparent)]">
-                            {Math.round(overlayOpacity * 100)}%
-                          </span>
-                        </div>
-
-                        <div className="relative h-5 flex items-center select-none group">
-                          <div className="w-full h-2 rounded-full bg-slate-900/60 dark:bg-black/60 border border-slate-700/60 dark:border-white/10 shadow-inner relative overflow-hidden">
-                            <div
-                              className="absolute top-0 bottom-0 left-0 bg-gradient-to-r from-sky-500 to-indigo-500 rounded-full transition-all duration-75"
-                              style={{ width: `${opacityPct}%` }}
-                            />
-                          </div>
-                          <div
-                            className="absolute h-4 w-4 -ml-2 rounded-full bg-white shadow-[0_0_10px_rgba(56,189,248,0.8)] border-2 border-sky-500 flex items-center justify-center pointer-events-none transition-transform group-hover:scale-110 z-10"
-                            style={{ left: `${opacityPct}%` }}
-                          />
-                          <input
-                            id="overlay-opacity"
-                            type="range"
-                            min={0.2}
-                            max={0.95}
-                            step={0.05}
-                            value={overlayOpacity}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-                            onChange={(e) => setOverlayOpacity(Number(e.target.value))}
-                            aria-label="Overlay opacity"
-                          />
-                        </div>
-                      </div>
+                      <IngestProgress open dataTime={(storm as { ir_image_time?: string | null }).ir_image_time} />
                     </div>
                   )}
                 </section>
@@ -1235,30 +1328,28 @@ function SidebarFooter({ storm, loading, fetchedAt }: { storm: StormMapPack | nu
   );
 }
 
-const TIMELINE: { label: string; past?: number; lead?: number }[] = [
-  { label: "−12h", past: 12 },
-  { label: "−6h", past: 6 },
-  { label: "−3h", past: 3 },
-  { label: "−1h", past: 1 },
-  { label: "Now", lead: 0 },
-  { label: "+15m", lead: 15 },
-  { label: "+30m", lead: 30 },
-  { label: "+1h", lead: 60 },
-  { label: "+3h", lead: 180 },
-  { label: "+12h", lead: 720 },
+const TIMELINE: { label: string; pick: string; past?: number; lead?: number }[] = [
+  { label: "−12h", pick: "past:12", past: 12 },
+  { label: "−6h", pick: "past:6", past: 6 },
+  { label: "−3h", pick: "past:3", past: 3 },
+  { label: "−1h", pick: "past:1", past: 1 },
+  { label: "Now", pick: "now", lead: 0 },
+  { label: "+15m", pick: "lead:15", lead: 15 },
+  { label: "+30m", pick: "lead:30", lead: 30 },
+  { label: "+1h", pick: "lead:60", lead: 60 },
+  { label: "+3h", pick: "lead:180", lead: 180 },
+  { label: "+12h", pick: "lead:720", lead: 720 },
 ];
 
 /** Past / now / forecast: one touch-friendly strip. Past picks the history window (and hides
  * forecasts); forecast steps show predictions up to that lead. */
 function MapTimeline({
-  pastHours,
-  maxLeadMin,
+  timePick,
   onPast,
   onNow,
   onLead,
 }: {
-  pastHours: number;
-  maxLeadMin: number;
+  timePick: string;
   onPast: (h: number) => void;
   onNow: () => void;
   onLead: (m: number) => void;
@@ -1267,8 +1358,7 @@ function MapTimeline({
     <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-[700] max-w-[96%] overflow-x-auto rounded-xl bg-slate-950/85 px-1.5 py-1 shadow-lg">
       <div className="flex items-center gap-0.5 whitespace-nowrap" role="group" aria-label="Map time">
         {TIMELINE.map((t) => {
-          const active =
-            t.past != null ? maxLeadMin === 0 && pastHours === t.past : t.lead === 0 ? maxLeadMin === 0 && false : maxLeadMin === t.lead;
+          const active = timePick === t.pick;
           return (
             <button
               key={t.label}

@@ -113,7 +113,15 @@ def test_plain_user_turns_still_merge():
     assert [p["text"] for p in contents[0]["parts"]] == ["Hi", "Rain?"]
 
 
-def test_build_payload_is_narration_only():
+def test_build_payload_narration_has_no_tools():
+    plain = build_payload(
+        [{"role": "user", "content": "Rain in Haldia?"}],
+    )
+    assert "tools" not in plain
+    assert "toolConfig" not in plain
+
+
+def test_build_payload_sends_native_function_declarations():
     payload = build_payload(
         [
             {"role": "system", "content": "You are PRITHVI-AI."},
@@ -126,8 +134,46 @@ def test_build_payload_is_narration_only():
     assert gc["maxOutputTokens"] >= 400
     assert gc["maxOutputTokens"] <= 512
     assert "temperature" not in gc
-    assert "tools" not in payload
-    assert "toolConfig" not in payload
+    decl = payload["tools"][0]["functionDeclarations"][0]
+    assert decl["name"] == "data"
+    assert payload["toolConfig"]["functionCallingConfig"]["mode"] == "AUTO"
+
+
+def test_thought_signature_round_trip():
+    parsed = parse_gemini_response(
+        {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"functionCall": {"name": "get_forecast", "args": {}}, "thoughtSignature": "sig1"},
+                            {"functionCall": {"name": "get_air_quality", "args": {}}},
+                        ]
+                    }
+                }
+            ]
+        }
+    )
+    calls = parsed["tool_calls"]
+    assert calls[0]["thought_signature"] == "sig1"
+    msgs = [
+        {"role": "user", "content": "rain and aqi?"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": c["id"], "function": {"name": c["name"], "arguments": c["arguments"]}, **({"thought_signature": c["thought_signature"]} if c.get("thought_signature") else {})}
+                for c in calls
+            ],
+        },
+        {"role": "tool", "tool_call_id": "g0", "content": "{}"},
+        {"role": "tool", "tool_call_id": "g1", "content": "{}"},
+    ]
+    _sys, contents = openai_messages_to_gemini(msgs)
+    assert contents[1]["parts"][0]["thoughtSignature"] == "sig1"
+    # Parallel responses come back in one user turn.
+    assert len(contents) == 3
+    assert [p["functionResponse"]["name"] for p in contents[2]["parts"]] == ["get_forecast", "get_air_quality"]
 
 
 def test_skips_thought_only_parts():
