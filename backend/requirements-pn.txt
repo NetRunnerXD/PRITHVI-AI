@@ -1,5 +1,5 @@
-# Optional: PRITHVI-Nowcast live model (PN_ENABLED=1). Not needed for the rest of the app.
-onnxruntime>=1.18
+# Optional / local-heavy PN extras. Render Free should NOT install opencv/scipy
+# (OOM on 512Mi). Cloud uses onnxruntime from requirements.txt only.
+# pip install -r requirements-pn.txt
 opencv-python-headless>=4.9
 scipy>=1.11
-# eccodes (GRIB2 for GFS/IFS) is already in requirements.txt
