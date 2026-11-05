@@ -7,7 +7,7 @@ services:
     plan: free
     region: oregon
     rootDir: backend
-    buildCommand: python -m pip install -r requirements.txt -r requirements-pn.txt && python scripts/fetch_pn_models.py
+    buildCommand: python -m pip install -r requirements.txt && python scripts/fetch_pn_models.py
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 75
     healthCheckPath: /api/ready
     autoDeploy: true

@@ -1,5 +1,8 @@
-# Optional / local-heavy PN extras. Render Free should NOT install opencv/scipy
-# (OOM on 512Mi). Cloud uses onnxruntime from requirements.txt only.
-# pip install -r requirements-pn.txt
-opencv-python-headless>=4.9
-scipy>=1.11
+# Local PN Lucas-Kanade extras ONLY.
+# Do NOT list wheels here: some Free services still run
+#   pip install -r requirements.txt -r requirements-pn.txt
+# and opencv+scipy OOM at 512Mi (observed Nov 2026).
+# Cloud inference uses onnxruntime from requirements.txt; motion_lk
+# zeros the motion channels when OpenCV/SciPy are absent (same as LK failure).
+# Local install:
+#   pip install "opencv-python-headless>=4.9" "scipy>=1.11"

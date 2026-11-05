@@ -51,7 +51,8 @@ def status() -> dict[str, Any]:
         import cv2  # noqa: F401
         import scipy.spatial  # noqa: F401
     except Exception:  # noqa: BLE001
-        needs.append("pip install opencv-python-headless scipy (Lucas-Kanade motion, as in training)")
+        # Soft: motion_lk already zeros channels when LK unavailable (matches training miss).
+        needs.append("opencv/scipy absent — motion channels zeroed (Free-safe; local: pip install opencv-python-headless scipy)")
     try:
         import eccodes  # noqa: F401
     except Exception:  # noqa: BLE001
@@ -62,7 +63,8 @@ def status() -> dict[str, Any]:
 
     if not earthdata_token():
         needs.append("NASA_EARTHDATA_API (IMERG Early)")
-    hard = [n for n in needs if "eccodes" not in n and "IMERG" not in n]
+    # Hard blockers: missing ONNX runtime or weights. Soft: eccodes, IMERG token latency, LK extras.
+    hard = [n for n in needs if "eccodes" not in n and "IMERG" not in n and "opencv/scipy" not in n and "motion channels" not in n]
     return {
         "enabled": bool(_flag("PN_ENABLED", False) and version() == "v7" and not hard),
         "flag": _flag("PN_ENABLED", False), "version": version(), "model": "PRITHVI-Nowcast v7 (R2 + PN-Blend)", "needs": needs,
