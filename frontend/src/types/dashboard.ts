@@ -52,6 +52,8 @@ export type EarlyWarning = {
   eta_min?: number | null;
   window_start?: string | null;
   window_end?: string | null;
+  status?: "active" | "upcoming" | "undated" | string | null;
+  end_inferred?: boolean;
   states?: string[];
   kind?: string | null;
   lat?: number | null;
@@ -383,6 +385,21 @@ export type DashboardSnapshot = {
     };
     verify?: { method?: string; note?: string; abs_vs_clim_mm?: number; nowcast?: { last_error_mm?: number | null; frac?: number } };
     nowcast?: NowcastPack;
+    pn_v7?: {
+      model?: string;
+      test_csi?: Record<string, number>;
+      beats?: string[];
+      enabled?: boolean;
+      status?: string | null;
+      groups_live?: string[] | null;
+      live_csi?: Record<string, number | null>;
+      live_runs?: number;
+      pn_correct?: {
+        enabled?: boolean;
+        test_csi?: Record<string, number>;
+        here?: { t_issue?: string; leads?: Record<string, { p?: number; rain?: boolean }> } | null;
+      };
+    };
     provenance?: Record<string, string>;
     monsoon?: { label?: string; regime?: string };
     cwc?: { name?: string; km?: number; river?: string; relevant?: boolean };
@@ -565,7 +582,7 @@ export type ChatMsg = {
   timestamp?: string;
 };
 
-export type TabId = "home" | "analytics" | "data" | "map" | "model" | "chat" | "settings";
+export type TabId = "home" | "analytics" | "data" | "map" | "model" | "chat" | "device" | "settings";
 
 export const TAB_ALIAS: Record<string, TabId> = {
   home: "home",
@@ -583,6 +600,7 @@ export const TAB_ALIAS: Record<string, TabId> = {
   chat: "chat",
   advisor: "chat",
   settings: "settings",
+  device: "device",
 };
 
 export function resolveTab(id: string | undefined | null): TabId | null {

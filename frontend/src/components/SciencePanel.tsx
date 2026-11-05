@@ -18,6 +18,10 @@ export function SciencePanel({ dash, locale }: { dash: DashboardSnapshot; locale
   const wb = s.water_balance;
   const speech = named ? named[locale] || named.en : "";
   const nc = s.nowcast;
+  const pv = s.pn_v7;
+  const pc = pv?.pn_correct;
+  const csi4 = (m?: Record<string, number | null>) =>
+    ["1", "3", "6", "12"].map((k) => (m?.[k] == null ? "—" : Number(m[k]).toFixed(2))).join(" · ");
 
   return (
     <section className="neo space-y-3 p-4">
@@ -53,6 +57,29 @@ export function SciencePanel({ dash, locale }: { dash: DashboardSnapshot; locale
           v={(blind?.level || "—").toUpperCase()}
           sub={blind?.drivers?.[0] || ""}
         />
+        {pv?.test_csi ? (
+          <Tile
+            k={pv.model || "PRITHVI-Nowcast v7"}
+            v={`CSI ${csi4(pv.test_csi)}`}
+            sub={pv.live_csi ? `1·3·6·12 h · live ${csi4(pv.live_csi)}` : "1·3·6·12 h"}
+          />
+        ) : null}
+        {pc?.enabled ? (
+          <Tile
+            k="Rain within 25 km"
+            v={
+              pc.here?.leads
+                ? ["6", "9", "12"]
+                    .map((L) => {
+                      const x = pc.here?.leads?.[L];
+                      return `${L}h ${x?.p == null ? "—" : Math.round(x.p * 100) + "%"}${x?.rain ? " ●" : ""}`;
+                    })
+                    .join(" · ")
+                : "—"
+            }
+            sub={`CSI ${["6", "9", "12"].map((L) => (pc.test_csi?.[L] == null ? "—" : Number(pc.test_csi[L]).toFixed(2))).join(" · ")} · 6·9·12 h`}
+          />
+        ) : null}
       </div>
       {speech ? (
         <p className="text-sm">

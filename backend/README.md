@@ -44,6 +44,33 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Android / Expo: `EXPO_PUBLIC_API_BASE=http://<LAN-IP>:8000`. Prefer `stream: false` on chat if SSE is unavailable.
 
+## PRITHVI-Nowcast v7 (local, optional)
+
+R2 network + frozen PN-Blend as one ONNX file (6.7 MB, git-ignored) in `backend/models/pn_nowcast_v7.onnx`.
+Test CSI (0.5°, rain ≥ 1 mm/h): 0.643 / 0.466 / 0.393 / 0.364 at 1 / 3 / 6 / 12 h.
+
+```
+pip install -r requirements-pn.txt
+PN_ENABLED=1  PN_VERSION=v7  [PN_V7_MODEL_PATH=models/pn_nowcast_v7.onnx]  NASA_EARTHDATA_API=<token>
+```
+
+* Inputs: IMERG Early (6 h), GFS (NOMADS subset, run ≤ T−6 h), IFS open data (run ≤ T−8 h). INSAT is masked.
+* `GET /api/research/pn-live?wait=true` — live pack (groups live/masked, NWP runs, leads, validation).
+* `GET /api/research/pn-track?days=30` — live track record from `pn_runs` (Mongo or `.cache/pn_runs.json`).
+* Fallbacks: IMERG gap/stale → persistence; `PN_VERSION=v4` → old PN-Net.
+* Memory: one v7 run needs ~0.4 GB extra RAM at peak — too much for a 512 MB instance.
+* Re-export: `python tools/pn_export_onnx_v7.py --weights best.pt --static static.npy --frozen frozen_v7.json --out models/pn_nowcast_v7.onnx`
+
+### PN-Correct v6 (optional, `PN_CORRECT_ENABLED=1`, needs `PN_VERSION=v7`)
+
+Separate "rain ≥ 1 mm/h within 25 km" layer at 6 / 9 / 12 h on the 0.25° GFS grid (`backend/models/pn_correct_v6.onnx`, 7.8 MB, git-ignored).
+It never replaces the v7 field (hand-over weight fixed at 1.0). Cut-offs 0.30 / 0.28 / 0.26; test CSI (0.25°) 0.385 / 0.373 / 0.367.
+
+* Inputs: primary GFS run ≤ T−6 h (f000 env + 6-h APCP), IFS 00/12 run ≤ T−8 h (tp 12–36 h, step-24 env + u/v200), IMERG T−1..T−3 on 331×351. INSAT masked (sat_ok = 0).
+* Output: `pn_correct` in `/api/research/pn-live`; Science panel tile "Rain within 25 km" at the selected place.
+* Cost: ~0.12 s per run (features + ONNX), +~11 MB peak RSS on top of v7.
+* PN-Judge is not wired (failed its pre-registered test).
+
 ## Tests
 
 ```powershell

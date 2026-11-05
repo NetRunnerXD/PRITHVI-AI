@@ -55,6 +55,30 @@ def _spread_hubs(rows: list[dict], n: int = 4) -> list[dict]:
     return [ranked[i] for i in range(0, len(ranked), step)][:n]
 
 
+def cold_ground_veto(cell: dict[str, Any], vp: dict[str, Any] | None, dkm: float) -> str | None:
+    """Why an IR 'cold' cell is probably cold ground / clear sky, or None to keep it.
+
+    The public JPEG has no calibrated Tb, so the Himalaya/Ladakh/Tibetan rim at night
+    (surface ≈ −10 °C) looks like a 240 K cloud top. Two guards:
+      1. high terrain needs a genuinely deep top (proxy ≤ 228 K);
+      2. Open-Meteo current analysis within 200 km says clear (cloud < 20 %, code ≤ 2).
+    """
+    lat, lon = float(cell.get("lat") or 0), float(cell.get("lon") or 0)
+    tb = float(cell.get("min_tb_k") or 300.0)
+    high = lat >= 29.5 or (lat >= 26.8 and lon >= 88.0 and lon <= 97.5 and lat >= 27.3)
+    elev = (vp or {}).get("elevation_m")
+    if elev is not None and dkm <= 120 and float(elev) >= 2000:
+        high = True
+    if high and tb > 228.0:
+        return "high-terrain cold ground (IR proxy not cold enough for a deep top)"
+    if vp and vp.get("ok") and dkm <= 200.0:
+        cc = vp.get("cloud_cover")
+        code = int(vp.get("weather_code") or 0)
+        if cc is not None and float(cc) < 20.0 and code <= 2 and float(vp.get("precip_mm") or 0) <= 0.0:
+            return f"NWP clear sky ({int(float(cc))}% cloud, code {code}) within {int(dkm)} km"
+    return None
+
+
 def _kind(cell: dict[str, Any]) -> str:
     d_tb = float(cell.get("d_tb_k") or 0)
     if cell.get("trend") == "collapsing" or d_tb >= 2.0:
@@ -260,10 +284,12 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
             gibs_ir.fetch_ir(frame["lat"], frame["lon"]),
             gibs_ir.fetch_imerg(frame["lat"], frame["lon"]),
             firms.fetch_india(),
+            gibs_ir.india_grid(tuple(imd_insat.INDIA_BOUNDS)),
+            gibs_ir.tb_frame(),
             return_exceptions=True,
         )
     except Exception:
-        gathered = [{}, [], {}, {}, {}, {}]
+        gathered = [{}, [], {}, {}, {}, {}, {}, {}]
 
     def _dict(x: Any, default: dict[str, Any]) -> dict[str, Any]:
         return x if isinstance(x, dict) else default
@@ -274,6 +300,8 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
     ir = _dict(gathered[3], {"ok": False})
     imerg = _dict(gathered[4], {"ok": False})
     firms_pack = _dict(gathered[5], {"ok": False, "fires": [], "n": 0})
+    hgrid = _dict(gathered[6], {"ok": False})
+    htb = _dict(gathered[7], {"ok": False})
 
     seen: set[tuple[float, float, str]] = set()
     strokes: list[dict[str, Any]] = []
@@ -308,6 +336,7 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
             "closes_ms": thunder_predict._ms(closes),
             "engine": s.get("engine") or "weatherbit-lightning",
         }
+        row["detection"] = "detected" if row["engine"] in {"weatherbit-lightning", "lightning-feed"} else "estimated"
         strokes.append(row)
         incidents.append(
             _incident(
@@ -408,11 +437,19 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
     grid = None
     bounds = None
     half = 1.1
+    cell_source = None
+    image_time = None
     if sector.get("ok") and sector.get("grid"):
         grid = sector["grid"]
         bounds = tuple(sector.get("bounds") or imd_insat.INDIA_BOUNDS)
+        cell_source, image_time = "insat-3ds-ir1", sector.get("image_time")
+    elif hgrid.get("ok") and hgrid.get("grid"):
+        # Full-India Himawari B13 (calibrated Tb) when INSAT is unavailable.
+        grid, bounds = hgrid["grid"], tuple(hgrid["bounds"])
+        cell_source, image_time = "himawari9-b13", hgrid.get("image_time")
     elif ir.get("ok") and ir.get("grid"):
         grid, half = ir["grid"], 1.1
+        cell_source, image_time = "himawari9-b13-patch", ir.get("valid")
     cells_raw = (
         sat_cv.segment(grid, bounds=bounds)
         if grid and bounds
@@ -425,7 +462,17 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
         grid,
         bounds,
         strokes=list(ltn_pack.get("strokes") or []),
+        image_time=image_time,
     )
+    # Independent check of every cell against Himawari-9 B13 calibrated Tb (cold top <= 240 K).
+    if htb.get("ok"):
+        for c in cells_raw:
+            try:
+                t = gibs_ir.tb_at(htb["tb"], float(c["lat"]), float(c["lon"]))
+            except Exception:
+                t = None
+            c["himawari_tb_k"] = t
+            c["himawari_confirmed"] = None if t is None else bool(t <= 240.0)
     hub_wx = list(zip(hubs, thunder_packs))
 
     def _nearest_wx(lat: float, lon: float) -> tuple[dict[str, Any], float]:
@@ -442,13 +489,18 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
         return best, dkm
 
     cells: list[dict[str, Any]] = []
+    vetoed: list[dict[str, Any]] = []
     for i, c in enumerate(cells_raw):
         clat, clon = float(c["lat"]), float(c["lon"])
         if not _in_scope(clat, clon, frame):
             continue
+        vp, dkm = _nearest_wx(clat, clon)
+        why = cold_ground_veto(c, vp, dkm)
+        if why:
+            vetoed.append({"lat": clat, "lon": clon, "min_tb_k": c.get("min_tb_k"), "reason": why})
+            continue
         kind = c.get("kind") or _kind(c)
         place = _label(clat, clon)
-        vp, dkm = _nearest_wx(clat, clon)
         nwp_now = om_thunder.thunder_now(vp)
         nwp_fwd = om_thunder.thunder_forward(vp)
         n_st = int(c.get("n_strokes") or 0)
@@ -662,6 +714,7 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
                     weather_code=int(vp.get("weather_code") or 0),
                     agrees=agrees,
                     p_cloudburst=float(inc.get("p_cloudburst") or 0),
+                    source=str(inc.get("skill_source") or "ir_cell"),
                 )
             )
             gate = thunder_predict.agreement_gate(
@@ -677,6 +730,7 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
             inc["gate"] = gate
             if not gate.get("ok"):
                 inc["confidence_band"] = "low"
+                inc["confidence_basis"] = (inc.get("confidence_basis") or "") + " Not confirmed by a second independent source."
                 inc["verify"] = {**(inc.get("verify") or {}), "note": "IR nowcast — not confirmed by strokes or NWP"}
             thunder_predict.log_verify(
                 {
@@ -705,15 +759,16 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
     )
 
     def _pred_ok(i: dict[str, Any]) -> bool:
-        if i.get("engine") in {"open-meteo-thunder", "thunder-predict-v1", "cv-nowcast-v1"}:
-            return True
-        if (i.get("gate") or {}).get("ok"):
+        # No engine whitelist: a prediction is only "verified" if its agreement gate
+        # passed or an independent source (NWP thunder, strokes) backs it.
+        gate = i.get("gate")
+        if isinstance(gate, dict) and not gate.get("ok"):
+            return False
+        if (gate or {}).get("ok"):
             return True
         if i.get("nwp_thunder_fwd") or i.get("nwp_thunder"):
             return True
-        if float(i.get("p_lightning") or 0) >= 0.12 or float(i.get("p_cloudburst") or 0) >= 0.12:
-            return True
-        if int(i.get("lead_min") or 0) > 0:
+        if i.get("engine") == "open-meteo-thunder" and i.get("weather_code") is not None:
             return True
         return int(i.get("n_strokes") or 0) >= 1
 
@@ -791,6 +846,7 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
             "fire": len(fires_in),
             "landslide": len(landslides),
             "cloud": sum(1 for i in live if i["kind"] == "cloud"),
+            "vetoed_cold_ground": len(vetoed),
             "all": len(incidents),
         },
         "imerg_mm_h": (imerg or {}).get("mm_h"),
@@ -809,13 +865,30 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
         "past_h": past_h,
         "need_second_frame": n_frames < 2,
         "cv": cv_meta,
+        "vetoed_cells": vetoed[:40],
+        "ir_note": (sector or {}).get("tb_note") or (ir or {}).get("tb_note"),
+        "ir_image_time": image_time,
+        "cell_source": cell_source,
+        "himawari_valid": htb.get("valid"),
+        "himawari_check": {
+            "n_cells": len(cells),
+            "confirmed": sum(1 for c in cells if c.get("himawari_confirmed") is True),
+            "not_confirmed": sum(1 for c in cells if c.get("himawari_confirmed") is False),
+            "rule": "Himawari-9 B13 Tb <= 240 K within ±0.15°",
+        },
         "sensors": {
             "lightning": bool((ltn_pack.get("n") or 0) > 0) or any(p.get("thunder") for p in thunder_packs),
             "lightning_status": ltn_pack.get("status") or "cv+open-meteo",
             "lightning_source": ltn_pack.get("source"),
             "lightning_hubs": ltn_pack.get("hubs"),
+            "lightning_key_valid": ltn_pack.get("key_valid", True),
+            "lightning_note": None
+            if ltn_pack.get("key_valid", True)
+            else "Observed lightning needs a valid WEATHERBIT_API_KEY (current key rejected: 403). Lightning shown is IR/NWP-inferred only.",
             "lightning_history_n": ltn_pack.get("history_n"),
             "insat": bool(sector.get("ok")),
+            "insat_status": sector.get("status"),
+            "himawari_grid": bool(hgrid.get("ok")),
             "gibs_ir": bool(ir.get("ok")),
             "imerg": bool((imerg or {}).get("ok")),
             "open_meteo_thunder": any(p.get("ok") for p in thunder_packs),
@@ -827,13 +900,22 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
             "ready": True,
             "message": "",
             "satellites": [
-                {"id": "imd_ir1", "name": "INSAT-3DS IR1 JPEG", "status": "ok" if sector.get("ok") or ir.get("ok") else "fail"},
+                {"id": "imd_ir1", "name": "INSAT-3DS IR1 JPEG", "status": "ok" if sector.get("ok") else "fail"},
                 {"id": "gibs", "name": "GIBS Himawari Band 13", "status": "ok" if ir.get("ok") else "fail"},
                 {"id": "imerg", "name": "GPM IMERG", "status": "ok" if (imerg or {}).get("ok") else "fail"},
             ],
             "age_s": 0,
         },
     }
+    _attach_pn_net(pack, now)
+    _attach_sat_lightning(pack)
+    try:
+        from app.science import verify_items
+
+        verify_items.attach(pack, htb, now)
+    except Exception as e:  # never break the map on a verification error
+        pack["verification_24h"] = {}
+        pack["verification_error"] = type(e).__name__
     pack["counts"]["predicted"] = len(pack["predicted"])
     pack["counts"]["predicted_storm"] = len(pack["predicted_storms"])
     pack["counts"]["predicted_unverified"] = len(pack["predicted_unverified"])
@@ -851,3 +933,90 @@ async def build(state: str, *, past_h: float = 6.0) -> dict[str, Any]:
     except Exception:
         pass
     return pack
+
+
+
+def _attach_pn_net(pack: dict[str, Any], now: datetime) -> None:
+    """PN-Net v4 lightning-proxy cells (live IMERG input) for leads that are still in the
+    future. Non-blocking: uses the cached run and kicks a refresh in the background."""
+    try:
+        from app.science.pn import live as pn_live
+    except Exception:  # noqa: BLE001
+        return
+    pn = pn_live.peek()
+    if not pn:
+        pack["pn_net"] = {"enabled": False}
+        return
+    summary = {
+        "enabled": True,
+        "status": pn.get("status"),
+        "last_obs_hour": pn.get("last_obs_hour"),
+        "obs_age_h": pn.get("obs_age_h"),
+        "note": pn.get("note") or pn.get("label_note"),
+        "validation": pn.get("validation"),
+        "n_cells": 0,
+    }
+    added = []
+    for ld in pn.get("leads") or []:
+        lead_now = int(ld.get("lead_from_now_min") or 0)
+        if lead_now < 0:
+            continue
+        conf = thunder_predict.confidence_of(0.0, lead_min=int(ld["lead_h"]) * 60, source="pn_net_ltg")
+        vs = _parse_dt(ld.get("valid_start"))
+        for c in (ld.get("ltg_cells") or [])[:15]:
+            added.append(
+                {
+                    "id": f"pn-{ld['lead_h']}-{c['lat']}-{c['lon']}",
+                    "kind": "lightning",
+                    "phase": "predicted",
+                    "engine": "pn-net-v4",
+                    "lat": c["lat"],
+                    "lon": c["lon"],
+                    "place": "PN-Net lightning-proxy cell",
+                    "lead_min": lead_now,
+                    "model_lead_h": ld["lead_h"],
+                    "started_at": ld.get("valid_start"),
+                    "closes_at": (vs + timedelta(hours=1)).isoformat() if vs else None,
+                    "p_lightning": c["p"],
+                    "skill_source": "pn_net_ltg",
+                    **conf,
+                }
+            )
+    added = added[:40]
+    summary["n_cells"] = len(added)
+    pack["pn_net"] = summary
+    pack.setdefault("predicted", []).extend(added)
+
+
+
+def _attach_sat_lightning(pack: dict[str, Any]) -> None:
+    """Satellite-ESTIMATED lightning likelihood (Himawari/GOES IR + CAPE/LI). Kept apart from
+    observed strikes: never counted as 'lightning' and always labelled as an estimate."""
+    try:
+        from app.science import sat_lightning
+    except Exception:  # noqa: BLE001
+        return
+    sl = sat_lightning.peek()
+    if not sl:
+        pack["sat_lightning"] = {"ok": False, "status": "warming", "cells": []}
+        return
+    val = (sl.get("validation") or {}).get("total") or {}
+    pack["sat_lightning"] = {
+        "ok": bool(sl.get("ok")),
+        "label": "Satellite-estimated lightning likelihood — not detected strikes",
+        "valid": sl.get("valid"),
+        "prev_frame": sl.get("prev_frame"),
+        "sources": sl.get("sources"),
+        "rule": sl.get("rule"),
+        "coverage_note": sl.get("coverage_note"),
+        "confidence": sl.get("confidence"),
+        "confidence_basis": (
+            f"{round(100 * sl['confidence'])}% of recent 'likely' boxes had IMERG rain ≥10 mm/h "
+            f"(lightning proxy) in the same hour; POD {val.get('likely', {}).get('pod')}."
+            if sl.get("confidence") is not None
+            else "Not yet validated against IMERG."
+        ),
+        "validation": val,
+        "cells": (sl.get("cells") or [])[:200],
+    }
+    pack.setdefault("counts", {})["sat_lightning_est"] = len(pack["sat_lightning"]["cells"])

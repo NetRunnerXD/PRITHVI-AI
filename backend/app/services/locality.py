@@ -28,7 +28,10 @@ def foreign_states_in(text: str, home: Location) -> list[str]:
 
 def alert_belongs(item: dict, loc: Location) -> bool:
     """Keep a CAP/Sachet row if it names this place or names no other state."""
-    blob = f"{item.get('title') or ''} {item.get('body') or ''}"
+    # CAP <areaDesc> ("12 districts of Telangana") names the state when the RSS title only
+    # lists district names — without it a Telangana alert "named no other state" and was
+    # shown at every pin in India.
+    blob = f"{item.get('title') or ''} {item.get('body') or ''} {item.get('area_desc') or ''}"
     low = blob.lower()
     if any(n in low for n in _needles(loc)):
         return True

@@ -236,7 +236,7 @@ async def test_reply_in_buttons_force_locale(monkeypatch):
             "precip_next_3d_mm": 7.1,
         }
 
-    async def fake_in(text, hint=None):
+    async def fake_in(text, hint=None, picked=None):
         src = "hi" if any("\u0900" <= ch <= "\u097F" for ch in text or "") else "en"
         en = "How much rain in Howrah?" if src == "hi" else text
         return MTResult(text=en, src=src, tgt="en", engine="google-gtx", ok=True)
@@ -314,7 +314,7 @@ async def test_llm_translates_when_gtx_fails(monkeypatch):
             "precip_next_3d_mm": 7.1,
         }
 
-    async def fake_in(text, hint=None):
+    async def fake_in(text, hint=None, picked=None):
         return MTResult(text=text, src="en", tgt="en", engine="identity", ok=True)
 
     async def fake_out(text, tgt, src="en"):
@@ -351,7 +351,7 @@ async def test_no_place_in_bengali_stays_on_gps_focus(monkeypatch):
     async def fake_ping():
         return True, "qwen2.5"
 
-    async def fake_in(text, hint=None):
+    async def fake_in(text, hint=None, picked=None):
         return MTResult(
             text="How much rain in the next 3 days in Patna, Bihar?",
             src="bn",

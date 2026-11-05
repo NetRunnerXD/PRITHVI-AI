@@ -3,6 +3,7 @@
 import type { ComponentType } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
 import { useApp } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import type { TabId } from "@/types/dashboard";
 import {
   IconAdvisor,
@@ -16,6 +17,7 @@ import {
   IconPin,
   IconPredicted,
   IconRefresh,
+  IconDevice,
   IconSettings,
   IconUser,
 } from "./Icons";
@@ -27,6 +29,7 @@ const TABS: { id: TabId; Icon: ComponentType<{ className?: string }> }[] = [
   { id: "map", Icon: IconMap },
   { id: "model", Icon: IconPredicted },
   { id: "chat", Icon: IconAdvisor },
+  { id: "device", Icon: IconDevice },
   { id: "settings", Icon: IconSettings },
 ];
 
@@ -51,7 +54,29 @@ export function Sidebar() {
     viewMode,
     setViewMode,
     settings,
-  } = useApp();
+  } = useApp(
+    useShallow((s) => ({
+      locale: s.locale,
+      setLocale: s.setLocale,
+      tab: s.tab,
+      setTab: s.setTab,
+      dashboard: s.dashboard,
+      location: s.location,
+      status: s.status,
+      refresh: s.refresh,
+      sidebarOpen: s.sidebarOpen,
+      setSidebarOpen: s.setSidebarOpen,
+      favorites: s.favorites,
+      recent: s.recent,
+      setLocation: s.setLocation,
+      account: s.account,
+      setAuthModal: s.setAuthModal,
+      signOut: s.signOut,
+      viewMode: s.viewMode,
+      setViewMode: s.setViewMode,
+      settings: s.settings,
+    })),
+  );
   const t = COPY[locale];
   const tabLabel: Record<TabId, string> = {
     home: t.tabHome,
@@ -61,23 +86,17 @@ export function Sidebar() {
     model: t.tabModel,
     chat: t.tabChat,
     settings: t.tabSettings,
+    device: t.tabDevice || "Device",
   };
 
-  const visibleTabs = TABS.filter(({ id }) => {
+  const allowTab = (id: TabId) => {
+    if (id === "device" && !settings.deviceEnabled) return false;
     if (settings.showAdvancedTabs) return true;
-    if (["analytics", "data", "model"].includes(id)) {
-      return tab === id;
-    }
+    if (["analytics", "data", "model"].includes(id)) return tab === id;
     return true;
-  });
-
-  const mobileVisibleTabs = TABS.filter(({ id }) => {
-    if (settings.showAdvancedTabs) return true;
-    if (["analytics", "data", "model"].includes(id)) {
-      return tab === id;
-    }
-    return true;
-  });
+  };
+  const visibleTabs = TABS.filter(({ id }) => allowTab(id));
+  const mobileVisibleTabs = visibleTabs;
 
   return (
     <>
@@ -123,7 +142,7 @@ export function Sidebar() {
               {/* Brand Logo Emblem */}
               <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full overflow-hidden bg-transparent shadow-lg shadow-blue-500/15 border-2 border-white/25">
                 <img
-                  src="/logo.png"
+                  src="/logo-128.webp"
                   alt="PRITHVI-AI Logo"
                   width={44}
                   height={44}
@@ -152,7 +171,7 @@ export function Sidebar() {
               title="PRITHVI-AI — WeatherGPT for India"
             >
               <img
-                src="/logo.png"
+                src="/logo-128.webp"
                 alt="PRITHVI-AI Logo"
                 width={40}
                 height={40}

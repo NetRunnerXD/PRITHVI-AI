@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -61,6 +62,8 @@ from app.i18n.detect import detect_lang, has_script, pick_output_locale, script_
 from app.i18n.gemini_langs import gemini_native
 from app.i18n.mt import inbound as mt_inbound, outbound as mt_outbound
 from app.i18n.mt import MTResult
+from app.i18n.mt import translate as mt_translate
+from app.agents.typed_tools import TOOL_OF_NEED, TOOLS as TYPED_TOOLS, to_data_args
 from app.i18n.number_lock import NUM
 from app.llm import ollama_client
 from app.schemas.chat import ChatRequest
@@ -108,6 +111,107 @@ async def run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         ollama_client.reset_provider(llm_tok)
 
 
+def _native_tools_on() -> bool:
+    import os
+
+    return os.getenv("CHAT_NATIVE_TOOLS", "1").strip().lower() not in {"0", "false", "off", "no"}
+
+
+_SENT_END = re.compile(r"(?<=[.!?\u0964\u0965])\s+|\n+")
+_TOOLISH = re.compile(r"^\s*(?:<|\{|\[|```|data\s*[:(]|function\b)", re.I)
+
+
+async def _llm_round(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    box: dict[str, Any],
+    *,
+    stream: bool,
+    out_locale: str,
+    client_mt: bool,
+    draft: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
+    """One LLM call. Streams the answer as `delta` events while the model is still writing.
+
+    English replies stream token by token. Other languages stream sentence by sentence
+    through the MT cache. The `final` event still carries the checked, localised text and
+    replaces the draft. Tool-call syntax and JSON never reach the draft.
+    """
+    import os
+
+    if not stream or os.getenv("CHAT_STREAM", "1").strip().lower() in {"0", "false", "off"}:
+        box["resp"] = await ollama_client.chat(messages, tools=tools)
+        return
+    q: asyncio.Queue[str] = asyncio.Queue()
+    task = asyncio.create_task(ollama_client.chat_stream(messages, tools=tools, on_delta=q.put_nowait))
+    target = "en" if (client_mt or not out_locale or out_locale == "auto") else out_locale
+    mode: str | None = None  # None = undecided, "text", "hold"
+    buf = ""
+    pending = ""
+    tr_budget = 6  # sentences translated live; the rest wait for the final
+
+    async def _emit_text(piece: str) -> AsyncIterator[dict[str, Any]]:
+        nonlocal pending, tr_budget
+        if target == "en":
+            yield {"type": "delta", "text": piece}
+            return
+        pending += piece
+        parts = _SENT_END.split(pending)
+        if len(parts) < 2:
+            return
+        done_parts, pending = parts[:-1], parts[-1]
+        for sent in done_parts:
+            sent = sent.strip()
+            if not sent or tr_budget <= 0:
+                continue
+            tr_budget -= 1
+            try:
+                res = await asyncio.wait_for(mt_translate(sent, "en", target), timeout=4)
+            except Exception:  # noqa: BLE001
+                continue
+            if res.ok and res.text:
+                yield {"type": "delta", "text": res.text.strip() + " "}
+
+    try:
+        while True:
+            getter = asyncio.ensure_future(q.get())
+            done, _ = await asyncio.wait({getter, task}, return_when=asyncio.FIRST_COMPLETED)
+            if getter not in done:
+                getter.cancel()
+                pieces = []
+                while not q.empty():
+                    pieces.append(q.get_nowait())
+            else:
+                pieces = [getter.result()]
+            for piece in pieces:
+                buf += piece
+                if mode is None:
+                    if len(buf.strip()) < 10 and not task.done():
+                        continue
+                    mode = "hold" if _TOOLISH.match(buf) else "text"
+                    if mode == "text":
+                        if draft.get("shown"):
+                            yield {"type": "delta_reset"}
+                        draft["shown"] = True
+                        async for ev in _emit_text(buf):
+                            yield ev
+                    continue
+                if mode == "text":
+                    if "<function" in piece or re.search(r"\bdata\s*\(", buf[-40:]):
+                        mode = "hold"
+                        yield {"type": "delta_reset"}
+                        draft["shown"] = False
+                        continue
+                    async for ev in _emit_text(piece):
+                        yield ev
+            if getter not in done:
+                break
+        box["resp"] = task.result()
+    finally:
+        if not task.done():
+            task.cancel()
+
+
 async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     pin_now: Location = payload.location or resolve_location(None)
     loc: Location = pin_now
@@ -116,18 +220,24 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
 
         om_mod.seed_from_client(loc.lat, loc.lon, payload.om, payload.fetched_at)
     original = payload.message or ""
-    detected0 = detect_lang(original, payload.locale_hint)
+    picked = (payload.input_lang or "").strip().lower() or None
+    if not picked and (payload.output_locale or "").strip().lower() not in {"", "auto"}:
+        picked = payload.output_locale
+    detected0 = detect_lang(original, payload.locale_hint, picked)
     llm_id = (payload.llm or "").strip().lower()
     if not llm_id:
         from app.llm.providers import resolve as resolve_llm
 
         llm_id = resolve_llm().id
+    # Server MT wins. A browser translation is only a fallback when the server one fails.
+    incoming = await mt_inbound(original, payload.locale_hint, picked)
     client_en = (payload.question_en or "").strip()
-    if client_en and detected0 != "en":
+    if not incoming.ok and client_en and detected0 != "en":
         incoming = MTResult(text=client_en, src=detected0 or "auto", tgt="en", engine="client-mt", ok=True)
-    else:
-        incoming = await mt_inbound(original, payload.locale_hint)
     locale = incoming.src if incoming.src not in {"auto", ""} else detected0
+    if detected0 in {"hinglish", "sat", "mni", "kok", "mai", "sa", "doi", "brx", "ks", "sd"}:
+        # Google reports these as hi/bn/ur/…; keep the language the user actually wrote.
+        locale = detected0
     if incoming.ok:
         message_en = incoming.text or original
     elif locale != "en":
@@ -414,6 +524,9 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     insight_turn = insight_ok and insight_canary(
         payload.conversation_id, _settings.insight_chat_percent, _settings.insight_chat
     )
+    if payload.voice_box:
+        # The speaker stays on ASKING until the WAV is ready. Skip the extra insight fetches.
+        insight_turn = False
     if insight_turn:
         extra: list[str] = []
         intent = layer1_ctx.intent
@@ -577,23 +690,25 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         return {"start": yield_start, "result": collected[key], "ms": ms, "loc": loc}
 
     if needed:
+        # Plan every fetch first, run them together, then emit events in plan order.
+        fetch_plan: list[tuple[str, dict[str, Any]]] = []
         for need in list(needed):
             if need == "rank" and gate.states:
                 for st in gate.states:
                     key = f"rank:{st}"
                     if key in collected or (need in collected and collected[need].get("state") == st):
                         continue
-                    pack = await exec_data(
-                        {
-                            "need": "rank",
-                            "state": st,
-                            "question": message_en,
-                            "metric": rank_metric(message_en),
-                        }
+                    fetch_plan.append(
+                        (
+                            key,
+                            {
+                                "need": "rank",
+                                "state": st,
+                                "question": message_en,
+                                "metric": rank_metric(message_en),
+                            },
+                        )
                     )
-                    yield pack["start"]
-                    yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
-                    collected[key] = pack["result"]
                 continue
             if need in collected:
                 continue
@@ -609,16 +724,30 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                 args["other"] = other
             if need == "rank" and gate.states:
                 args["state"] = gate.states[0]
-            pack = await exec_data(args)
+            fetch_plan.append((need, args))
+        if len(fetch_plan) == 1:
+            packs = [await exec_data(fetch_plan[0][1])]
+        elif fetch_plan:
+            packs = list(await asyncio.gather(*(exec_data(a) for _, a in fetch_plan)))
+        else:
+            packs = []
+        order = [str(a.get("need") or "data") for _, a in fetch_plan]
+        for need_key in dict.fromkeys(order):
+            if need_key in collected:
+                collected[need_key] = collected.pop(need_key)
+        for (key, _a), pack in zip(fetch_plan, packs):
             yield pack["start"]
             yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
+            if key.startswith("rank:"):
+                collected[key] = pack["result"]
+                collected["rank"] = pack["result"]  # sequential order: last state wins
 
     english_llm = ""
     if insight_turn:
         want = select_narrator(payload, _settings, insight_turn=True)
         if want:
             ollama_client.use_provider(want)
-    ollama_ok, ollama_msg = await ollama_client.ping()
+    ollama_ok, ollama_msg = await ollama_client.ping_cached()
     from app.llm import providers as llm_registry
     from app.llm.worker_hub import hub as llm_hub
 
@@ -688,7 +817,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                     "Do not mention Patna, Bihar, Haldia, or any other district unless it is this focus "
                     "or the user named it. Never switch state. "
                     "Do not say you could not find data if figures are provided below. "
-                    "Do not invent dates or millimetres. Quote only the data() pack for this window. "
+                    "Do not invent dates or millimetres. Quote only the fetched pack for this window. "
                     "Do not mention mandi or farm prices unless the user asked."
                 )
             elif not needed and tri.kind != "data":
@@ -699,6 +828,11 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                 )
             if place:
                 hint_bits.append(f"The user named {place}.")
+            if payload.voice_box:
+                hint_bits.append(
+                    "Spoken aloud on a small speaker. Two short sentences only. "
+                    "No lists, no headings, no tool names."
+                )
             if layer1_ctx.tailored_user_hint:
                 hint_bits.append(layer1_ctx.tailored_user_hint)
             if insight_turn:
@@ -755,7 +889,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                         + (
                             "Reply with the InsightReply JSON object only."
                             if insight_turn
-                            else "Reply as chat. Call data() if you need a Prithvi AI number for the named place."
+                            else "Reply as chat. Call a tool if you need a Prithvi AI number for the named place."
                         )
                     ),
                 }
@@ -766,14 +900,29 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                 (n in collected) or (n == "rank" and any(str(k).startswith("rank") for k in collected))
                 for n in needed
             )
-            hosted_narrator = llm_id in ("gemini", "groq")
-            use_tools = (bool(needed) or tri.kind == "data") and not hosted_narrator and not packs_ready
+            # Native function calling on every narrator (Gemini/Groq included). When the
+            # rule gate already fetched every pack, narrate straight away (one LLM call).
+            use_tools = (bool(needed) or tri.kind == "data") and not packs_ready and _native_tools_on()
             max_rounds = 2 if insight_turn else 5
+            if payload.voice_box:
+                # One narration, plus a single follow-up if the model asked for a tool.
+                use_tools = False
+                max_rounds = 2
+            bad_args_retry = 0
+            draft = {"shown": False}
             while rounds < max_rounds:
-                resp = await ollama_client.chat(
+                box: dict[str, Any] = {}
+                async for ev in _llm_round(
                     messages,
-                    tools=[DATA_SCHEMA] if use_tools else None,
-                )
+                    TYPED_TOOLS if use_tools else None,
+                    box,
+                    stream=not insight_turn,
+                    out_locale=out_locale,
+                    client_mt=bool(payload.client_mt),
+                    draft=draft,
+                ):
+                    yield ev
+                resp = box["resp"]
                 if resp.get("error") and not (resp.get("content") or resp.get("tool_calls")):
                     yield {
                         "type": "notice",
@@ -861,7 +1010,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                                 "role": "user",
                                 "content": (
                                     "This question needs Prithvi AI figures. "
-                                    f"Call data() now with need in {needed}. Then quote those numbers."
+                                    f"Call the matching tool now ({', '.join(sorted({TOOL_OF_NEED.get(n, n) for n in needed}))}). Then quote those numbers."
                                 ),
                             }
                         )
@@ -869,36 +1018,47 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                         rounds += 1
                         continue
                     break
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": resp.get("content") or "",
-                        "tool_calls": [
-                            {
-                                "id": c.get("id") or f"c{rounds}{i}",
-                                "type": "function",
-                                "function": {
-                                    "name": c.get("name"),
-                                    "arguments": c.get("arguments") or "{}",
-                                },
-                            }
-                            for i, c in enumerate(calls)
-                        ],
+                tc_msgs: list[dict[str, Any]] = []
+                for i, c in enumerate(calls):
+                    tc: dict[str, Any] = {
+                        "id": c.get("id") or f"c{rounds}{i}",
+                        "type": "function",
+                        "function": {
+                            "name": c.get("name"),
+                            "arguments": c.get("arguments") or "{}",
+                        },
                     }
-                )
-                for c in calls:
-                    args = _parse_args(c.get("arguments"))
+                    if c.get("thought_signature"):
+                        tc["thought_signature"] = c["thought_signature"]
+                    tc_msgs.append(tc)
+                messages.append({"role": "assistant", "content": resp.get("content") or "", "tool_calls": tc_msgs})
+                # Validate every call, then run the valid ones in parallel.
+                checked: list[tuple[dict[str, Any], str, dict[str, Any] | None, str | None]] = []
+                for c, tc in zip(calls, tc_msgs):
                     name = c.get("name") or ""
-                    if name != "data":
-                        tool_out: Any = {"error": "only the data function is available"}
-                        yield {"type": "tool_start", "name": name, "args": args}
+                    data_args, err = to_data_args(name, c.get("arguments"))
+                    if data_args is not None and "question" not in data_args:
+                        data_args["question"] = message_en
+                    checked.append((tc, name, data_args, err))
+                valid = [d for _, _, d, e in checked if d is not None]
+                if len(valid) > 1:
+                    ran = iter(await asyncio.gather(*(exec_data(d) for d in valid)))
+                else:
+                    ran = iter([await exec_data(valid[0])] if valid else [])
+                any_bad = False
+                for tc, name, data_args, err in checked:
+                    if data_args is None:
+                        any_bad = True
+                        tool_out: Any = {"error": err, "retry": "fix the arguments and call again"}
+                        traces.append({"name": f"tool:{name}", "status": "invalid", "ms": 0})
+                        yield {"type": "tool_start", "name": name, "args": _parse_args(tc["function"]["arguments"])}
                         yield {"type": "tool_result", "name": name, "data": tool_out, "ms": 0}
                     else:
-                        pack = await exec_data(args)
+                        pack = next(ran)
                         yield pack["start"]
                         yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
                         tool_out = pack["result"]
-                    if insight_turn:
+                    if insight_turn and data_args is not None:
                         from app.agents.insight_compiler import compile_insight
                         from app.services.snapshot import peek_snapshot
 
@@ -909,10 +1069,33 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
                     messages.append(
                         {
                             "role": "tool",
-                            "tool_call_id": c.get("id") or "x",
+                            "tool_call_id": tc["id"],
+                            "name": name,
                             "content": tool_blob,
                         }
                     )
+                if any_bad:
+                    bad_args_retry += 1
+                    if bad_args_retry > 1:
+                        # One retry only; then fall back to the server prefetch for the gate's needs.
+                        use_tools = False
+                        for need in list(needed) or ["forecast"]:
+                            if need in collected or need in ("rank", "compare"):
+                                continue
+                            pack = await exec_data(
+                                {"need": need, "place": loc.place_name or loc.district, "question": message_en}
+                            )
+                            yield pack["start"]
+                            yield {"type": "tool_result", "name": "data", "data": pack["result"], "ms": pack["ms"]}
+                        facts = quote_facts(collected, window=window_hint) or json.dumps(
+                            strip_forbidden(collected), ensure_ascii=False
+                        )[:8000]
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": "Tools are off now. Answer from these verified packs only:\n" + facts,
+                            }
+                        )
                 rounds += 1
         except Exception as exc:
             yield {"type": "notice", "message": f"Chat loop error ({exc})."}
@@ -1129,6 +1312,12 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
     )
     if not english_llm and engine == "llm-en":
         engine = "chat-fallback"
+    # Language actually shown: English fallback, or the routed language for Bodo/Kashmiri.
+    shown_locale = out_locale
+    if engine in {"en-fallback", "chat-fallback"} or (engine == "llm-en" and out_locale != "en"):
+        shown_locale = "en"
+    elif outbound is not None and outbound.ok and outbound.tgt and outbound.tgt != out_locale:
+        shown_locale = outbound.tgt
     if out_locale != "en" and content_en:
         if engine == "client-mt":
             yield {"type": "notice", "message": f"Answer in English; device will translate to {out_locale}."}
@@ -1170,7 +1359,7 @@ async def _run_agent(payload: ChatRequest) -> AsyncIterator[dict[str, Any]]:
         "role": "assistant",
         "content": content,
         "content_en": content_en,
-        "locale": out_locale,
+        "locale": shown_locale,
         "blocks": blocks,
         "suggestions": suggestions,
         "tool_trace": traces,

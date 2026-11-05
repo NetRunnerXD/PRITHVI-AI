@@ -246,12 +246,18 @@ def test_predicted_strikes_are_future_and_in_india():
     assert any(h["kind"] == "lightning" for h in hits)
 
 
-def test_confidence_rises_with_cape_and_agrees():
+def test_confidence_is_measured_skill_not_heuristic():
+    """Confidence = research success ratio (1-FAR) for the source at that lead; the old
+    CAPE/agreement heuristic survives only as `signal` and cannot inflate confidence."""
     weak = confidence_of(0.2, lead_min=60, frames=1, cape=200)
     strong = confidence_of(0.7, lead_min=15, frames=2, cape=2500, weather_code=95, agrees=True, ot=True)
-    assert strong["confidence"] > weak["confidence"]
-    assert strong["confidence_band"] == "high"
-    assert weak["confidence_band"] in {"low", "medium"}
+    assert strong["confidence"] == weak["confidence"]
+    assert strong["signal"] > weak["signal"]
+    assert confidence_of(0.5, lead_min=60, source="pn_net_ltg")["confidence"] == 0.722
+    assert confidence_of(0.5, lead_min=360, source="pn_net_ltg")["confidence"] == 0.296
+    nwp = confidence_of(0.9, lead_min=300, source="nwp_thunder")
+    assert nwp["confidence"] < 0.1 and nwp["confidence_band"] == "low"
+    assert nwp["confidence_basis"]
 
 
 def test_segment_attaches_ring():

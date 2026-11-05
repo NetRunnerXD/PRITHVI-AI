@@ -122,8 +122,14 @@ async def _assemble_snapshot(
     *,
     enrich: bool = True,
     disabled: set[str] | None = None,
+    core: bool = False,
 ) -> DashboardSnapshot:
-    disabled = disabled or set()
+    """core=True: every observation provider, but skip the heavy model work (VERA pack
+    ~4 s CPU, sat-live wait up to 2.5 s, capital scan). The full build follows in the
+    background and is served by /dashboard/enrich."""
+    disabled = set(disabled or set())
+    if core:
+        disabled |= {"vera", "sat_live"}
     obs = await gather_observations(loc, enrich=enrich, disabled=disabled)
     f = extract(obs["om"], obs["flood"], obs["nasa_precip"], obs["aqi"], obs.get("marine") or {})
     inland = bool(f.get("marine_inland"))
@@ -207,6 +213,21 @@ async def _assemble_snapshot(
         "nowcast": {},
         "bandit": {},
     }
+    try:
+        from app.science import pn as _pn
+
+        if _pn.blend_enabled() and isinstance(science.get("nowcast"), dict) and science["nowcast"]:
+            from app.science.pn.blend import blend as _pn_blend
+
+            science["nowcast"]["pn_blend"] = _pn_blend(science["nowcast"], dict(obs.get("om_models") or {}))
+    except Exception as e:  # research post-processing must never break the snapshot
+        science.setdefault("nowcast", {})["pn_blend"] = {"error": type(e).__name__}
+    try:
+        from app.science import pn as _pn2
+
+        science["pn_v7"] = _pn2.science_summary(loc.lat, loc.lon)
+    except Exception:  # noqa: BLE001
+        pass
     anomalies, drivers, stories = compute_anomalies(f, obs["nasa_precip"]) if "anomalies" not in disabled else ([], [], [])
     if science["hysteresis"]["flip"] == "runoff":
         drivers.append("hysteresis on runoff limb")
@@ -338,13 +359,15 @@ async def _assemble_snapshot(
     if isinstance(live_sat, dict) and obs.get("imerg"):
         live_sat = {**live_sat, "imerg": obs.get("imerg")}
     vera = (
-        _vera_pack(f, loc, live_sat)
+        # CPU-bound (~4 s on a laptop core): run off the event loop so other requests
+        # (storm map, tiles, other pins) are not stalled while it computes.
+        await asyncio.to_thread(_vera_pack, f, loc, live_sat)
         if (enrich and "vera" not in disabled)
-        else {"name": "VERA-MoE", "guidance_only": True, "disabled": True}
+        else {"name": "VERA-MoE", "guidance_only": True, "disabled": True, "pending": core}
     )
     f["vera_gate_weights"] = (vera.get("gate") or {}).get("weights") or {}
     scan_hits: list[dict] = []
-    if enrich and "open-meteo" not in disabled and "risks" not in disabled:
+    if enrich and not core and "open-meteo" not in disabled and "risks" not in disabled:
         try:
             from app.services.alert_scan import capital_warning_hits
 
@@ -450,7 +473,7 @@ async def _assemble_snapshot(
     )
     return DashboardSnapshot(
         location=loc,
-        enriching=not enrich,
+        enriching=(not enrich) or core,
         generated_at=generated_at,
         sources=sources,
         descriptive=Descriptive(

@@ -1,8 +1,11 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
-httpx==0.28.1
+httpx[http2]==0.28.1
+# faster-whisper moved to requirements-local-speech.txt (local ESP32/demo only; not for Render)
 pillow==11.1.0
 numpy>=1.26,<2.2
+# GRIB2 decoding for the worldwide GFS map background (binary wheels; optional at runtime)
+eccodes>=2.40
 pydantic==2.10.4
 pydantic-settings==2.7.1
 python-dotenv==1.0.1

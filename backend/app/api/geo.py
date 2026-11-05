@@ -78,6 +78,27 @@ async def map_weather_grid(hour: int = Query(default=0, ge=0, le=23)):
     return await world_grid(hour)
 
 
+@router.get("/map/gfs/meta")
+async def map_gfs_meta(hour: int = Query(default=0, ge=-12, le=24)):
+    """Worldwide GFS background: newest complete cycle, chosen step, de-quantisation."""
+    from app.providers import gfs
+
+    return gfs.meta(hour)
+
+
+@router.get("/map/gfs/{field}.png")
+async def map_gfs_png(field: str, step: int = Query(ge=0, le=24), cycle: str | None = None):
+    """8-bit greyscale field (row 0 = 80°N). `cycle` only busts browser caches."""
+    from app.providers import gfs
+
+    if field not in gfs.QUANT:
+        raise HTTPException(404, "unknown field")
+    blob = gfs.png(field, step)
+    if blob is None:
+        raise HTTPException(404, "not loaded")
+    return Response(blob, media_type="image/png", headers={"Cache-Control": "public, max-age=21600"})
+
+
 @router.get("/map/radar")
 async def map_radar():
     """RainViewer frame list (public). Tiles are loaded in the browser."""
@@ -143,13 +164,13 @@ async def map_layers(request: Request):
             },
         ],
         "weather": [
-            {"id": "wind", "label": "Wind", "unit": "km/h", "source": "open-meteo"},
-            {"id": "temp", "label": "Temperature", "unit": "°C", "source": "open-meteo"},
-            {"id": "precip", "label": "Rain", "unit": "mm/h", "source": "open-meteo"},
-            {"id": "pressure", "label": "Pressure", "unit": "hPa", "source": "open-meteo"},
-            {"id": "clouds", "label": "Clouds", "unit": "%", "source": "open-meteo"},
-            {"id": "humidity", "label": "Humidity", "unit": "%", "source": "open-meteo"},
-            {"id": "cape", "label": "CAPE", "unit": "J/kg", "source": "open-meteo"},
+            {"id": "wind", "label": "Wind", "unit": "km/h", "source": "NOAA GFS"},
+            {"id": "temp", "label": "Temperature", "unit": "°C", "source": "NOAA GFS"},
+            {"id": "precip", "label": "Rain", "unit": "mm/h", "source": "NOAA GFS"},
+            {"id": "pressure", "label": "Pressure", "unit": "hPa", "source": "NOAA GFS"},
+            {"id": "clouds", "label": "Clouds", "unit": "%", "source": "NOAA GFS"},
+            {"id": "humidity", "label": "Humidity", "unit": "%", "source": "NOAA GFS"},
+            {"id": "cape", "label": "CAPE", "unit": "J/kg", "source": "NOAA GFS"},
             {"id": "radar", "label": "Radar", "unit": "dBZ", "source": "rainviewer"},
             {"id": "satellite", "label": "Satellite IR", "unit": "K", "source": "rainviewer"},
         ],

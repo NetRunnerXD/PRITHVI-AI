@@ -53,6 +53,8 @@ class EarlyWarning(BaseModel):
     kind: str | None = None
     lat: float | None = None
     lon: float | None = None
+    status: str | None = None  # active | upcoming | undated (expired rows are dropped)
+    end_inferred: bool = False  # True when the end is issue time + default validity
 
 
 class CurrentConditions(BaseModel):

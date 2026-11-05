@@ -16,6 +16,7 @@ from typing import Any
 
 from app import cache
 from app.config import ROOT, get_settings
+import httpx
 
 ARCHIVE = ROOT / ".cache" / "mosdac"
 TOKEN_URL = "https://mosdac.gov.in/download_api/gettoken"
@@ -61,6 +62,15 @@ def list_archive() -> list[str]:
     return [str(p.relative_to(ARCHIVE)) for p in ARCHIVE.rglob("*") if p.is_file()][:40]
 
 
+def _json_body(r: Any) -> dict[str, Any]:
+    """Parse a JSON object defensively; MOSDAC sometimes returns HTML/empty bodies with 200."""
+    try:
+        out = r.json()
+    except Exception:
+        return {}
+    return out if isinstance(out, dict) else {}
+
+
 async def _token() -> dict[str, Any]:
     s = get_settings()
     if not credentials_present():
@@ -68,17 +78,20 @@ async def _token() -> dict[str, Any]:
     hit = cache.get("mosdac:token")
     if isinstance(hit, dict) and hit.get("access_token"):
         return {"ok": True, **hit}
+    import httpx
     from app.providers.http import client
 
-    r = await client().post(TOKEN_URL, json={"username": s.mosdac_user, "password": s.mosdac_pass})
+    # MOSDAC SSO often needs >2s TCP connect; shared client default is too tight.
+    _t = httpx.Timeout(60.0, connect=30.0)
+    r = await client().post(TOKEN_URL, json={"username": s.mosdac_user, "password": s.mosdac_pass}, timeout=_t)
     if r.status_code == 429:
         import asyncio
 
         await asyncio.sleep(2.0)
-        r = await client().post(TOKEN_URL, json={"username": s.mosdac_user, "password": s.mosdac_pass})
+        r = await client().post(TOKEN_URL, json={"username": s.mosdac_user, "password": s.mosdac_pass}, timeout=_t)
     if r.status_code >= 400:
         return {"ok": False, "status": f"http_{r.status_code}", "error": (r.text or "")[:180]}
-    body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    body = _json_body(r)
     tok = body.get("access_token")
     if not tok:
         return {"ok": False, "status": "no_token", "error": str(body)[:180]}
@@ -92,13 +105,14 @@ async def _refresh(pack: dict[str, Any]) -> dict[str, Any]:
     if not rt:
         cache.set("mosdac:token", None, 1)
         return await _token()
+    import httpx
     from app.providers.http import client
 
-    r = await client().post(REFRESH_URL, json={"refresh_token": rt})
+    r = await client().post(REFRESH_URL, json={"refresh_token": rt}, timeout=httpx.Timeout(60.0, connect=30.0))
     if r.status_code >= 400:
         cache.set("mosdac:token", None, 1)
         return await _token()
-    body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    body = _json_body(r)
     tok = body.get("access_token")
     if not tok:
         cache.set("mosdac:token", None, 1)
@@ -138,14 +152,15 @@ async def search(dataset_id: str = "3SIMG_L1B_STD", count: int = 3) -> dict[str,
     hit = cache.get(ck)
     if isinstance(hit, dict):
         return hit
-    r = await client().get(SEARCH_URL, params=params)
+    import httpx
+    _t = httpx.Timeout(45.0, connect=15.0)
+    r = await client().get(SEARCH_URL, params=params, timeout=_t)
     if r.status_code >= 400:
-        r = await client().get(SEARCH_URL, params={"datasetId": dataset_id, "count": str(count)})
+        r = await client().get(SEARCH_URL, params={"datasetId": dataset_id, "count": str(count)}, timeout=_t)
     if r.status_code >= 400:
         return {"ok": False, "status": f"http_{r.status_code}", "datasetId": dataset_id}
-    try:
-        body = r.json()
-    except Exception:
+    body = _json_body(r)
+    if not body:
         return {"ok": False, "status": "not_json", "datasetId": dataset_id}
     items = body.get("entries") or body.get("items") or body.get("data") or body.get("features") or []
     if not items and isinstance(body.get("result"), list):
@@ -187,11 +202,11 @@ async def search_latest() -> dict[str, Any]:
     return last
 
 
-async def download_granule(record_id: str, filename: str | None = None) -> dict[str, Any]:
+async def download_granule(record_id: str, filename: str | None = None, on_progress=None) -> dict[str, Any]:
     tok = await _token()
     if not tok.get("ok"):
         return tok
-    from app.providers.http import client
+    from app.providers.http import read_body
 
     ARCHIVE.mkdir(parents=True, exist_ok=True)
     name = filename or f"{record_id}.h5"
@@ -199,31 +214,30 @@ async def download_granule(record_id: str, filename: str | None = None) -> dict[
     if dest.exists() and dest.stat().st_size > 1024:
         mm_h = _sample_h5(dest, 22.07, 88.07)
         nbytes = dest.stat().st_size
+        if on_progress:
+            on_progress(nbytes, nbytes)
         try:
             dest.unlink()
         except OSError:
             pass
         return {"ok": True, "bytes": nbytes, "cached": True, "mm_h": mm_h, "kept": False}
     headers = {"Authorization": f"Bearer {tok['access_token']}"}
-    r = await client().get(
-        DOWNLOAD_URL,
-        params={"id": record_id, "gId": record_id},
-        headers=headers,
-        timeout=120.0,
-    )
-    if r.status_code in {401, 403}:
+    params = {"id": record_id, "gId": record_id}
+    status, _hdrs, body = await read_body(DOWNLOAD_URL, timeout=httpx.Timeout(connect=20.0, read=120.0, write=30.0, pool=20.0), headers=headers, params=params, on_progress=on_progress)
+    if status in {401, 403}:
         tok = await _refresh(tok)
         if not tok.get("ok"):
             return tok
-        r = await client().get(
+        status, _hdrs, body = await read_body(
             DOWNLOAD_URL,
-            params={"id": record_id, "gId": record_id},
+            timeout=httpx.Timeout(connect=20.0, read=120.0, write=30.0, pool=20.0),
             headers={"Authorization": f"Bearer {tok['access_token']}"},
-            timeout=120.0,
+            params=params,
+            on_progress=on_progress,
         )
-    if r.status_code >= 400:
-        return {"ok": False, "status": f"http_{r.status_code}", "error": (r.text or "")[:180]}
-    dest.write_bytes(r.content)
+    if status >= 400:
+        return {"ok": False, "status": f"http_{status}", "error": body[:180].decode("utf-8", "replace")}
+    dest.write_bytes(body)
     nbytes = dest.stat().st_size
     mm_h = None
     if dest.suffix.lower() in {".h5", ".hdf5", ".he5"} or "HEM" in dest.name.upper():
@@ -303,16 +317,22 @@ def _quota_inc(*, cached: bool) -> bool:
         return True
 
 
-async def ingest_latest(*, allow_l1b: bool = False) -> list[dict[str, Any]]:
+async def ingest_latest(*, allow_l1b: bool = False, on_progress=None) -> list[dict[str, Any]]:
     """Download newest granules that are not already in sat_frames. Counts against 400/day."""
     from app.store.sat_frames import has_granule, put_frame
 
-    products = list(PRIORITY)
+    # FOG stays on PRIORITY for search. The storm cycle only has 45s, so it downloads HEM
+    # (and L1B when allowed). A FOG HDF in the same budget was cancelling HEM.
+    products = ["3SIMG_L2B_HEM"]
     if allow_l1b:
         products.extend(p for p in DATASETS if p in L1B)
     out: list[dict[str, Any]] = []
     for product in products:
-        pack = await search(product, count=1)
+        try:
+            pack = await search(product, count=1)
+        except Exception as e:
+            out.append({"ok": False, "product": product, "status": "search_error", "error": f"{type(e).__name__}: {e}"[:180]})
+            continue
         granules = pack.get("granules") or []
         if not granules or not granules[0].get("id"):
             out.append({"ok": False, "product": product, "status": "no_granule"})
@@ -321,7 +341,7 @@ async def ingest_latest(*, allow_l1b: bool = False) -> list[dict[str, Any]]:
         gid = str(g["id"])
         if has_granule(gid):
             _quota_inc(cached=True)
-            out.append({"ok": True, "product": product, "granule_id": gid, "cached": True, "status": "cached"})
+            out.append({"ok": True, "product": product, "granule_id": gid, "cached": True, "status": "cached", "granule_time": g.get("date")})
             continue
         if product in L1B and not allow_l1b:
             out.append({"ok": False, "product": product, "status": "l1b_skipped"})
@@ -329,7 +349,18 @@ async def ingest_latest(*, allow_l1b: bool = False) -> list[dict[str, Any]]:
         if not _quota_inc(cached=False):
             out.append({"ok": False, "product": product, "status": "quota"})
             break
-        dl = await download_granule(gid, g.get("identifier"))
+        def _prog(n, total, _product=product):
+            if on_progress and ("HEM" in _product or "L1B" in _product):
+                try:
+                    on_progress(n, total, _product)
+                except TypeError:
+                    on_progress(n, total)
+
+        try:
+            dl = await download_granule(gid, g.get("identifier"), on_progress=_prog if on_progress else None)
+        except Exception as e:  # one bad granule must not kill the whole ingest cycle
+            out.append({"ok": False, "product": product, "granule_id": gid, "status": "download_error", "error": f"{type(e).__name__}: {e}"[:180]})
+            continue
         err = str(dl.get("error") or dl.get("status") or "")
         if "latency" in err.lower() or "3 days" in err.lower():
             out.append({"ok": False, "product": product, "status": "latency_3d", "error": err[:180]})
@@ -351,7 +382,7 @@ async def ingest_latest(*, allow_l1b: bool = False) -> list[dict[str, Any]]:
                 "note": "HDF sampled then deleted — not stored in Mongo",
             }
         )
-        out.append({**dl, "product": product, "granule_id": gid, "ok": True})
+        out.append({**dl, "product": product, "granule_id": gid, "ok": True, "granule_time": g.get("date")})
     try:
         await logout()
     except Exception:

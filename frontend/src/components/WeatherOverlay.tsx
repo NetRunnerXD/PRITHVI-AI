@@ -1,12 +1,24 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ImageOverlay, useMap } from "react-leaflet";
+import { demAt, LAPSE_K_PER_M, loadDem, type Dem } from "@/lib/dem";
 import { colorAt, fieldKey, sampleGrid, type WeatherGrid, type WxLayer } from "@/lib/weatherScale";
 
-function paint(grid: WeatherGrid, layer: WxLayer, key: string): string {
-  const w = 960;
-  const h = 420;
+const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
+const invMercY = (m: number) => (360 / Math.PI) * Math.atan(Math.exp(m)) - 90;
+
+/** Rows are spaced evenly in *Web-Mercator* y, because Leaflet stretches an ImageOverlay
+ * linearly in projected space. (Painting rows evenly in latitude shifted features by up to
+ * ~1.5° at 30°N on the India grid, and by ~10° on the old world grid.) */
+function paint(grid: WeatherGrid, layer: WxLayer, key: string, dem: Dem | null, mask: WeatherGrid | null = null): string {
+  // Temperature: model nodes sit at their own (smoothed) height; correct each pixel to the
+  // real ground height with the standard lapse rate. Validated on 10 cities: MAE 2.97 → 1.4 °C
+  // (Srinagar −1.3 → 4.1 vs 6.8 observed-analysis; Guwahati 12.6 → 21.3 vs 22.2).
+  const lapse = key === "temp_c" && dem != null && Array.isArray(grid.fields.elev_m);
+  const world = grid.nx >= 300; // worldwide GFS background: wider canvas, same Mercator rows
+  const w = world ? 1440 : 640;
+  const h = world ? 720 : 680;
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
@@ -18,11 +30,20 @@ function paint(grid: WeatherGrid, layer: WxLayer, key: string): string {
   const north = grid.lats[grid.ny - 1];
   const west = grid.lons[0];
   const east = grid.lons[grid.nx - 1];
+  const mN = mercY(north);
+  const mS = mercY(south);
   for (let y = 0; y < h; y++) {
-    const lat = north - ((north - south) * y) / (h - 1);
+    const lat = invMercY(mN - ((mN - mS) * y) / (h - 1));
     for (let x = 0; x < w; x++) {
       const lon = west + ((east - west) * x) / (w - 1);
-      const v = sampleGrid(grid, lat, lon, key);
+      // Worldwide background leaves a hole wherever the India detail grid has data, so the
+      // two layers never stack (no darker box over India).
+      let v = mask && sampleGrid(mask, lat, lon, key) != null ? null : sampleGrid(grid, lat, lon, key);
+      if (lapse && v != null) {
+        const zn = sampleGrid(grid, lat, lon, "elev_m");
+        const zp = demAt(dem!, lat, lon);
+        if (zn != null && zp != null) v += LAPSE_K_PER_M * (zn - Math.max(0, zp));
+      }
       const [r, g, b, a] = colorAt(layer, v);
       const i = (y * w + x) * 4;
       data[i] = r;
@@ -39,13 +60,32 @@ export function WeatherOverlay({
   grid,
   layer,
   opacity,
+  zIndex = 350,
+  mask = null,
 }: {
   grid: WeatherGrid | null;
   layer: WxLayer;
   opacity: number;
+  /** Worldwide background sits below the India detail regardless of mount order. */
+  zIndex?: number;
+  /** Detail grid drawn on top; this overlay is left transparent where it has data. */
+  mask?: WeatherGrid | null;
 }) {
   const key = fieldKey(layer);
-  const url = useMemo(() => (grid && key ? paint(grid, layer, key) : ""), [grid, layer, key]);
+  const [dem, setDem] = useState<Dem | null>(null);
+  useEffect(() => {
+    if (key !== "temp_c" || dem) return;
+    let live = true;
+    loadDem().then((d) => {
+      if (live && d) setDem(d);
+    });
+    return () => {
+      live = false;
+    };
+  }, [key, dem]);
+  const useDem = key === "temp_c" ? dem : null;
+  const m = mask && key && Array.isArray(mask.fields[key]) ? mask : null;
+  const url = useMemo(() => (grid && key ? paint(grid, layer, key, useDem, m) : ""), [grid, layer, key, useDem, m]);
   if (!grid || !key || !url) return null;
   const south = grid.lats[0];
   const north = grid.lats[grid.ny - 1];
@@ -59,22 +99,31 @@ export function WeatherOverlay({
         [north, east],
       ]}
       opacity={opacity}
-      zIndex={350}
+      zIndex={zIndex}
+      interactive={false}
     />
   );
 }
 
 export function WindParticles({
   grid,
+  fallback,
   on,
 }: {
   grid: WeatherGrid | null;
+  /** Worldwide grid used where `grid` (India inset) has no data. */
+  fallback?: WeatherGrid | null;
   on: boolean;
 }) {
   const map = useMap();
   useEffect(() => {
     if (!on || !grid) return;
-    const field = grid;
+    const primary = grid;
+    const world = fallback && fallback !== grid ? fallback : null;
+    const sampleAny = (lat: number, lon: number, k: string) => {
+      const v = sampleGrid(primary, lat, lon, k);
+      return v != null || !world ? v : sampleGrid(world, lat, lon, k);
+    };
     const canvas = document.createElement("canvas");
     const pane = map.getPanes().overlayPane;
     canvas.style.position = "absolute";
@@ -147,10 +196,10 @@ export function WindParticles({
 
       for (let i = 0; i < parts.length; i++) {
         const p = parts[i];
-        const u = sampleGrid(field, p.lat, p.lon, "wind_u");
-        const v = sampleGrid(field, p.lat, p.lon, "wind_v");
-        const spd = sampleGrid(field, p.lat, p.lon, "wind_kmh") ?? 0;
-        const dir = sampleGrid(field, p.lat, p.lon, "wind_dir_deg");
+        const u = sampleAny(p.lat, p.lon, "wind_u");
+        const v = sampleAny(p.lat, p.lon, "wind_v");
+        const spd = sampleAny(p.lat, p.lon, "wind_kmh") ?? 0;
+        const dir = sampleAny(p.lat, p.lon, "wind_dir_deg");
 
         let ue = u;
         let vn = v;
@@ -208,6 +257,6 @@ export function WindParticles({
       map.off("zoomend moveend resize", sizeCanvas);
       canvas.remove();
     };
-  }, [map, grid, on]);
+  }, [map, grid, fallback, on]);
   return null;
 }

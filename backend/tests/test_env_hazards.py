@@ -165,7 +165,8 @@ def test_fog_uv_heat_enter_alerts():
         lat=28.61,
         lon=77.21,
     )
-    now = datetime(2026, 1, 12, 3, 0, tzinfo=IST)
+    # Relative to the real clock: finalize_windows() drops alerts whose end has passed.
+    now = datetime.now(IST).replace(minute=0, second=0, microsecond=0)
     times = [(now + timedelta(hours=i)).strftime("%Y-%m-%dT%H:00") for i in range(6)]
     f = {
         "hourly_times": times,

@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { COPY, type Locale } from "@/i18n/copy";
 import { streamChat } from "@/lib/api";
 import {
-  SCHEDULED_LANGS,
+  REPLY_LANGS,
+  type SpeakMode,
   defaultSpeechLang,
   loadSpeechStatus,
   speakText,
@@ -13,8 +14,10 @@ import {
   stopSpeaking,
 } from "@/lib/speech";
 import { useApp } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import type { ChatMsg, ChatSuggestion, DashboardSnapshot } from "@/types/dashboard";
 import { ChatBlocks } from "./ChatBlocks";
+import { ReplyLangSelect } from "./ReplyLangSelect";
 import {
   IconAdvisor,
   IconCross,
@@ -52,12 +55,35 @@ export function ChatDock({
     setPendingAsk,
     applyUi,
     settings,
-  } = useApp();
+  } = useApp(
+    useShallow((s) => ({
+      locale: s.locale,
+      outputLocale: s.outputLocale,
+      setOutputLocale: s.setOutputLocale,
+      location: s.location,
+      chat: s.chat,
+      addChat: s.addChat,
+      replaceLastAssistant: s.replaceLastAssistant,
+      patchLastUser: s.patchLastUser,
+      clearChat: s.clearChat,
+      streaming: s.streaming,
+      setStreaming: s.setStreaming,
+      applySnapshot: s.applySnapshot,
+      applySuggestion: s.applySuggestion,
+      conversationId: s.conversationId,
+      pendingAsk: s.pendingAsk,
+      setPendingAsk: s.setPendingAsk,
+      applyUi: s.applyUi,
+      settings: s.settings,
+    })),
+  );
   const t = COPY[locale];
   const [text, setText] = useState("");
   const [showEn, setShowEn] = useState(false);
   const [answerFor, setAnswerFor] = useState("");
   const [speechLang, setSpeechLang] = useState(() => defaultSpeechLang(locale));
+  const [draft, setDraft] = useState("");
+  const [speakMode, setSpeakMode] = useState<SpeakMode | null>(null);
   const [listening, setListening] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [speechErr, setSpeechErr] = useState("");
@@ -71,8 +97,15 @@ export function ChatDock({
   }, []);
 
   useEffect(() => {
-    setSpeechLang(defaultSpeechLang(locale));
-  }, [locale]);
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem("prithvi.replyLang") : null;
+    if (saved && saved !== outputLocale) setOutputLocale(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Picked language drives dictation too; Auto follows the UI language.
+    setSpeechLang(outputLocale && outputLocale !== "auto" ? defaultSpeechLang(outputLocale) : defaultSpeechLang(locale));
+  }, [locale, outputLocale]);
 
   useEffect(() => {
     if (!pendingAsk) return;
@@ -87,7 +120,7 @@ export function ChatDock({
   useEffect(() => {
     const el = scroller.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [chat, streaming]);
+  }, [chat, streaming, draft]);
 
   useEffect(() => {
     return () => {
@@ -112,6 +145,7 @@ export function ChatDock({
     }
     setStreaming(true);
     setNotice("");
+    setDraft("");
     try {
       const final = await streamChat(
         message,
@@ -119,6 +153,15 @@ export function ChatDock({
         locale,
         history,
         (ev) => {
+          if (ev.type === "delta" && typeof ev.text === "string") {
+            const piece = ev.text;
+            setDraft((d) => d + piece);
+            return;
+          }
+          if (ev.type === "delta_reset") {
+            setDraft("");
+            return;
+          }
           if (ev.type === "notice" && typeof ev.message === "string") {
             setNotice(ev.message);
           }
@@ -133,11 +176,12 @@ export function ChatDock({
             applySnapshot(ev.value as DashboardSnapshot);
           }
         },
-        compact ? "auto" : outputLocale,
+        outputLocale,
         opts?.regenerate,
         conversationId,
         settings.llmProvider,
-        settings.showEvidence
+        settings.showEvidence,
+        outputLocale
       );
       if (final) {
         if (opts?.regenerate) replaceLastAssistant(final);
@@ -158,6 +202,7 @@ export function ChatDock({
       else addChat(err);
     } finally {
       setStreaming(false);
+      setDraft("");
     }
   }
 
@@ -174,34 +219,38 @@ export function ChatDock({
     }
     setSpeechErr("");
     setListening(true);
+    const dictateLang = outputLocale === "auto" ? "auto" : speechLang;
     stopListen.current = startDictation(
-      speechLang,
+      dictateLang,
       (piece, isFinal) => {
         setText(piece);
         if (isFinal) setText(piece.trim());
       },
       (err) => {
-        if (!err) return;
         setListening(false);
         stopListen.current = null;
-        if (err !== "aborted" && err !== "no-speech") {
-          if (err === "not-allowed") {
-            setSpeechErr("Microphone permission denied. Please allow microphone access in your browser settings.");
-          } else if (err === "audio-capture") {
-            setSpeechErr("No microphone detected or audio capture failed.");
-          } else if (err === "network") {
-            setSpeechErr("Speech recognition service network error.");
-          } else if (err === "unsupported") {
-            setSpeechErr("Speech recognition is not supported in this browser (Chrome / Edge / Safari recommended).");
-          } else {
-            setSpeechErr(`Speech recognition error: ${err}`);
-          }
+        if (!err || err === "aborted" || err === "no-speech") return;
+        if (err === "not-allowed") {
+          setSpeechErr("Microphone permission denied. Please allow microphone access in your browser settings.");
+        } else if (err === "audio-capture") {
+          setSpeechErr("No microphone detected or audio capture failed.");
+        } else if (err === "language-not-supported") {
+          setSpeechErr("Voice input for this language is not available in this browser. Type instead, or pick another language.");
+        } else if (err === "network") {
+          setSpeechErr("Speech recognition service network error.");
+        } else if (err === "unsupported") {
+          setSpeechErr("Speech recognition is not supported in this browser (Chrome / Edge / Safari recommended).");
+        } else if (err === "server") {
+          setSpeechErr("Voice on this computer is offline. Type the question, or try again in the browser.");
+        } else {
+          setSpeechErr(`Speech recognition error: ${err}`);
         }
-      }
+      },
+      speechLang
     );
   }
 
-  function toggleSpeak(id: string, content: string, contentEn?: string, msgLocale?: string) {
+  function toggleSpeak(id: string, content: string, msgLocale?: string) {
     if (speakingId === id) {
       stopSpeaking();
       setSpeakingId(null);
@@ -212,8 +261,25 @@ export function ChatDock({
       return;
     }
     setSpeakingId(id);
+    setSpeakMode(null);
+    setSpeechErr("");
     const hint = msgLocale && msgLocale !== "auto" ? msgLocale : speechLang;
-    speakText(content, hint, () => setSpeakingId((cur) => (cur === id ? null : cur)), contentEn);
+    speakText(
+      content,
+      hint,
+      () => setSpeakingId((cur) => (cur === id ? null : cur)),
+      (mode) => {
+        setSpeakMode(mode);
+        if (mode === "none" || mode === "down") {
+          setSpeakingId((cur) => (cur === id ? null : cur));
+          setSpeechErr(
+            mode === "down"
+              ? "This language has a voice on this computer, but it did not play. Press the speaker again in a moment."
+              : "No voice for this language on this device."
+          );
+        }
+      }
+    );
   }
 
   const quickStarters = [
@@ -251,7 +317,7 @@ export function ChatDock({
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 dark:border-white/10 bg-[color-mix(in_srgb,var(--card)_60%,transparent)] backdrop-blur-2xl px-3.5 py-2.5 sm:px-4 sm:py-3">
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <div className="relative flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full overflow-hidden bg-transparent border-2 border-white/30 shadow-md">
-            <img src="/logo.png" alt="PRITHVI-AI" width={40} height={40} className="h-full w-full object-cover rounded-full" />
+            <img src="/logo-128.webp" alt="PRITHVI-AI" width={40} height={40} className="h-full w-full object-cover rounded-full" />
             <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-[var(--card)] animate-pulse" />
           </div>
           <div className="min-w-0">
@@ -478,7 +544,7 @@ export function ChatDock({
                                 ? "bg-rose-500/20 text-rose-400"
                                 : "hover:text-neo-accent"
                             }`}
-                            onClick={() => toggleSpeak(m.id, m.content, m.content_en || undefined, m.locale)}
+                            onClick={() => toggleSpeak(m.id, m.content, m.locale)}
                             title={speakingId === m.id ? t.stopSpeak : t.speakReply}
                             aria-label={speakingId === m.id ? t.stopSpeak : t.speakReply}
                             data-testid={`chat-tts-${m.id}`}
@@ -513,7 +579,18 @@ export function ChatDock({
           );
         })}
 
-        {streaming ? (
+        {streaming && draft ? (
+          <div className="flex items-start gap-2 justify-start" data-testid="chat-draft">
+            <div className="max-w-[86%] rounded-3xl rounded-tl-xs p-4 text-xs bg-white dark:bg-[#121e33] border border-slate-200/80 dark:border-sky-500/20 text-slate-800 dark:text-slate-100 shadow-md ml-8">
+              <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
+                {draft}
+                <span className="ml-0.5 inline-block w-1.5 animate-pulse">▍</span>
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {streaming && !draft ? (
           <div className="flex items-center gap-2 p-3 text-xs text-sky-500 dark:text-sky-400 bg-white/90 dark:bg-slate-900/80 rounded-2xl w-fit border border-sky-400/40 shadow-md backdrop-blur-xl" data-testid="chat-streaming">
             <span className="h-2 w-2 rounded-full bg-sky-500 animate-bounce" style={{ animationDelay: "0ms" }} />
             <span className="h-2 w-2 rounded-full bg-sky-500 animate-bounce" style={{ animationDelay: "150ms" }} />
@@ -532,7 +609,7 @@ export function ChatDock({
           <div className="mb-2 flex items-center justify-between gap-2 px-3.5 py-2 rounded-2xl bg-rose-500/20 border border-rose-500/50 text-rose-300 text-xs font-semibold animate-pulse shadow-md">
             <div className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-rose-400 animate-ping" />
-              <span>{t.listeningIn || "Listening in"} {SCHEDULED_LANGS.find((l) => l.id === speechLang)?.name || "Auto"}... {t.speakClearly || "Speak clearly"}</span>
+              <span>{t.listeningIn || "Listening in"} {outputLocale === "auto" ? (t.replyAuto || "Auto") : (REPLY_LANGS.find((l) => l.id === speechLang)?.native || "Auto")}... {t.speakClearly || "Speak clearly"}</span>
             </div>
             <button
               type="button"
@@ -559,6 +636,13 @@ export function ChatDock({
             run(msg);
           }}
         >
+          <ReplyLangSelect
+            value={outputLocale}
+            onChange={setOutputLocale}
+            autoLabel={t.replyAuto || "Auto"}
+            className="max-w-[12.5rem] shrink-0 rounded-full bg-transparent text-[11px] font-semibold text-slate-500 dark:text-slate-300 outline-none cursor-pointer"
+          />
+
           {/* Microphone Icon */}
           <button
             type="button"

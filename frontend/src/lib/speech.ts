@@ -1,4 +1,4 @@
-/** India's 22 scheduled languages. Indic STT/TTS via API sidecar, else Web Speech. */
+/** India's 22 scheduled languages. Indic listening uses the Conformer sidecar. Speaking uses FastSpeech2. */
 
 import { apiUrl } from "./config";
 
@@ -21,7 +21,7 @@ export const SCHEDULED_LANGS: ScheduledLang[] = [
   { id: "kok", bcp: "kok-IN", name: "Konkani", native: "कोंकणी" },
   { id: "mai", bcp: "mai-IN", name: "Maithili", native: "मैथिली" },
   { id: "ml", bcp: "ml-IN", name: "Malayalam", native: "മലയാളം" },
-  { id: "mni", bcp: "mni-IN", name: "Manipuri", native: "মৈতৈলোন্" },
+  { id: "mni", bcp: "mni-IN", name: "Manipuri", native: "ꯃꯤꯇꯩꯂꯣꯟ" },
   { id: "mr", bcp: "mr-IN", name: "Marathi", native: "मराठी" },
   { id: "ne", bcp: "ne-NP", name: "Nepali", native: "नेपाली" },
   { id: "or", bcp: "or-IN", name: "Odia", native: "ଓଡ଼ିଆ" },
@@ -34,44 +34,77 @@ export const SCHEDULED_LANGS: ScheduledLang[] = [
   { id: "ur", bcp: "ur-IN", name: "Urdu", native: "اردو" },
 ];
 
+/** Reply / input languages offered in the chat: 22 scheduled + Hinglish. */
+export const REPLY_LANGS: { id: string; native: string }[] = [
+  { id: "en", native: "English" },
+  { id: "hinglish", native: "Hinglish" },
+  ...SCHEDULED_LANGS.map((l) => ({ id: l.id, native: l.native })),
+];
+
 export function bcpForSpeech(id: string): string {
-  if (id === "en") return "en-IN";
+  if (id === "en" || id === "hinglish") return "en-IN";
   return SCHEDULED_LANGS.find((l) => l.id === id)?.bcp ?? "hi-IN";
 }
 
+export function replyOptionLabel(native: string, voiced: boolean): string {
+  return voiced ? `${native} (voice)` : native;
+}
+
+export function voicedReplyIds(status: SpeechEngineStatus | null): Set<string> {
+  const ids = new Set(status?.tts_langs || []);
+  if (status?.english?.tts) {
+    ids.add("en");
+    ids.add("hinglish");
+  }
+  return ids;
+}
+
 export function defaultSpeechLang(ui: string): string {
-  if (ui === "en") return "en";
+  if (ui === "en" || ui === "hinglish") return ui;
   if (SCHEDULED_LANGS.some((l) => l.id === ui)) return ui;
   return "hi";
 }
 
+// Letter ranges only. U+0964 danda (।) and the digits in each block are not letters.
+// A Tamil or Kannada sentence often ends with ।, which sits in the Devanagari block.
 const SCRIPT_LANGS: { re: RegExp; langs: string[] }[] = [
-  { re: /[\u0980-\u09FF]/, langs: ["bn", "as", "mni"] },
-  { re: /[\u0900-\u097F]/, langs: ["hi", "mr", "ne", "kok", "mai", "sa", "doi", "brx"] },
-  { re: /[\u0A00-\u0A7F]/, langs: ["pa"] },
-  { re: /[\u0A80-\u0AFF]/, langs: ["gu"] },
-  { re: /[\u0B00-\u0B7F]/, langs: ["or"] },
-  { re: /[\u0B80-\u0BFF]/, langs: ["ta"] },
-  { re: /[\u0C00-\u0C7F]/, langs: ["te"] },
-  { re: /[\u0C80-\u0CFF]/, langs: ["kn"] },
-  { re: /[\u0D00-\u0D7F]/, langs: ["ml"] },
+  { re: /[\u0980-\u09E3\u09F0-\u09FE]/, langs: ["bn", "as", "mni"] },
+  { re: /[\u0900-\u0963\u0970-\u097F]/, langs: ["hi", "mr", "ne", "kok", "mai", "sa", "doi", "brx"] },
+  { re: /[\u0A01-\u0A65\u0A70-\u0A75]/, langs: ["pa"] },
+  { re: /[\u0A81-\u0AE3\u0AF0-\u0AFF]/, langs: ["gu"] },
+  { re: /[\u0B01-\u0B65\u0B70-\u0B77]/, langs: ["or"] },
+  { re: /[\u0B82-\u0BE3\u0BF0-\u0BFA]/, langs: ["ta"] },
+  { re: /[\u0C00-\u0C63\u0C70-\u0C7F]/, langs: ["te"] },
+  { re: /[\u0C80-\u0CE3\u0CF0-\u0CFF]/, langs: ["kn"] },
+  { re: /[\u0D00-\u0D63\u0D70-\u0D7F]/, langs: ["ml"] },
   { re: /[\u0600-\u06FF]/, langs: ["ur", "sd", "ks"] },
-  { re: /[\u1C50-\u1C7F]/, langs: ["sat"] },
+  { re: /[\u1C5A-\u1C7F]/, langs: ["sat"] },
+  { re: /[\uABC0-\uABFF\uAAE0-\uAAFF]/, langs: ["mni"] },
 ];
 
+function letterCount(re: RegExp, text: string): number {
+  const found = text.match(new RegExp(re.source, "g"));
+  return found ? found.length : 0;
+}
+
 export function detectSpeechLang(text: string, hint?: string): string {
-  for (const row of SCRIPT_LANGS) {
-    if (row.re.test(text || "")) {
-      if (hint && row.langs.includes(hint)) return hint;
-      return row.langs[0];
-    }
+  const blob = text || "";
+  const ranked = SCRIPT_LANGS
+    .map((row) => ({ langs: row.langs, n: letterCount(row.re, blob) }))
+    .filter((row) => row.n > 0)
+    .sort((a, b) => b.n - a.n);
+  if (ranked.length) {
+    const hinted = hint ? ranked.find((row) => row.langs.includes(hint)) : undefined;
+    if (hinted && hinted.n >= ranked[0].n) return hint as string;
+    return ranked[0].langs[0];
   }
-  if (hint === "en" || (hint && SCHEDULED_LANGS.some((l) => l.id === hint))) return hint;
+  if (hint === "en" || hint === "hinglish") return hint;
+  // Latin text is never read with an Indic voice.
   return "en";
 }
 
 export function hasIndicScript(text: string): boolean {
-  return SCRIPT_LANGS.some((row) => row.re.test(text || ""));
+  return SCRIPT_LANGS.some((row) => letterCount(row.re, text || "") > 0);
 }
 
 function speechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
@@ -89,6 +122,7 @@ export type SpeechEngineStatus = {
   stt_langs: string[];
   tts_langs: string[];
   fallback?: string;
+  english?: { stt: boolean; tts: boolean };
 };
 
 let sidecar: SpeechEngineStatus | null = null;
@@ -119,21 +153,22 @@ function webSpeechSupported(): { stt: boolean; tts: boolean } {
 export function speechSupported(): { stt: boolean; tts: boolean } {
   const web = webSpeechSupported();
   return {
-    stt: web.stt || Boolean(sidecar?.stt),
-    tts: web.tts || Boolean(sidecar?.tts),
+    stt: web.stt || Boolean(sidecar?.stt) || Boolean(sidecar?.english?.stt),
+    tts: web.tts || Boolean(sidecar?.tts) || Boolean(sidecar?.english?.tts),
   };
 }
 
-function useSidecarStt(langId: string): boolean {
+function useServerStt(langId: string): boolean {
+  if (langId === "en" || langId === "hinglish" || langId === "auto") {
+    return Boolean(sidecar?.english?.stt);
+  }
   if (!sidecar?.stt) return false;
-  if (langId === "en") return false;
   return sidecar.stt_langs.includes(langId);
 }
 
-function useSidecarTts(langId: string): boolean {
-  if (!sidecar?.tts) return false;
-  if (langId === "en") return false;
-  return sidecar.tts_langs.includes(langId);
+function useServerTts(langId: string): boolean {
+  if (langId === "en" || langId === "hinglish") return Boolean(sidecar?.english?.tts);
+  return Boolean(sidecar?.tts_langs?.includes(langId));
 }
 
 type SpeechRecognitionLike = {
@@ -243,7 +278,7 @@ function startSidecarDictation(
       fd.append("language", langId);
       const r = await fetch(apiUrl("/speech/stt"), { method: "POST", body: fd });
       if (!r.ok) {
-        onEnd(r.status === 501 ? "unsupported" : "network");
+        onEnd(r.status === 501 || r.status === 503 ? "server" : "network");
         return;
       }
       const body = (await r.json()) as { text?: string };
@@ -284,9 +319,10 @@ function startSidecarDictation(
 export function startDictation(
   langId: string,
   onText: (text: string, final: boolean) => void,
-  onEnd: (err?: string) => void
+  onEnd: (err?: string) => void,
+  webLang?: string
 ): () => void {
-  if (useSidecarStt(langId)) {
+  if (useServerStt(langId)) {
     return startSidecarDictation(langId, onText, onEnd);
   }
   const Ctor = speechRecognitionCtor();
@@ -295,7 +331,7 @@ export function startDictation(
     return () => {};
   }
   const rec = new Ctor();
-  rec.lang = bcpForSpeech(langId);
+  rec.lang = bcpForSpeech(langId === "auto" ? webLang || "en" : langId);
   rec.interimResults = true;
   rec.continuous = true;
   rec.maxAlternatives = 1;
@@ -399,90 +435,203 @@ function splitForSpeech(text: string): string[] {
 }
 
 let htmlAudio: HTMLAudioElement | null = null;
+let audioCtx: AudioContext | null = null;
+let audioNode: AudioBufferSourceNode | null = null;
 
-function speakSidecar(text: string, lang: string, onEnd?: () => void): void {
-  stopSpeaking();
-  void fetch(apiUrl("/speech/tts"), {
+const SILENT_WAV =
+  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+
+function primeSpeaker(): void {
+  // Runs inside the click. FastSpeech answers after that gesture, so playback has to
+  // be unlocked here. A blocked play() used to fall through to the browser and report
+  // that the Indic voice does not exist.
+  if (typeof window === "undefined") return;
+  const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (Ctor) {
+    if (!audioCtx || audioCtx.state === "closed") audioCtx = new Ctor();
+    void audioCtx.resume();
+    try {
+      const silence = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
+      const src = audioCtx.createBufferSource();
+      src.buffer = silence;
+      src.connect(audioCtx.destination);
+      src.start();
+    } catch {
+      /* resume() was already called in this click */
+    }
+  }
+  if (!htmlAudio) htmlAudio = new Audio();
+  htmlAudio.src = SILENT_WAV;
+  void htmlAudio.play().catch(() => undefined);
+}
+
+function stopBuffer(): void {
+  if (!audioNode) return;
+  try {
+    audioNode.onended = null;
+    audioNode.stop();
+  } catch {
+    /* already stopped */
+  }
+  try {
+    audioNode.disconnect();
+  } catch {
+    /* already disconnected */
+  }
+  audioNode = null;
+}
+
+function playElement(blob: Blob, onEnd?: () => void): Promise<boolean> {
+  const el = htmlAudio;
+  if (!el) return Promise.resolve(false);
+  const url = URL.createObjectURL(blob);
+  el.src = url;
+  el.onended = () => {
+    URL.revokeObjectURL(url);
+    if (htmlAudio === el) onEnd?.();
+  };
+  el.onerror = () => {
+    URL.revokeObjectURL(url);
+  };
+  return el.play().then(() => true).catch(() => {
+    URL.revokeObjectURL(url);
+    return false;
+  });
+}
+
+async function playWav(blob: Blob, onEnd?: () => void): Promise<boolean> {
+  const ctx = audioCtx;
+  if (ctx) {
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        /* the element unlocked in the click is the backup */
+      }
+    }
+    if (ctx.state === "running") {
+      try {
+        const decoded = await ctx.decodeAudioData((await blob.arrayBuffer()).slice(0));
+        stopBuffer();
+        const node = ctx.createBufferSource();
+        node.buffer = decoded;
+        node.connect(ctx.destination);
+        node.onended = () => {
+          if (audioNode === node) audioNode = null;
+          onEnd?.();
+        };
+        audioNode = node;
+        node.start();
+        return true;
+      } catch {
+        /* not a decodable WAV; try the element unlocked in the click */
+      }
+    }
+  }
+  return playElement(blob, onEnd);
+}
+
+function speakServer(text: string, lang: string, onEnd?: () => void): Promise<boolean> {
+  primeSpeaker();
+  stopBuffer();
+  const code = lang === "hinglish" ? "en" : lang;
+  return fetch(apiUrl("/speech/tts"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: plainForSpeech(text), language: lang }),
+    body: JSON.stringify({ text: plainForSpeech(text), language: code }),
   })
     .then(async (r) => {
       if (!r.ok) throw new Error(String(r.status));
       return r.blob();
     })
-    .then((blob) => {
-      const url = URL.createObjectURL(blob);
-      const el = new Audio(url);
-      htmlAudio = el;
-      el.onended = () => {
-        URL.revokeObjectURL(url);
-        if (htmlAudio === el) htmlAudio = null;
-        onEnd?.();
-      };
-      el.onerror = () => {
-        URL.revokeObjectURL(url);
-        if (htmlAudio === el) htmlAudio = null;
-        onEnd?.();
-      };
-      return el.play();
-    })
-    .catch(() => onEnd?.());
+    .then((blob) => playWav(blob, onEnd))
+    .catch(() => false);
 }
 
+function sharesScript(a: string, b: string): boolean {
+  return SCRIPT_LANGS.some((row) => row.langs.includes(a) && row.langs.includes(b));
+}
+
+function langForSpeech(text: string, hint: string): string {
+  const detected = detectSpeechLang(text, hint);
+  if ((hint === "en" || hint === "hinglish") && detected === "en") return hint;
+  if (useServerTts(detected)) return detected;
+  // A picked FastSpeech language stays on that voice when detection lands on a
+  // sibling with no voice (Dogri next to Hindi, Sindhi next to Urdu).
+  if (useServerTts(hint) && (detected === hint || sharesScript(hint, detected))) return hint;
+  return detected;
+}
+
+export type SpeakMode = "native" | "none" | "down";
+
+/**
+ * Read a reply aloud in its own language. An Indic reply is never swapped for the
+ * English draft. With no voice for that language, nothing is spoken (mode "none").
+ */
 export function speakText(
   text: string,
   langHint: string,
   onEnd?: () => void,
-  englishFallback?: string
+  onMode?: (mode: SpeakMode) => void
 ): void {
+  primeSpeaker();
   const plain = plainForSpeech(text);
-  let lang = detectSpeechLang(plain, langHint);
-  if (useSidecarTts(lang)) {
-    speakSidecar(plain, lang, onEnd);
-    return;
-  }
-  if (typeof window === "undefined" || !window.speechSynthesis) {
-    onEnd?.();
-    return;
-  }
-  const synth = window.speechSynthesis;
-  synth.cancel();
-  void loadVoices().then((voices) => {
-    let spoken = plain;
-    let voice = pickVoice(voices, lang);
-    if (hasIndicScript(plain) && !voice && englishFallback) {
-      spoken = plainForSpeech(englishFallback);
-      lang = "en";
-      voice = pickVoice(voices, "en");
-    }
-    if (!voice && lang !== "en") {
-      voice = pickVoice(voices, "hi") || pickVoice(voices, "bn");
-    }
-    const chunks = splitForSpeech(spoken);
-    if (!chunks.length) {
+  const lang = langForSpeech(plain, langHint);
+  const readInBrowser = () => {
+    if (typeof window === "undefined" || !window.speechSynthesis) {
+      onMode?.("none");
       onEnd?.();
       return;
     }
-    let i = 0;
-    const next = () => {
-      if (i >= chunks.length) {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    void loadVoices().then((voices) => {
+      const spoken = plain;
+      const voice = pickVoice(voices, lang);
+      if (!voice && lang !== "en" && lang !== "hinglish") {
+        onMode?.("none");
         onEnd?.();
         return;
       }
-      const u = new SpeechSynthesisUtterance(chunks[i++]);
-      u.lang = bcpForSpeech(lang);
-      u.rate = 0.95;
-      if (voice) u.voice = voice;
-      u.onend = next;
-      u.onerror = () => next();
-      synth.speak(u);
-    };
-    window.setTimeout(next, 60);
-  });
+      onMode?.("native");
+      const chunks = splitForSpeech(spoken);
+      if (!chunks.length) {
+        onEnd?.();
+        return;
+      }
+      let i = 0;
+      const next = () => {
+        if (i >= chunks.length) {
+          onEnd?.();
+          return;
+        }
+        const u = new SpeechSynthesisUtterance(chunks[i++]);
+        u.lang = bcpForSpeech(lang);
+        u.rate = 0.95;
+        if (voice) u.voice = voice;
+        u.onend = next;
+        u.onerror = () => next();
+        synth.speak(u);
+      };
+      window.setTimeout(next, 60);
+    });
+  };
+  if (useServerTts(lang)) {
+    onMode?.("native");
+    void speakServer(plain, lang, onEnd).then((ok) => {
+      if (ok) return;
+      // The menu already said this language has a voice. The browser does not,
+      // and falling through to it is what showed "No voice for this language".
+      onMode?.("down");
+      onEnd?.();
+    });
+    return;
+  }
+  readInBrowser();
 }
 
 export function stopSpeaking(): void {
+  stopBuffer();
   if (htmlAudio) {
     try {
       htmlAudio.pause();

@@ -3,8 +3,8 @@ import os
 import pytest
 
 from app import cache
-from app.i18n.detect import detect_lang, has_script, pick_output_locale, script_of
-from app.i18n.mt import MTResult, inbound, outbound, protect, restore, translate
+from app.i18n.detect import SCHEDULED_22, detect_lang, has_script, pick_output_locale, script_of
+from app.i18n.mt import MTResult, _sidecar_pair, inbound, outbound, protect, restore, translate
 
 
 @pytest.fixture(autouse=True)
@@ -209,6 +209,215 @@ async def test_inbound_uses_mt_for_indic(monkeypatch):
     assert pack.tgt == "en"
     assert "West Bengal" in pack.text
     assert "flood" in pack.text.lower()
+
+
+def test_sidecar_flores_covers_the_22():
+    for code in SCHEDULED_22:
+        to_indic = _sidecar_pair("en", code)
+        to_en = _sidecar_pair(code, "en")
+        assert to_indic is not None and to_indic[0] == "eng_Latn" and to_indic[1]
+        assert to_en is not None and to_en[1] == "eng_Latn" and to_en[0]
+    assert _sidecar_pair("en", "mni") == ("eng_Latn", "mni_Mtei")
+    assert _sidecar_pair("kok", "en") == ("gom_Deva", "eng_Latn")
+    assert _sidecar_pair("ks", "en") == ("kas_Arab", "eng_Latn")
+    assert _sidecar_pair("en", "sat") == ("eng_Latn", "sat_Olck")
+    assert _sidecar_pair("en", "or") == ("eng_Latn", "ory_Orya")
+    assert _sidecar_pair("en", "brx") == ("eng_Latn", "brx_Deva")
+    assert _sidecar_pair("fr", "en") is None
+    assert _sidecar_pair("hi", "bn") is None
+
+
+class _Cfg:
+    def __init__(self, url: str):
+        self.mt_sidecar_url = url
+        self.translate_enabled = True
+
+
+class _Resp:
+    def __init__(self, body: str, status: int = 200):
+        self.status_code = status
+        self._body = body
+
+    def json(self):
+        return {"text": self._body}
+
+
+def _patch_sidecar(monkeypatch, post, *, url: str = "http://127.0.0.1:8093"):
+    made = {"n": 0}
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            made["n"] += 1
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, path, json=None, **kwargs):
+            return await post(path, json)
+
+    monkeypatch.setattr("app.i18n.mt.get_settings", lambda: _Cfg(url))
+    monkeypatch.setattr("app.i18n.mt.httpx.AsyncClient", _Client)
+    return made
+
+
+@pytest.mark.asyncio
+async def test_sidecar_restores_locks_and_skips_gtx(monkeypatch):
+    posts: list[dict] = []
+
+    async def post(path, payload):
+        posts.append(payload)
+        assert path.endswith("/translate")
+        assert "⟦" not in payload["text"]
+        assert "54.2" not in payload["text"]
+        assert "CPCB" not in payload["text"]
+        return _Resp("বৃষ্টি " + payload["text"])
+
+    async def boom(*_a, **_k):
+        raise AssertionError("Google should not run when the sidecar succeeds")
+
+    _patch_sidecar(monkeypatch, post)
+    monkeypatch.setattr("app.i18n.mt._gtx", boom)
+    monkeypatch.setattr("app.i18n.mt._mymemory", boom)
+    out = await translate("next 3 days 54.2 mm rain. CPCB AQI 47.", "en", "bn")
+    assert out.ok
+    assert out.engine == "indictrans2"
+    assert len(posts) == 2
+    assert {p["src"] for p in posts} == {"eng_Latn"}
+    assert {p["tgt"] for p in posts} == {"ben_Beng"}
+    assert "54.2" in out.text
+    assert "47" in out.text
+    assert "CPCB" in out.text
+    assert "AQI" in out.text
+    assert "বৃষ্টি" in out.text
+
+
+@pytest.mark.asyncio
+async def test_sidecar_down_falls_through_to_gtx(monkeypatch):
+    import httpx
+
+    async def post(path, payload):
+        raise httpx.ConnectError("down")
+
+    seen: list[str] = []
+
+    async def fake_gtx(text, src, tgt):
+        seen.append(tgt)
+        return MTResult(text="বৃষ্টি " + text, src=src, tgt=tgt, engine="google-gtx", ok=True)
+
+    async def no_memory(*_a, **_k):
+        raise AssertionError("MyMemory")
+
+    _patch_sidecar(monkeypatch, post)
+    monkeypatch.setattr("app.i18n.mt._gtx", fake_gtx)
+    monkeypatch.setattr("app.i18n.mt._mymemory", no_memory)
+    out = await translate("next 3 days 54.2 mm rain.", "en", "bn")
+    assert out.ok
+    assert out.engine == "google-gtx"
+    assert seen == ["bn"]
+    assert "54.2" in out.text
+    assert "বৃষ্টি" in out.text
+
+
+@pytest.mark.asyncio
+async def test_sidecar_bodo_is_direct(monkeypatch):
+    async def post(path, payload):
+        assert payload["tgt"] == "brx_Deva"
+        return _Resp("बारिश " + payload["text"])
+
+    async def boom(*_a, **_k):
+        raise AssertionError("Google")
+
+    _patch_sidecar(monkeypatch, post)
+    monkeypatch.setattr("app.i18n.mt._gtx", boom)
+    out = await translate("Rain 12.5 mm tomorrow.", "en", "brx")
+    assert out.ok
+    assert out.engine == "indictrans2"
+    assert "via" not in out.engine
+    assert out.tgt == "brx"
+    assert "12.5" in out.text
+    assert "बारिश" in out.text
+
+
+@pytest.mark.asyncio
+async def test_sidecar_down_bodo_routes_through_hindi(monkeypatch):
+    import httpx
+
+    async def post(path, payload):
+        raise httpx.ConnectError("down")
+
+    seen: list[tuple[str, str]] = []
+
+    async def fake_gtx(text, src, tgt):
+        seen.append((src, tgt))
+        return MTResult(text="बारिश " + text, src=src, tgt=tgt, engine="google-gtx", ok=True)
+
+    _patch_sidecar(monkeypatch, post)
+    monkeypatch.setattr("app.i18n.mt._gtx", fake_gtx)
+    monkeypatch.setattr("app.i18n.mt._mymemory", fake_gtx)
+    out = await translate("Rain 12.5 mm tomorrow.", "en", "brx")
+    assert out.ok
+    assert out.engine.endswith(":via-hi")
+    assert out.tgt == "hi"
+    assert seen[-1][1] == "hi"
+    assert "12.5" in out.text
+
+
+@pytest.mark.asyncio
+async def test_sidecar_skips_french(monkeypatch):
+    made = {"n": 0}
+
+    async def post(path, payload):
+        made["n"] += 1
+        raise AssertionError("french must not call the sidecar")
+
+    seen: list[tuple[str, str]] = []
+
+    async def fake_gtx(text, src, tgt):
+        seen.append((src, tgt))
+        return MTResult(text="Hello from France.", src="fr", tgt="en", engine="google-gtx", ok=True)
+
+    client_made = _patch_sidecar(monkeypatch, post)
+    monkeypatch.setattr("app.i18n.mt._gtx", fake_gtx)
+    monkeypatch.setattr("app.i18n.mt._mymemory", fake_gtx)
+    out = await translate("bonjour le monde", "fr", "en")
+    assert out.ok
+    assert out.engine == "google-gtx"
+    assert seen[0] == ("fr", "en")
+    assert made["n"] == 0
+    assert client_made["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_sidecar_failed_piece_does_not_mix_with_gtx(monkeypatch):
+    import httpx
+
+    calls = {"n": 0}
+
+    async def post(path, payload):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise httpx.ConnectError("down")
+        return _Resp("বৃষ্টি " + payload["text"])
+
+    gtx_calls: list[str] = []
+
+    async def fake_gtx(text, src, tgt):
+        gtx_calls.append(text)
+        return MTResult(text="বৃষ্টি " + text, src=src, tgt=tgt, engine="google-gtx", ok=True)
+
+    _patch_sidecar(monkeypatch, post)
+    monkeypatch.setattr("app.i18n.mt._gtx", fake_gtx)
+    monkeypatch.setattr("app.i18n.mt._mymemory", fake_gtx)
+    out = await translate("Rain 1.5 mm today. More rain 2.5 mm tomorrow.", "en", "bn")
+    assert out.ok
+    assert out.engine == "google-gtx"
+    assert len(gtx_calls) == 1
+    assert out.text.count("বৃষ্টি") == 1
+    assert "1.5" in out.text
+    assert "2.5" in out.text
 
 
 @pytest.mark.asyncio

@@ -99,7 +99,11 @@ def openai_messages_to_gemini(messages: list[dict[str, Any]]) -> tuple[str, list
                 args = _parse_args(fn.get("arguments") or tc.get("arguments"))
                 name = fn.get("name") or tc.get("name") or "data"
                 names.append(name)
-                parts.append({"functionCall": {"name": name, "args": args}})
+                part: dict[str, Any] = {"functionCall": {"name": name, "args": args}}
+                sig = tc.get("thought_signature")
+                if sig:
+                    part["thoughtSignature"] = sig
+                parts.append(part)
             if names:
                 pending_names.extend(names)
             if parts:
@@ -115,6 +119,14 @@ def openai_messages_to_gemini(messages: list[dict[str, Any]]) -> tuple[str, list
             and not _fn_parts(merged[-1]["parts"])
             and not _fn_parts(c["parts"])
         ):
+            merged[-1]["parts"].extend(c["parts"])
+        elif (
+            merged
+            and merged[-1]["role"] == c["role"] == "user"
+            and all("functionResponse" in p for p in merged[-1]["parts"])
+            and all("functionResponse" in p for p in c["parts"])
+        ):
+            # Parallel calls: every functionResponse goes back in one user turn.
             merged[-1]["parts"].extend(c["parts"])
         else:
             merged.append({"role": c["role"], "parts": list(c["parts"])})
@@ -148,13 +160,15 @@ def parse_gemini_response(body: dict[str, Any]) -> dict[str, Any]:
         fc = part.get("functionCall") or part.get("function_call")
         if isinstance(fc, dict) and fc.get("name"):
             args = fc.get("args") if isinstance(fc.get("args"), dict) else _parse_args(fc.get("args"))
-            tool_calls.append(
-                {
-                    "id": f"g{i}",
-                    "name": fc.get("name"),
-                    "arguments": json.dumps(args, ensure_ascii=False),
-                }
-            )
+            call = {
+                "id": f"g{i}",
+                "name": fc.get("name"),
+                "arguments": json.dumps(args, ensure_ascii=False),
+            }
+            sig = part.get("thoughtSignature") or part.get("thought_signature")
+            if sig:
+                call["thought_signature"] = sig
+            tool_calls.append(call)
     blob = "\n".join(texts).strip()
     if not tool_calls and blob:
         from app.agents.data_tool import parse_xml_tool_calls
@@ -172,20 +186,33 @@ def build_payload(
     tools: list[dict[str, Any]] | None = None,
     max_tokens: int = 512,
     thinking_level: str = "minimal",
+    temperature: float | None = None,
 ) -> dict[str, Any]:
-    """Gemini 3.x: narration only. No functionDeclarations; thinkingLevel minimal."""
+    """Gemini 3.x payload. Native functionDeclarations when tools are given; thinkingLevel minimal."""
     sys_text, contents = openai_messages_to_gemini(messages)
+    gen: dict[str, Any] = {
+        "maxOutputTokens": max_tokens,
+        "thinkingConfig": {"thinkingLevel": thinking_level},
+    }
+    if temperature is not None:
+        gen["temperature"] = temperature
     payload: dict[str, Any] = {
         "contents": contents,
-        "generationConfig": {
-            "maxOutputTokens": max_tokens,
-            "thinkingConfig": {"thinkingLevel": thinking_level},
-        },
+        "generationConfig": gen,
         "safetySettings": _SAFETY,
     }
+    decls = openai_tools_to_gemini(tools)
+    if decls:
+        payload["tools"] = decls
+        payload["toolConfig"] = {"functionCallingConfig": {"mode": "AUTO"}}
     if sys_text:
         payload["systemInstruction"] = {"parts": [{"text": sys_text}]}
     return payload
+
+
+def _url(model: str, stream: bool) -> str:
+    base = f"https://generativelanguage.googleapis.com/v1beta/models/{model}"
+    return f"{base}:streamGenerateContent?alt=sse" if stream else f"{base}:generateContent"
 
 
 async def generate(
@@ -197,10 +224,9 @@ async def generate(
     temperature: float = 0.2,
     max_tokens: int = 512,
 ) -> dict[str, Any]:
-    payload = build_payload(messages, tools=None, max_tokens=max_tokens)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = build_payload(messages, tools=tools, max_tokens=max_tokens)
     r = await _http_client().post(
-        url,
+        _url(model, False),
         headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
         json=payload,
     )
@@ -214,3 +240,65 @@ async def generate(
     parsed["via"] = "generateContent"
     parsed["tools_stripped"] = False
     return parsed
+
+
+async def generate_stream(
+    *,
+    api_key: str,
+    model: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    max_tokens: int = 512,
+    on_delta=None,
+) -> dict[str, Any]:
+    """SSE streamGenerateContent. Text parts go to on_delta as they arrive."""
+    payload = build_payload(messages, tools=tools, max_tokens=max_tokens)
+    texts: list[str] = []
+    calls: list[dict[str, Any]] = []
+    async with _http_client().stream(
+        "POST",
+        _url(model, True),
+        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+        json=payload,
+    ) as r:
+        if r.status_code >= 400:
+            body = (await r.aread()).decode("utf-8", "replace")
+            raise RuntimeError(f"gemini-http-{r.status_code} {body[:240]}")
+        async for line in r.aiter_lines():
+            if not line.startswith("data:"):
+                continue
+            raw = line[5:].strip()
+            if not raw:
+                continue
+            try:
+                chunk = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            for cand in (chunk.get("candidates") or [])[:1]:
+                for i, part in enumerate(((cand or {}).get("content") or {}).get("parts") or []):
+                    if not isinstance(part, dict) or part.get("thought"):
+                        continue
+                    if part.get("text"):
+                        texts.append(str(part["text"]))
+                        if on_delta:
+                            on_delta(str(part["text"]))
+                    fc = part.get("functionCall")
+                    if isinstance(fc, dict) and fc.get("name"):
+                        args = fc.get("args") if isinstance(fc.get("args"), dict) else _parse_args(fc.get("args"))
+                        call = {
+                            "id": f"g{len(calls)}",
+                            "name": fc.get("name"),
+                            "arguments": json.dumps(args, ensure_ascii=False),
+                        }
+                        sig = part.get("thoughtSignature")
+                        if sig:
+                            call["thought_signature"] = sig
+                        calls.append(call)
+    blob = "".join(texts).strip()
+    if not calls and blob:
+        from app.agents.data_tool import parse_xml_tool_calls
+
+        xml = parse_xml_tool_calls(blob)
+        if xml:
+            calls, blob = xml, ""
+    return {"content": blob, "tool_calls": calls, "provider": "gemini", "via": "stream", "tools_stripped": False}

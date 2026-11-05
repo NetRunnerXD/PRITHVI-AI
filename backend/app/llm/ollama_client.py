@@ -79,6 +79,11 @@ def _exc_kind(exc: BaseException) -> str:
             body = ""
     blob = f"{exc} {body}".lower()
     code = 0
+    import re as _re
+
+    m = _re.search(r"gemini-http-(\d{3})", blob)
+    if m and status is None:
+        status = m.group(1)
     try:
         code = int(status) if status is not None else 0
     except (TypeError, ValueError):
@@ -150,6 +155,17 @@ def sanitize_tools(tools: list[dict[str, Any]] | None, *, strict: bool = True) -
     return out
 
 
+def openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop Gemini-only fields (thought_signature) before an OpenAI-compatible call."""
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        calls = m.get("tool_calls")
+        if calls and any("thought_signature" in c for c in calls if isinstance(c, dict)):
+            m = {**m, "tool_calls": [{k: v for k, v in c.items() if k != "thought_signature"} for c in calls]}
+        out.append(m)
+    return out
+
+
 def _order() -> list[str]:
     primary = _resolved()
     ids = [primary.id]
@@ -180,19 +196,27 @@ async def chat(
             if pid == "gemini":
                 from app.llm.gemini_native import generate as gemini_generate
 
-                async def _gcall():
+                async def _gcall(with_tools):
                     out = await gemini_generate(
                         api_key=p.api_key,
                         model=model or p.model,
                         messages=messages,
-                        tools=None,
+                        tools=with_tools,
                         max_tokens=512,
                     )
                     out["tools_stripped"] = False
                     return out
 
                 try:
-                    parsed = await _gcall()
+                    try:
+                        parsed = await _gcall(tools or None)
+                    except Exception as exc:
+                        if not tools or _exc_kind(exc) == "rate":
+                            raise
+                        # Schema / signature trouble: retry once without tools.
+                        parsed = await _gcall(None)
+                        parsed["tools_stripped"] = True
+                        parsed["error"] = _short_err(exc)
                     if parsed.get("content") or parsed.get("tool_calls"):
                         return parsed
                     last_err = RuntimeError("gemini blank")
@@ -202,7 +226,7 @@ async def chat(
             hosted = pid in ("groq", "gemini", "openrouter", "xai", "github")
             kwargs: dict[str, Any] = {
                 "model": model or p.model,
-                "messages": messages,
+                "messages": openai_messages(messages),
                 "temperature": 0.5 if hosted and not tools else (0.35 if pid == "gemini" else 0.2),
                 "max_tokens": 512 if pid == "gemini" else (400 if hosted else 900),
             }
@@ -410,3 +434,153 @@ def catalog() -> dict[str, Any]:
             "model": s.gemini_model,
         },
     }
+
+
+_chat_impl = chat
+
+
+async def chat_stream(
+    messages: list[dict[str, Any]],
+    tools: list[dict] | None = None,
+    *,
+    on_delta=None,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Like chat(), but pushes answer text to on_delta as tokens arrive.
+
+    Streams on Gemini (SSE) and OpenAI-compatible hosts (Groq, OpenRouter, xAI, GitHub,
+    a local Ollama). The home worker does not stream; it falls back to chat(). A provider
+    that fails before its first token hands over to chat() with the usual fallback chain.
+    """
+    if globals().get("chat") is not _chat_impl or on_delta is None:
+        # Tests patch chat(); honour the patch.
+        return await globals()["chat"](messages, tools=tools) if model is None else await globals()["chat"](messages, tools=tools, model=model)
+    p = _resolved()
+    sent = {"n": 0}
+    acc: list[str] = []
+
+    def _emit(text: str) -> None:
+        if text:
+            sent["n"] += 1
+            acc.append(text)
+            try:
+                on_delta(text)
+            except Exception:  # noqa: BLE001
+                pass
+
+    try:
+        if p.id == "gemini" and p.keyed:
+            from app.llm.gemini_native import generate_stream
+
+            out = await generate_stream(
+                api_key=p.api_key,
+                model=model or p.model,
+                messages=messages,
+                tools=tools or None,
+                max_tokens=512,
+                on_delta=_emit,
+            )
+            if out.get("content") or out.get("tool_calls"):
+                return out
+            raise RuntimeError("gemini blank")
+        use_hub = p.id == "worker" or (p.id == "ollama" and hub.online())
+        skip_local = p.id in ("ollama", "local") and registry.skip_loopback_ollama() and not hub.online()
+        if p.keyed and not use_hub and not skip_local:
+            hosted = p.id in ("groq", "openrouter", "xai", "github")
+            kwargs: dict[str, Any] = {
+                "model": model or p.model,
+                "messages": openai_messages(messages),
+                "temperature": 0.5 if hosted and not tools else 0.2,
+                "max_tokens": 400 if hosted else 900,
+                "stream": True,
+            }
+            if tools:
+                kwargs["tools"] = sanitize_tools(tools, strict=True) if hosted else tools
+                kwargs["tool_choice"] = "auto"
+                kwargs["parallel_tool_calls"] = True
+            if p.id != "groq":
+                kwargs.pop("parallel_tool_calls", None)
+            stream = await client().chat.completions.create(**kwargs)
+            text: list[str] = []
+            calls: dict[int, dict[str, Any]] = {}
+            async for chunk in stream:
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                delta = getattr(choices[0], "delta", None)
+                if delta is None:
+                    continue
+                piece = getattr(delta, "content", None)
+                if piece:
+                    text.append(piece)
+                    _emit(piece)
+                for tc in getattr(delta, "tool_calls", None) or []:
+                    slot = calls.setdefault(int(getattr(tc, "index", 0) or 0), {"id": None, "name": "", "arguments": ""})
+                    if getattr(tc, "id", None):
+                        slot["id"] = tc.id
+                    fn = getattr(tc, "function", None)
+                    if fn is not None:
+                        if getattr(fn, "name", None):
+                            slot["name"] = fn.name
+                        if getattr(fn, "arguments", None):
+                            slot["arguments"] += fn.arguments
+            content = "".join(text).strip()
+            tool_calls = [
+                {"id": c["id"] or f"s{i}", "name": c["name"], "arguments": c["arguments"] or "{}"}
+                for i, c in sorted(calls.items())
+                if c.get("name")
+            ]
+            if not tool_calls and content:
+                from app.agents.data_tool import parse_xml_tool_calls
+
+                xml = parse_xml_tool_calls(content)
+                if xml:
+                    tool_calls, content = xml, ""
+            if content or tool_calls:
+                return {"content": content, "tool_calls": tool_calls, "tools_stripped": False, "provider": p.id, "via": "stream"}
+            raise RuntimeError(f"{p.id} blank")
+    except Exception as exc:  # noqa: BLE001
+        if sent["n"]:
+            # Tokens already shown: keep what we have rather than restarting the answer.
+            return {
+                "content": "".join(acc).strip(),
+                "tool_calls": [],
+                "tools_stripped": False,
+                "provider": p.id,
+                "error": _short_err(exc),
+                "partial": True,
+            }
+    return await _chat_impl(messages, tools=tools, model=model)
+
+
+_ping_impl = ping
+_PING_TTL_S = 60.0
+_ping_cache: dict[str, tuple[float, tuple[bool, str]]] = {}
+_ping_running: set[str] = set()
+
+
+async def ping_cached() -> tuple[bool, str]:
+    """Liveness without a per-turn round trip: cached 60 s per provider, refreshed in the background."""
+    import asyncio
+    import time
+
+    if globals().get("ping") is not _ping_impl:
+        return await globals()["ping"]()
+    pid = _resolved().id
+    now = time.monotonic()
+    hit = _ping_cache.get(pid)
+    if hit and now - hit[0] < _PING_TTL_S:
+        return hit[1]
+
+    async def _refresh() -> None:
+        try:
+            res = await asyncio.wait_for(_ping_impl(), timeout=8)
+        except Exception as exc:  # noqa: BLE001
+            res = (False, _short_err(exc))
+        _ping_cache[pid] = (time.monotonic(), res)
+        _ping_running.discard(pid)
+
+    if pid not in _ping_running:
+        _ping_running.add(pid)
+        asyncio.get_running_loop().create_task(_refresh())
+    return hit[1] if hit else (True, "unchecked")

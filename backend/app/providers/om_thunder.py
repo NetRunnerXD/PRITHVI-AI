@@ -143,6 +143,8 @@ async def fetch_batch(hubs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             cur = data.get("current") or {}
             code = int(cur.get("weather_code") or 0)
             precip = float(cur.get("precipitation") or 0)
+            cloud_raw = cur.get("cloud_cover")
+            cloud = float(cloud_raw) if cloud_raw is not None else None
             hourly = data.get("hourly") or {}
             codes = hourly.get("weather_code") or []
             capes_h = hourly.get("cape") or []
@@ -181,6 +183,8 @@ async def fetch_batch(hubs: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "source": "open-meteo-thunder",
                 "weather_code": code,
                 "precip_mm": precip,
+                "cloud_cover": cloud,
+                "elevation_m": data.get("elevation"),
                 "cape": cape,
                 "thunder": thunder,
                 "hours": hours,

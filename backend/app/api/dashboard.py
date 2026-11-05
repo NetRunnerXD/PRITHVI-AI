@@ -16,17 +16,62 @@ from app.tools import build_registry
 
 @router.get("/sat/imd-asia")
 async def imd_asia_jpeg():
-    """Same-origin INSAT Asia-sector JPEG so Leaflet ImageOverlay is not blocked by CORS."""
-    from app.providers.imd_insat import fetch_jpeg
+    """Same-origin INSAT Asia-sector map area (header removed). It is Web-Mercator already, so
+    a Leaflet ImageOverlay with the X-Bounds corners lines up with the basemap."""
+    from app.providers.imd_insat import map_area
 
-    body, _url, status = await fetch_jpeg()
-    if not body:
-        return Response(status_code=502, content=f"imd jpeg {status}".encode())
+    pack = await map_area()
+    if not pack.get("ok"):
+        return Response(status_code=502, content=f"imd jpeg {pack.get('status')}".encode())
+    w, e, s_, n = pack["bounds"]
     return Response(
-        content=body,
+        content=pack["jpeg"],
         media_type="image/jpeg",
-        headers={"Cache-Control": "public, max-age=120", "Access-Control-Allow-Origin": "*"},
+        headers={
+            "Cache-Control": "public, max-age=120, stale-while-revalidate=600",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "X-Bounds, X-Image-Time",
+            "X-Bounds": f"{w},{e},{s_},{n}",
+            "X-Image-Time": str(pack.get("image_time") or ""),
+        },
     )
+
+
+@router.get("/sat/imd-asia/meta")
+async def imd_asia_meta():
+    from app.providers.imd_insat import ASIA_MAP_BOUNDS, GRAY_TB_NOTE, map_area
+
+    pack = await map_area()
+    w, e, s_, n = pack.get("bounds") or ASIA_MAP_BOUNDS
+    return {
+        "ok": bool(pack.get("ok")),
+        "url": "/api/sat/imd-asia",
+        "projection": "EPSG:3857 (Mercator)",
+        "bounds": {"west": w, "east": e, "south": s_, "north": n},
+        "image_time": pack.get("image_time"),
+        "note": GRAY_TB_NOTE,
+    }
+
+
+@router.get("/sat/gibs/latest")
+async def gibs_latest():
+    """Latest non-empty GIBS frame times so map tiles request a real time (no TIME = stale
+    default; a date-only TIME = 00:00Z)."""
+    import asyncio
+
+    from app.providers import gibs_ir
+
+    ir, im = await asyncio.gather(gibs_ir.frame("ir"), gibs_ir.frame("imerg"))
+    return {
+        "ir": {"layer": ir.get("layer"), "time": ir.get("valid"), "ok": bool(ir.get("ok")), "status": ir.get("status")},
+        "imerg": {
+            "layer": im.get("layer"),
+            "time": im.get("valid"),
+            "ok": bool(im.get("ok")),
+            "status": im.get("status"),
+            "note": "GIBS IMERG is a daily image, not real-time." if im.get("ok") else "IMERG not yet available.",
+        },
+    }
 
 
 @router.get("/dashboard")
@@ -34,8 +79,16 @@ async def dashboard(
     loc: Location = Depends(loc_from_query),
     locale: str = "en",
     disable: str | None = Query(default=None, description="Comma-separated provider/process IDs to bypass"),
+    view: str = Query(default="full", pattern="^(full|core)$"),
 ):
     disabled_set = {d.strip().lower() for d in disable.split(",")} if disable else None
+    if view == "core":
+        from app.services.snapshot import build_core, slim_dump
+
+        snap, is_full = await build_core(loc, locale, disabled=disabled_set)
+        body = slim_dump(snap)
+        body["enriching"] = not is_full
+        return body
     snap = await build_snapshot(loc, locale, full=True, disabled=disabled_set)
     return snap.model_dump()
 
@@ -234,6 +287,7 @@ async def nowcast_api(loc: Location = Depends(loc_from_query)):
         "sat": nc.get("sat") or {},
         "convective": nc.get("convective") or {},
         "sat_live": nc.get("sat_live") or {},
+        "pn_blend": nc.get("pn_blend") or {},
     }
 
 
@@ -267,6 +321,7 @@ def _nowcast_live_body(snap) -> dict:
         "sat": nc.get("sat") or {},
         "convective": nc.get("convective") or {},
         "sat_live": nc.get("sat_live") or {},
+        "pn_blend": nc.get("pn_blend") or {},
     }
 
 
@@ -387,18 +442,93 @@ async def storm_map_api(
     from app.store.time import clamp_horizon
     from app.science.storm_map import build as build_storm_map
 
+    import asyncio
+
+    from app import cache
+
     horizon = clamp_horizon(past_h)
-    pack = await build_storm_map(state, past_h=horizon)
+    key = f"stormpack:{state.strip().lower()}:{horizon}"
+    # 90 s fresh, 10 min stale-while-revalidate, single-flight: concurrent tabs share one
+    # build and a slow rebuild never blocks a user who already has a recent map.
+    pack = await asyncio.shield(
+        cache.aget(key, lambda: build_storm_map(state, past_h=horizon), ttl_s=90, swr_s=600)
+    )
+    pack = dict(pack)
     try:
         from app.store import ingest_status
 
         proc = ingest_status.snapshot()
-        if proc:
+        age = proc.get("age_s") if proc else None
+        # A background cycle must not freeze the map. Only a cycle that started
+        # in the last 90s may show "Analyzing…". After that the storm pack stands.
+        blocking = bool(
+            proc
+            and proc.get("ready") is False
+            and not proc.get("stale")
+            and age is not None
+            and age < 90
+        )
+        if blocking:
             pack = {**pack, "processing": {**(pack.get("processing") or {}), **proc}}
     except Exception:
         pass
     pack["past_h"] = horizon
     return pack
+
+
+@router.get("/cyclones")
+async def cyclones_api(region: str = Query(default="india", pattern="^(india|all)$")):
+    """Active tropical cyclones: observed + forecast track, cone, category, timestamps."""
+    from app.providers import cyclones
+
+    return await cyclones.active(region)
+
+
+@router.get("/research/status")
+async def research_status():
+    """Which PN-* research methods are live, and what (env var names only) each still needs."""
+    from app.science import pn
+
+    return pn.status()
+
+
+@router.get("/nowcast/sat-lightning")
+async def nowcast_sat_lightning(wait: bool = Query(default=False)):
+    """Satellite-estimated lightning likelihood (not detected strikes), worldwide where
+    Himawari-9 / GOES-East / GOES-West cover, with its IMERG validation (POD/FAR)."""
+    from app.science import sat_lightning
+
+    pack = await sat_lightning.refresh() if wait else (sat_lightning.peek() or {"ok": False, "status": "warming"})
+    return {k: v for k, v in pack.items() if not k.startswith("_")}
+
+
+@router.get("/research/pn-live")
+async def research_pn_live(wait: bool = Query(default=False)):
+    """Live PN nowcast (PN_VERSION=v4 PN-Net or v7 PRITHVI-Nowcast) on IMERG Early: per-lead
+    valid times, event cells, input groups live/masked, and a live validation of leads 1–3."""
+    from app.science.pn import live
+
+    st = live.engine_status()
+    if not st.get("enabled"):
+        return {"ok": False, "status": "disabled", **st}
+    if wait:
+        pack = await live.refresh()
+    else:
+        pack = live.peek() or {"ok": False, "status": "warming", "note": "First run started; retry in ~30–60 s."}
+    return {k: v for k, v in pack.items() if not k.startswith("_")}
+
+
+@router.get("/research/pn-track")
+async def research_pn_track(days: int = Query(default=30, ge=1, le=90)):
+    """Live track record of the v7 nowcast: CSI/POD/FAR per lead from verified runs (0.5°)."""
+    import asyncio
+
+    from app.science.pn import params
+    from app.store import pn_runs
+
+    tr = await asyncio.to_thread(pn_runs.track, float(days), "v7")
+    test = params()["pn_nowcast_v7"]["test_by_lead_h"]
+    return {**tr, "test_csi": {L: test[L]["final"]["csi"] for L in ("1", "3", "6", "12")}}
 
 
 @router.get("/states")

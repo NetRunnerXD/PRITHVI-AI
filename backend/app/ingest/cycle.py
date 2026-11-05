@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from app.config import get_settings
@@ -30,8 +31,14 @@ async def run_cycle() -> dict[str, Any]:
 
         ingest_status.update(satellite={"id": "imd_ir1", "status": "fetching"})
         jpeg_ok = False
+        jpeg_time = None
         try:
-            body, _url, status = await imd_insat.fetch_jpeg()
+            def _jpeg(n, total):
+                ingest_status.update(satellite={"id": "imd_ir1", "status": "fetching", "bytes_read": n, "bytes_total": total})
+
+            frame = await imd_insat.fetch_frame(on_progress=_jpeg)
+            body, status = frame.get("body"), frame.get("status") or "empty"
+            jpeg_time = frame.get("image_time")
             jpeg_ok = bool(body)
             ingest_status.update(
                 satellite={"id": "imd_ir1", "name": "INSAT-3DS IR1 JPEG", "status": "ok" if jpeg_ok else "fail", "detail": status}
@@ -42,7 +49,14 @@ async def run_cycle() -> dict[str, Any]:
         ingest_status.update(satellite={"id": "mosdac_hem", "status": "fetching"})
         mosdac_rows: list[dict[str, Any]] = []
         try:
-            mosdac_rows = await mosdac.ingest_latest(allow_l1b=bool(settings.mosdac_allow_l1b))
+            def _hem(n, total, product="3SIMG_L2B_HEM"):
+                sid = "mosdac_l1b" if "L1B" in str(product) else "mosdac_hem"
+                ingest_status.update(satellite={"id": sid, "status": "fetching", "bytes_read": n, "bytes_total": total})
+
+            mosdac_rows = await asyncio.wait_for(
+                mosdac.ingest_latest(allow_l1b=bool(settings.mosdac_allow_l1b), on_progress=_hem),
+                timeout=45,
+            )
             hem = next((r for r in mosdac_rows if r.get("product") == "3SIMG_L2B_HEM"), {})
             l1 = next((r for r in mosdac_rows if r.get("product") == "3SIMG_L1B_STD"), {})
             ingest_status.update(
@@ -57,17 +71,31 @@ async def run_cycle() -> dict[str, Any]:
                 satellite={
                     "id": "mosdac_l1b",
                     "name": "INSAT-3DS L1B TIR1",
-                    "status": l1.get("status") or ("ok" if l1.get("ok") else "fail"),
-                    "detail": l1.get("error") or l1.get("status"),
+                    "status": l1.get("status")
+                    or ("ok" if l1.get("ok") else "disabled" if not settings.mosdac_allow_l1b else "fail"),
+                    "detail": l1.get("error")
+                    or l1.get("status")
+                    or (None if settings.mosdac_allow_l1b else "L1B off (MOSDAC_ALLOW_L1B=false); Himawari B13 used for Tb"),
                 }
             )
         except Exception as e:
-            ingest_status.update(satellite={"id": "mosdac_hem", "status": "fail", "detail": str(e)[:160]})
-            ingest_status.update(satellite={"id": "mosdac_l1b", "status": "fail"})
+            detail = "timeout" if isinstance(e, asyncio.TimeoutError) else str(e)[:160]
+            ingest_status.update(satellite={"id": "mosdac_hem", "status": "fail", "detail": detail})
+            if settings.mosdac_allow_l1b:
+                ingest_status.update(satellite={"id": "mosdac_l1b", "status": "fail", "detail": detail})
+            else:
+                ingest_status.update(
+                    satellite={
+                        "id": "mosdac_l1b",
+                        "name": "INSAT-3DS L1B TIR1",
+                        "status": "disabled",
+                        "detail": "L1B off (MOSDAC_ALLOW_L1B=false); Himawari B13 used for Tb",
+                    }
+                )
 
         ingest_status.update(phase="cv", satellite={"id": "imerg", "status": "fetching"})
         try:
-            imerg = await gpm_imerg.fetch_pin(22.07, 88.07, heavy=False)
+            imerg = await asyncio.wait_for(gpm_imerg.fetch_pin(22.07, 88.07, heavy=False), timeout=45)
             st = "ok" if imerg.get("ok") else imerg.get("status") or "fail"
             if imerg.get("eula"):
                 st = "eula"
@@ -80,7 +108,8 @@ async def run_cycle() -> dict[str, Any]:
                 }
             )
         except Exception as e:
-            ingest_status.update(satellite={"id": "imerg", "status": "fail", "detail": str(e)[:160]})
+            detail = "timeout" if isinstance(e, asyncio.TimeoutError) else str(e)[:160]
+            ingest_status.update(satellite={"id": "imerg", "status": "fail", "detail": detail})
 
         ingest_status.update(phase="predict", satellite={"id": "gibs", "status": "fetching"})
         from app.science.storm_map import build as build_storm_map
@@ -113,6 +142,16 @@ async def run_cycle() -> dict[str, Any]:
             pass
         prune_events()
         prune_frames()
+        hem_time = next(
+            (r.get("granule_time") for r in mosdac_rows if r.get("product") == "3SIMG_L2B_HEM" and r.get("ok")),
+            None,
+        )
+        try:
+            from app.ingest.worker import record_slot_frame
+
+            record_slot_frame(jpeg_time=jpeg_time if jpeg_ok else None, hem_time=hem_time)
+        except Exception:
+            pass
         result["ok"] = bool(pack.get("ok") or jpeg_ok)
         result["counts"] = pack.get("counts")
         result["mosdac"] = mosdac_rows

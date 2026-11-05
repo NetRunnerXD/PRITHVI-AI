@@ -22,7 +22,7 @@ def api_needed() -> list[dict[str, Any]]:
             {
                 "id": "mosdac",
                 "env": ["MOSDAC_USER", "MOSDAC_PASS", "MOSDAC_BASE_URL"],
-                "prompt": "Register at https://www.mosdac.gov.in, then add MOSDAC_USER, MOSDAC_PASS, and MOSDAC_BASE_URL=https://www.mosdac.gov.in to backend/.env to ingest INSAT-3D/3DR L1B HDF5. Until then the CV branch uses IMD 5-band Asia-sector JPEGs (VIS/SWIR/MIR/TIR/WV).",
+                "prompt": "Register at https://www.mosdac.gov.in, then add MOSDAC_USER, MOSDAC_PASS, and MOSDAC_BASE_URL=https://www.mosdac.gov.in to backend/.env to ingest INSAT-3D/3DR L1B HDF5. Until then the CV branch uses the IMD Asia-sector JPEGs that exist (VIS/TIR/WV).",
             }
         )
     if not (s.nasa_earthdata_api or (s.nasa_earthdata_user and s.nasa_earthdata_pass)):
@@ -177,14 +177,14 @@ def build_vera(
         + f"Heat {(ext.get('heat_wave') or {}).get('level')}; wind {(ext.get('high_wind') or {}).get('level')}; "
         + f"heavy rain {(ext.get('heavy_rain') or {}).get('level')}. Automated; not a gauge."
     )
-    from app.providers.imd_insat import ASIA_BOUNDS, INDIA_BOUNDS
+    from app.providers.imd_insat import ASIA_MAP_BOUNDS, INDIA_BOUNDS
 
-    aw, ae, aso, an = ASIA_BOUNDS
+    aw, ae, aso, an = ASIA_MAP_BOUNDS
     iw, ie, iso, inn = INDIA_BOUNDS
     der = cv.get("derived") or {}
     cv["map"] = {
         "stages": [
-            {"id": "asia", "title": "1. Asia-sector frame", "note": "IMD INSAT Asiamer JPEG (40–110°E, 10°S–45°N)."},
+            {"id": "asia", "title": "1. Asia-sector frame", "note": "IMD INSAT Asia-sector JPEG, Mercator map area (≈40–110°E, 10°S–45.4°N)."},
             {"id": "india", "title": "2. India rectangle", "note": "downsample_india: lon 68.1–97.4°E, lat 6.6–35.8°N."},
             {"id": "mask", "title": "3. Political mask", "note": "Pixels outside india_mask set to 300 K."},
             {"id": "pin", "title": "4. Pin patch", "note": "13×13 IR sample around the search pin."},

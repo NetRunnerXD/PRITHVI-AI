@@ -5,6 +5,7 @@ import { searchPlaces } from "@/lib/api";
 import type { Location } from "@/types/dashboard";
 import { COPY, type Locale } from "@/i18n/copy";
 import { useApp } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 
 export function DistrictSearch({
   locale,
@@ -15,7 +16,11 @@ export function DistrictSearch({
   onPick: (l: Location) => void;
   disabled?: boolean;
 }) {
-  const { recent } = useApp();
+  const { recent } = useApp(
+    useShallow((s) => ({
+      recent: s.recent,
+    })),
+  );
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Location[]>([]);
   const [focus, setFocus] = useState(false);

@@ -253,7 +253,9 @@ async def world_grid(hour: int = 0) -> dict[str, Any]:
     if pack.get("source") == "synthetic" and not os.environ.get("PYTEST_CURRENT_TEST"):
         pack["ok"] = False
         pack["note"] = "Open-Meteo grid unavailable; showing a labelled placeholder."
-    cache.set(key, pack, 8 * 60)
+    # Coarse global background only (the India inset is fetched separately at 1.5°):
+    # a 60-min cache keeps upstream calls to ~1 per hour-slot per hour.
+    cache.set(key, pack, 60 * 60 if pack.get("ok", True) else 5 * 60)
     return pack
 
 

@@ -66,6 +66,7 @@ def test_landslide_and_fire_enter_alerts():
             "lon": 88.27,
             "n": 6,
             "frp_mw": 22.0,
+            "age_h": 3.0,  # alerts keep only detections <= 24 h old
             "place": "Darjeeling, West Bengal",
             "state": "West Bengal",
         }

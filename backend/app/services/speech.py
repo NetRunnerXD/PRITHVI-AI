@@ -12,21 +12,30 @@ import httpx
 
 from app.config import get_settings
 
+# IndicConformer 600M scheduled languages. English is not one of them.
 STT_LANGS = (
     "as",
     "bn",
+    "brx",
+    "doi",
     "gu",
     "hi",
     "kn",
+    "ks",
+    "kok",
+    "mai",
     "ml",
+    "mni",
     "mr",
+    "ne",
     "or",
     "pa",
+    "sa",
+    "sat",
+    "sd",
     "ta",
     "te",
     "ur",
-    "sa",
-    "ne",
 )
 TTS_LANGS = (
     "as",
@@ -153,17 +162,27 @@ async def sidecar_status(*, force: bool = False) -> dict[str, Any]:
         return _status_cache
     s = get_settings()
     stt_url = (s.vexyl_stt_url or "").strip()
-    tts_url = (s.vexyl_tts_url or "").strip()
-    stt_ok, tts_ok = await asyncio.gather(_health(stt_url), _health(tts_url))
+    stt_ok = await _health(stt_url)
+    try:
+        from app.services import device_hw
+
+        en = await asyncio.to_thread(device_hw.voice_ready)
+    except Exception:
+        en = {"stt": False, "tts": False, "langs": []}
+    local_codes = {c for c in (en.get("langs") or [])}
+    tts_langs = [c for c in TTS_LANGS if c in local_codes]
     _status_cache = {
         "stt": bool(stt_ok),
-        "tts": bool(tts_ok),
+        "tts": bool(tts_langs),
         "stt_langs": list(STT_LANGS) if stt_ok else [],
-        "tts_langs": list(TTS_LANGS) if tts_ok else [],
+        "tts_langs": tts_langs,
         "fallback": "web-speech",
+        "english": {"stt": bool(en.get("stt")), "tts": bool(en.get("tts"))},
         "engine": {
             "stt": "vexyl-indic-conformer" if stt_ok else None,
-            "tts": "vexyl-indic-parler" if tts_ok else None,
+            "tts": "fastspeech2" if tts_langs else None,
+            "en_stt": "faster-whisper" if en.get("stt") else None,
+            "en_tts": "fastspeech2" if en.get("tts") else None,
         },
     }
     _status_at = now
@@ -214,12 +233,15 @@ async def transcribe(data: bytes, filename: str, language: str) -> dict[str, str
         raise ValueError("audio_too_large")
     name = filename or "clip.wav"
     async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=5.0)) as c:
-        r = await c.post(
-            f"{url}/batch/transcribe",
-            headers=_headers(),
-            files={"file": (name, data, "application/octet-stream")},
-            data={"language_code": bcp_for(lid)},
-        )
+        try:
+            r = await c.post(
+                f"{url}/batch/transcribe",
+                headers=_headers(),
+                files={"file": (name, data, "application/octet-stream")},
+                data={"language_code": bcp_for(lid)},
+            )
+        except httpx.HTTPError as e:
+            raise RuntimeError("stt_unconfigured") from e
         if r.status_code >= 400:
             raise RuntimeError(f"stt sidecar {r.status_code}")
         job = r.json()
@@ -255,7 +277,10 @@ async def synthesize(text: str, language: str, style: str | None = None) -> tupl
         raise ValueError("empty_text")
     body = {"text": spoken, "lang": bcp_for(lid), "style": style or "default"}
     async with httpx.AsyncClient(timeout=httpx.Timeout(200.0, connect=5.0)) as c:
-        r = await c.post(f"{url}/batch/synthesize", headers={**_headers(), "Content-Type": "application/json"}, json=body)
+        try:
+            r = await c.post(f"{url}/batch/synthesize", headers={**_headers(), "Content-Type": "application/json"}, json=body)
+        except httpx.HTTPError as e:
+            raise RuntimeError("tts_unconfigured") from e
         if r.status_code >= 400:
             raise RuntimeError(f"tts sidecar {r.status_code}")
         job = r.json()

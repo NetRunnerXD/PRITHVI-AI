@@ -9,6 +9,9 @@ except Exception:  # pragma: no cover
 
 # ISO 639-1 → script. Devanagari is shared (hi/mr/ne); Bengali script also covers Assamese.
 _SCRIPTS: list[tuple[str, re.Pattern[str]]] = [
+    # Ol Chiki (Santali) and Meetei Mayek (Manipuri) are unique scripts: check first.
+    ("sat", re.compile(r"[\u1C50-\u1C7F]")),
+    ("mni", re.compile(r"[\uABC0-\uABFF\uAAE0-\uAAFF]")),
     ("bn", re.compile(r"[\u0980-\u09FF]")),
     ("hi", re.compile(r"[\u0900-\u097F]")),
     ("pa", re.compile(r"[\u0A00-\u0A7F]")),
@@ -39,8 +42,15 @@ _SCRIPT_BY_LANG = {code: pat for code, pat in _SCRIPTS}
 _SCRIPT_ALIAS = {
     "mr": "hi",
     "ne": "hi",
+    "kok": "hi",
+    "mai": "hi",
+    "sa": "hi",
+    "doi": "hi",
+    "brx": "hi",
     "as": "bn",
     "ur": "ar",
+    "sd": "ar",
+    "ks": "ar",
     "fa": "ar",
     "zh-cn": "zh",
     "zh-tw": "zh",
@@ -76,6 +86,11 @@ _LD_MAP = {
     "sat": "sat",
     "sd": "sd",
     "ks": "ks",
+    "gom": "kok",
+    "od": "or",
+    "mni-mtei": "mni",
+    "hinglish": "hinglish",
+    "hi-latn": "hinglish",
     "auto": "auto",
     "fr": "fr",
     "es": "es",
@@ -129,10 +144,77 @@ def script_of(text: str) -> str | None:
     return None
 
 
-def detect_lang(text: str, hint: str | None = None) -> str:
-    """Detect the language of user text. Script wins; hint is last resort."""
+# Languages that share a script. When the user picked one of these, trust it.
+SCRIPT_FAMILY: dict[str, set[str]] = {
+    "hi": {"hi", "mr", "ne", "kok", "mai", "sa", "doi", "brx"},
+    "bn": {"bn", "as", "mni"},
+    "ar": {"ur", "sd", "ks"},
+    "sat": {"sat"},
+    "mni": {"mni"},
+}
+
+_URDU_MARKS = re.compile(r"[\u06BA\u06BE\u06C1\u06D2\u0679\u0688\u0691]")  # ں ھ ہ ے ٹ ڈ ڑ
+_SINDHI_MARKS = re.compile(r"[\u0684\u0683\u0687\u067B\u0680\u067A\u067D\u06A6\u06BB\u06B1\u068A\u068F\u068D]")
+_KASHMIRI_MARKS = re.compile(r"[\u0672\u0673\u0620\u06C4\u06C6\u065F]")
+
+# Common Hindi words written in Latin script (Hinglish chat).
+_HINGLISH = {
+    "hai", "hain", "kya", "kyaa", "kal", "aaj", "parso", "barish", "baarish", "barsaat", "mausam", "hoga",
+    "hogi", "honge", "nahi", "nahin", "mein", "me", "ka", "ki", "ke", "ko", "se", "kaisa", "kaisi", "kitna",
+    "kitni", "kab", "garmi", "thand", "thandi", "hawa", "bataiye", "batao", "bata", "yahan", "wahan", "abhi",
+    "bahut", "zyada", "jyada", "kam", "chalega", "chahiye", "karna", "karu", "karun", "jaana", "jana",
+    "baadal", "badal", "toofan", "tufan", "aandhi", "dhoop", "dhup", "boond", "paani", "pani", "khet",
+    "fasal", "sinchai", "subah", "shaam", "raat", "din", "agle", "agla", "ghante", "ghanta", "mere", "mera",
+    "meri", "hum", "aap", "tum", "kaise", "kaun", "kahan", "kyun", "lagega", "lag", "rahi", "raha", "rahe",
+    "gaya", "gayi", "padegi", "padega", "hoti", "hota", "bhi", "aur", "ya", "toh", "to", "kuch", "sab",
+    "accha", "achha", "theek", "thik", "bijli", "garaj", "chhata", "chata", "baahar", "bahar", "nikalna",
+}
+_HINGLISH_STRONG = {
+    "hai", "kya", "barish", "baarish", "mausam", "hoga", "hogi", "nahi", "nahin", "kaisa", "kitna", "aaj",
+    "kal", "garmi", "thand", "bataiye", "batao", "chahiye", "hawa", "toofan", "aandhi", "abhi", "ghante",
+}
+
+
+def is_hinglish(text: str) -> bool:
+    """Romanised Hindi (Latin script). Needs 2+ Hindi words incl. one strong cue."""
+    blob = (text or "").strip()
+    if not blob or script_of(blob):
+        return False
+    words = re.findall(r"[a-z]+", blob.lower())
+    if len(words) < 2:
+        return False
+    hits = [w for w in words if w in _HINGLISH]
+    if len(hits) < 2 or not any(w in _HINGLISH_STRONG for w in hits):
+        return False
+    return len(hits) / len(words) >= 0.3
+
+
+def _arabic_lang(blob: str, hinted: str | None) -> str:
+    if hinted in {"ur", "sd", "ks"}:
+        return hinted
+    if _KASHMIRI_MARKS.search(blob):
+        return "ks"
+    if _SINDHI_MARKS.search(blob):
+        return "sd"
+    if _URDU_MARKS.search(blob):
+        return "ur"
+    return "ur"
+
+
+def detect_lang(text: str, hint: str | None = None, picked: str | None = None) -> str:
+    """Detect the language of user text.
+
+    Script wins. Inside a shared script (Devanagari, Bengali, Perso-Arabic) the language the
+    user explicitly picked wins over guessing. `hint` (UI locale) is only a last resort.
+    """
     blob = text or ""
+    hinted = normalize_lang(hint)
+    chosen = normalize_lang(picked)
     script = script_of(blob)
+    if script and chosen and chosen in SCRIPT_FAMILY.get(script, ()):
+        return chosen
+    if script == "ar":
+        return _arabic_lang(blob, chosen)
     if script == "hi" and _ld:
         try:
             guessed = normalize_lang(_ld(blob))
@@ -140,8 +222,12 @@ def detect_lang(text: str, hint: str | None = None) -> str:
                 return guessed
         except Exception:
             pass
+    if script == "bn" and re.search("[\u09F0\u09F1]", blob):
+        return "as"  # ৰ ৱ are Assamese-only letters
     if script:
         return script
+    if chosen == "hinglish" or is_hinglish(blob):
+        return "hinglish"
     if _ld and len(blob.strip()) >= 10:
         try:
             guessed = normalize_lang(_ld(blob))
@@ -149,7 +235,6 @@ def detect_lang(text: str, hint: str | None = None) -> str:
                 return guessed
         except Exception:
             pass
-    hinted = normalize_lang(hint)
     if hinted:
         return hinted
     return "en"
@@ -157,7 +242,7 @@ def detect_lang(text: str, hint: str | None = None) -> str:
 
 def has_script(text: str, locale: str) -> bool:
     key = _SCRIPT_ALIAS.get((locale or "").lower(), (locale or "").lower())
-    if key in {"en", ""}:
+    if key in {"en", "", "hinglish"}:
         return True
     pat = _SCRIPT_BY_LANG.get(key)
     if pat is None:

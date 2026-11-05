@@ -255,6 +255,16 @@ def cloudburst_prob(cell: dict[str, Any], cool: dict[str, float], phys_kind: str
     return round(_clip(p, 0.04, 0.94), 3)
 
 
+def _parse_t(raw: Any) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        t = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
 def enhance(
     cells: list[dict[str, Any]],
     grid: list[list[float]] | None,
@@ -262,15 +272,29 @@ def enhance(
     *,
     strokes: list[dict[str, Any]] | None = None,
     bands: dict[str, Any] | None = None,
+    image_time: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Attach flow, lightning-jump and cloudburst probabilities. Persist grid."""
+    """Attach flow, lightning-jump and cloudburst probabilities. Persist grid.
+
+    Motion is computed between two *different satellite frames* (keyed by the image
+    valid time, e.g. the JPEG Last-Modified), never between two API requests that saw
+    the same picture. dt is the image-time gap, not the request gap.
+    """
     meta = {"frames": 1, "d_tb": 0.0, "jump": 0, "u_px": 0.0, "v_px": 0.0}
     if not grid:
         return cells, meta
     store = _load()
-    prev = store.get("grid")
-    prev_t = store.get("t")
-    prev_cells = list(store.get("cells") or [])
+    now_dt = datetime.now(timezone.utc)
+    img_t = _parse_t(image_time) or now_dt
+    cur_key = image_time or now_dt.isoformat(timespec="seconds")
+    same_frame = bool(image_time) and store.get("image_time") == image_time
+    if same_frame:
+        prev = store.get("prev")
+        prev_t = store.get("prev_t")
+    else:
+        prev = store.get("grid")
+        prev_t = store.get("image_time") or store.get("t")
+    prev_cells = list(store.get("prev_cells" if same_frame else "cells") or [])
     if not prev_cells:
         try:
             from app.science.cv_memory import last_ir_cells
@@ -278,33 +302,29 @@ def enhance(
             prev_cells = last_ir_cells()
         except Exception:
             prev_cells = []
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     cool = {"d_tb": 0.0, "jump": 0, "n_ot": 0, "n_cold": 0}
     u_px = v_px = 0.0
-    dt_min = 10.0
-    if prev and prev_t:
-        try:
-            dt_min = max(
-                4.0,
-                (
-                    datetime.now(timezone.utc)
-                    - datetime.fromisoformat(str(prev_t).replace("Z", "+00:00"))
-                ).total_seconds()
-                / 60.0,
-            )
-        except ValueError:
-            dt_min = 10.0
-        cool = cooling_stats(prev, grid)
-        u_px, v_px = block_flow(prev, grid)
-        meta = {
-            "frames": 2,
-            "d_tb": cool["d_tb"],
-            "jump": cool["jump"],
-            "u_px": u_px,
-            "v_px": v_px,
-            "dt_min": round(dt_min, 1),
-        }
-    if prev_cells and cells and not all(c.get("trend") for c in cells):
+    dt_min = 0.0
+    pt = _parse_t(prev_t)
+    if prev and pt is not None and len(prev) == len(grid) and len(prev[0]) == len(grid[0]):
+        dt_min = (img_t - pt).total_seconds() / 60.0
+        if 5.0 <= dt_min <= 180.0:
+            cool = cooling_stats(prev, grid)
+            u_px, v_px = block_flow(prev, grid)
+            meta = {
+                "frames": 2,
+                "d_tb": cool["d_tb"],
+                "jump": cool["jump"],
+                "u_px": u_px,
+                "v_px": v_px,
+                "dt_min": round(dt_min, 1),
+                "image_time": image_time,
+                "prev_image_time": prev_t,
+            }
+        else:
+            meta = {**meta, "dt_min": round(dt_min, 1), "image_time": image_time, "note": "previous frame too old/new for motion"}
+            dt_min = 0.0
+    if prev_cells and cells and dt_min > 0 and not all(c.get("trend") for c in cells):
         cells = sat_cv.track(prev_cells, cells, dt_min)
     try:
         slim = [
@@ -326,13 +346,27 @@ def enhance(
             }
             for c in cells
         ]
-        _save({"t": prev_t or now, "grid": grid, "prev": prev, "bounds": bounds, "cells": slim})
-        try:
-            from app.science.cv_memory import remember_frame
+        if same_frame:
+            _save({**store, "cells": slim})
+        else:
+            _save(
+                {
+                    "t": cur_key,
+                    "image_time": cur_key,
+                    "grid": grid,
+                    "prev": prev,
+                    "prev_t": prev_t,
+                    "prev_cells": list(store.get("cells") or []),
+                    "bounds": bounds,
+                    "cells": slim,
+                }
+            )
+            try:
+                from app.science.cv_memory import remember_frame
 
-            remember_frame(slim, now)
-        except Exception:
-            pass
+                remember_frame(slim, cur_key)
+            except Exception:
+                pass
     except OSError:
         pass
     except Exception:
@@ -341,17 +375,17 @@ def enhance(
     west, east, south, north = bounds or (68.0, 97.5, 6.5, 37.2)
     h = max(len(grid), 1)
     w = max(len(grid[0]), 1)
-    km_x = (east - west) * 111.3 / w
+    km_x = (east - west) * 111.3 * math.cos(math.radians(0.5 * (north + south))) / w
     km_y = (north - south) * 111.3 / h
-    flow_u = u_px * km_x / (dt_min / 60.0) if dt_min else 0.0
-    flow_v = -v_px * km_y / (dt_min / 60.0) if dt_min else 0.0
+    flow_u = u_px * km_x / (dt_min / 60.0) if dt_min > 0 else 0.0
+    flow_v = -v_px * km_y / (dt_min / 60.0) if dt_min > 0 else 0.0
     flow_speed = math.hypot(flow_u, flow_v)
 
     strokes = list(strokes or [])
     out = []
     for c in cells:
         phys = classify(float(c["lat"]), float(c["lon"]))
-        tracked = sat_cv.track([], [c], dt_min)[0] if not c.get("trend") else c
+        tracked = sat_cv.track([], [c], max(dt_min, 10.0))[0] if not c.get("trend") else c
         if abs(float(tracked.get("u_kmh") or 0)) + abs(float(tracked.get("v_kmh") or 0)) < 1:
             tracked["u_kmh"] = round(flow_u, 2)
             tracked["v_kmh"] = round(flow_v, 2)

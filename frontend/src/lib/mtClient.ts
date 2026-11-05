@@ -24,8 +24,12 @@ export async function translateClient(text: string, src: string, tgt: string): P
   }
 }
 
-export async function questionToEnglish(message: string, locale: string): Promise<string | undefined> {
-  const loc = (locale || "en").slice(0, 2).toLowerCase();
-  if (loc === "en" || !message.trim()) return undefined;
-  return (await translateClient(message, loc === "auto" ? "auto" : loc, "en")) || undefined;
+/**
+ * Optional device-side translation. Not on the send path: the server translates the
+ * question itself. The source is detected from the text, never taken from the UI locale.
+ */
+export async function questionToEnglish(message: string, inputLang?: string): Promise<string | undefined> {
+  if (!message.trim() || !/[^\u0000-\u024F]/.test(message)) return undefined;
+  const src = inputLang && /^[a-z]{2}$/.test(inputLang) ? inputLang : "auto";
+  return (await translateClient(message, src, "en")) || undefined;
 }

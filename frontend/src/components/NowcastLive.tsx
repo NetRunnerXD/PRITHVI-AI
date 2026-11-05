@@ -18,6 +18,7 @@ import { fetchNowcastLive } from "@/lib/api";
 import { gapFromHours } from "@/lib/nowcastGap";
 import { height, rain } from "@/lib/units";
 import { useApp } from "@/lib/store";
+import { visibleInterval, subscribeSecond } from "@/lib/visibility";
 
 type LivePack = {
   as_of?: string;
@@ -93,17 +94,16 @@ export function NowcastLive({ dash, locale }: { dash: DashboardSnapshot; locale:
       });
     }
     void load();
-    const id = window.setInterval(() => void load(), 90_000);
+    const stopPoll = visibleInterval(() => void load(), 90_000);
     return () => {
       dead = true;
-      window.clearInterval(id);
+      stopPoll();
     };
   }, [loc.id, loc.lat, loc.lon, loc.place_name]);
 
   useEffect(() => {
     if (reduce) return;
-    const id = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(id);
+    return subscribeSecond(() => setNow(new Date()));
   }, [reduce]);
 
   const nc: NowcastPack | undefined = dash.science?.nowcast;

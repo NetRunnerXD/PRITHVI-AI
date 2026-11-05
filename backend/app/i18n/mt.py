@@ -1,8 +1,13 @@
-"""Online MT layer for the Advisor.
+"""MT layer for the Advisor.
 
 Inbound: any language → English for intent routing and the tool-calling LLM.
 Outbound: English draft → the reply language. Numbers and source acronyms are
-locked so Google/MyMemory cannot invent or drop figures.
+locked so a translator cannot invent or drop figures.
+
+When MT_SIDECAR_URL is set, English ↔ the 22 scheduled languages go to the
+IndicTrans2 distilled sidecar first. Google gtx, then MyMemory, still run when
+that process is unset, down, or rejects a piece. The API process never loads
+the weights.
 """
 
 from __future__ import annotations
@@ -14,9 +19,11 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
+
 from app import cache
 from app.config import get_settings
-from app.i18n.detect import detect_lang, has_script, normalize_lang, script_of
+from app.i18n.detect import SCHEDULED_22, detect_lang, has_script, normalize_lang, script_of
 from app.i18n.number_lock import ISO_DATE
 from app.providers import http as http_provider
 
@@ -55,14 +62,56 @@ _GOOGLE_CODE = {
     "sa": "sa",
     "sd": "sd",
     "ur": "ur",
-    "mni": "mni",
+    # Google serves Manipuri only as Meetei Mayek ("mni" → HTTP 400).
+    "mni": "mni-Mtei",
     "mai": "mai",
     "kok": "gom",
-    "ks": "ks",
-    "brx": "brx",
     "doi": "doi",
     "sat": "sat",
+    # Romanised Hindi in: Google auto-detects it as hi and translates well.
+    "hinglish": "auto",
 }
+
+# Google has no Bodo or Kashmiri (both return HTTP 400; MyMemory output is not the
+# language). Replies route through the closest widely read language in the same script.
+VIA = {"brx": "hi", "ks": "ur"}
+
+# MyMemory returns another language for these (tested): never use it as a fallback.
+_NO_MYMEMORY = {"brx", "ks", "mni", "sat", "doi", "kok", "mai", "sa", "hinglish"}
+
+# IndicTrans2 Flores tags. One side of a sidecar pair is always English.
+# Manipuri is Meitei Mayek: has_script("mni") checks that script, not Bengali.
+# The toolkit transliterates sat_Olck through Odia and mni_Mtei through
+# Devanagari, so those two replies fail has_script and stay on Google.
+_FLORES = {
+    "as": "asm_Beng",
+    "bn": "ben_Beng",
+    "brx": "brx_Deva",
+    "doi": "doi_Deva",
+    "en": "eng_Latn",
+    "gu": "guj_Gujr",
+    "hi": "hin_Deva",
+    "kn": "kan_Knda",
+    "ks": "kas_Arab",
+    "kok": "gom_Deva",
+    "mai": "mai_Deva",
+    "ml": "mal_Mlym",
+    "mni": "mni_Mtei",
+    "mr": "mar_Deva",
+    "ne": "npi_Deva",
+    "or": "ory_Orya",
+    "pa": "pan_Guru",
+    "sa": "san_Deva",
+    "sat": "sat_Olck",
+    "sd": "snd_Arab",
+    "ta": "tam_Taml",
+    "te": "tel_Telu",
+    "ur": "urd_Arab",
+}
+
+_SIDECAR_BUDGET_S = 20.0
+_SENTENCE_CAP = 400
+_LOCK_RE = re.compile(r"⟦(\d+)⟧")
 
 # Longest first so NAQI is not split by AQI.
 _PROTECT_TERMS = [
@@ -215,6 +264,14 @@ def _parse_gtx(data: Any) -> tuple[str, str | None]:
     if isinstance(first, str):
         extra = data[1] if len(data) > 1 and isinstance(data[1], str) and len(data[1]) <= 8 else None
         return first.strip(), normalize_lang(extra) if extra else None
+    if (
+        isinstance(first, list)
+        and len(first) == 2
+        and all(isinstance(x, str) for x in first)
+        and len(first[1]) <= 8
+    ):
+        # clients5 dict-chrome-ex with sl=auto: [["translation", "detected_lang"]]
+        return first[0].strip(), normalize_lang(first[1])
     bits: list[str] = []
     if isinstance(first, list):
         for row in first:
@@ -328,9 +385,164 @@ async def _mymemory(text: str, src: str, tgt: str) -> MTResult | None:
         return None
 
 
-def _cache_key(src: str, tgt: str, text: str) -> str:
+def _cache_key(src: str, tgt: str, text: str, *, engine: str = "") -> str:
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:20]
+    if engine:
+        return f"mt:{engine}:{src}:{tgt}:{digest}"
     return f"mt:{src}:{tgt}:{digest}"
+
+
+async def _cache_get(ck: str) -> dict | None:
+    hit = cache.get(ck)
+    if not (isinstance(hit, dict) and hit.get("text")):
+        from app.store import mt_cache
+
+        hit = await mt_cache.get(ck)
+        if isinstance(hit, dict) and hit.get("text"):
+            cache.set(ck, hit, ttl_s=6 * 3600)
+    if isinstance(hit, dict) and hit.get("text"):
+        return hit
+    return None
+
+
+def _cache_put(ck: str, result: MTResult) -> None:
+    payload = result.as_dict() | {"text": result.text}
+    cache.set(ck, payload, ttl_s=6 * 3600)
+    from app.store import mt_cache
+
+    mt_cache.put(ck, payload)
+
+
+def _sidecar_pair(src: str, tgt: str) -> tuple[str, str] | None:
+    """Flores pair for English ↔ one scheduled language. Other pairs stay on Google."""
+    src_n = normalize_lang(src) or src
+    tgt_n = normalize_lang(tgt) or tgt
+    if src_n == "en" and tgt_n in SCHEDULED_22:
+        return _FLORES["en"], _FLORES[tgt_n]
+    if tgt_n == "en" and src_n in SCHEDULED_22:
+        return _FLORES[src_n], _FLORES["en"]
+    return None
+
+
+def _sentence_pieces(text: str, limit: int = _SENTENCE_CAP) -> list[str]:
+    """Split a protected document into sentences the 200M model can take in one call."""
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    bits = [p.strip() for p in re.split(r"(?<=[।.!?])\s+|\n+", raw) if p and p.strip()]
+    if not bits:
+        bits = [raw]
+    out: list[str] = []
+    for bit in bits:
+        if len(bit) <= limit:
+            out.append(bit)
+            continue
+        buf = ""
+        for word in bit.split(" "):
+            if not word:
+                continue
+            if len(word) > limit:
+                if buf:
+                    out.append(buf)
+                    buf = ""
+                for i in range(0, len(word), limit):
+                    out.append(word[i : i + limit])
+                continue
+            if buf and len(buf) + 1 + len(word) > limit:
+                out.append(buf)
+                buf = word
+                continue
+            buf = f"{buf} {word}" if buf else word
+        if buf:
+            out.append(buf)
+    return out
+
+
+def _shield_locks(text: str) -> str:
+    """Swap ⟦n⟧ for a numeral IndicTrans2's processor copies, then restores.
+
+    Spaces keep two adjacent locks from gluing into one numeral. Google still
+    receives the bracket tokens.
+    """
+
+    def repl(m: re.Match[str]) -> str:
+        i = int(m.group(1))
+        return f" 9{i:04d}-7{i:04d} "
+
+    return _LOCK_RE.sub(repl, text or "")
+
+
+def _unshield_locks(text: str) -> str:
+    out = re.sub(
+        r"(?<!\d)9(\d{4})\s*-\s*7\1(?!\d)",
+        lambda m: f"⟦{int(m.group(1))}⟧",
+        text or "",
+    )
+    return re.sub(r" {2,}", " ", out)
+
+
+def _reject_reason(original: str, body: str, tgt: str, held: list[str], engine: str) -> str | None:
+    if "⟦" in body or "⟧" in body:
+        return f"{engine}-leaked-lock"
+    if held_missing(body, held):
+        return f"{engine}-lost-lock"
+    if _still_source_script(original, body, tgt):
+        return f"{engine}-still-source-script"
+    if tgt != "en" and not _plausible(original, body, tgt):
+        return f"{engine}-implausible"
+    return None
+
+
+async def _indictrans(text: str, src: str, tgt: str) -> MTResult | None:
+    """One document via the sidecar. None lets the caller fall through to Google."""
+    pair = _sidecar_pair(src, tgt)
+    base = (get_settings().mt_sidecar_url or "").strip().rstrip("/")
+    if pair is None or not base:
+        return None
+    pieces = _sentence_pieces(text)
+    if not pieces:
+        return None
+    src_f, tgt_f = pair
+    src_n = normalize_lang(src) or src
+    tgt_n = normalize_lang(tgt) or tgt
+
+    async def _run(client: httpx.AsyncClient) -> list[str] | None:
+        out: list[str] = []
+        for piece in pieces:
+            try:
+                resp = await client.post(
+                    f"{base}/translate",
+                    json={"text": _shield_locks(piece), "src": src_f, "tgt": tgt_f},
+                )
+            except httpx.HTTPError:
+                return None
+            if resp.status_code != 200:
+                return None
+            try:
+                data = resp.json()
+            except Exception:
+                return None
+            body = data.get("text") if isinstance(data, dict) else None
+            if not isinstance(body, str) or not body.strip():
+                return None
+            out.append(_unshield_locks(body))
+        return out
+
+    try:
+        timeout = httpx.Timeout(_SIDECAR_BUDGET_S, connect=2.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            bits = await asyncio.wait_for(_run(client), timeout=_SIDECAR_BUDGET_S)
+    except (httpx.HTTPError, asyncio.TimeoutError, OSError):
+        return None
+    if not bits:
+        return None
+    return MTResult(
+        text=" ".join(bits).strip(),
+        src=src_n,
+        tgt=tgt_n,
+        engine="indictrans2",
+        ok=True,
+    )
 
 
 def _still_source_script(original: str, translated: str, tgt: str) -> bool:
@@ -358,9 +570,60 @@ async def translate(text: str, src: str, tgt: str, *, whole: bool = True) -> MTR
     if not settings.translate_enabled:
         return MTResult(text=blob, src=src_n, tgt=tgt_n, engine="disabled", ok=False)
 
+    if tgt_n == "hinglish":
+        hindi = await translate(blob, src_n, "hi", whole=whole)
+        if not hindi.ok:
+            return MTResult(text=blob, src=src_n, tgt=tgt_n, engine=hindi.engine, ok=False)
+        from app.i18n.romanize import deva_to_latin
+
+        return MTResult(
+            text=deva_to_latin(hindi.text),
+            src=hindi.src,
+            tgt=tgt_n,
+            engine=f"{hindi.engine}+romanize",
+            ok=True,
+        )
+
+    # Exact pair first, so Bodo and Kashmiri are not rewritten to Hindi/Urdu
+    # while the sidecar is up. A miss falls through to VIA + Google below.
+    if (settings.mt_sidecar_url or "").strip() and _sidecar_pair(src_n, tgt_n):
+        it_ck = _cache_key(src_n, tgt_n, blob, engine="it2")
+        hit = await _cache_get(it_ck)
+        if hit:
+            return MTResult(
+                text=hit["text"],
+                src=hit.get("src") or src_n,
+                tgt=tgt_n,
+                engine=hit.get("engine") or "indictrans2",
+                ok=True,
+            )
+        masked, held = protect(blob)
+        local = await _indictrans(masked, src_n, tgt_n)
+        if local is not None and local.ok and local.text:
+            body = restore(local.text, held)
+            if _reject_reason(blob, body, tgt_n, held, "indictrans2") is None:
+                result = MTResult(
+                    text=body,
+                    src=local.src or src_n,
+                    tgt=tgt_n,
+                    engine="indictrans2",
+                    ok=True,
+                )
+                _cache_put(it_ck, result)
+                return result
+
+    if tgt_n in VIA:
+        routed = await translate(blob, src_n, VIA[tgt_n], whole=whole)
+        if routed.ok:
+            routed.engine = f"{routed.engine}:via-{VIA[tgt_n]}"
+        routed.tgt = VIA[tgt_n]
+        return routed
+    if src_n in VIA or src_n == "hinglish":
+        src_n = "auto"
+
     ck = _cache_key(src_n, tgt_n, blob)
-    hit = cache.get(ck)
-    if isinstance(hit, dict) and hit.get("text"):
+    hit = await _cache_get(ck)
+    if hit:
         return MTResult(
             text=hit["text"],
             src=hit.get("src") or src_n,
@@ -375,7 +638,8 @@ async def translate(text: str, src: str, tgt: str, *, whole: bool = True) -> MTR
         layouts.append(_chunks(masked, 900))
     last_err = "none"
     for pieces in layouts:
-        for factory in (_gtx, _mymemory):
+        factories = (_gtx,) if (tgt_n in _NO_MYMEMORY or src_n in _NO_MYMEMORY) else (_gtx, _mymemory)
+        for factory in factories:
             translated: list[str] = []
             detected = src_n
             engine = "none"
@@ -392,21 +656,12 @@ async def translate(text: str, src: str, tgt: str, *, whole: bool = True) -> MTR
             if failed:
                 continue
             body = restore("\n".join(translated), held)
-            if "⟦" in body or "⟧" in body:
-                last_err = f"{engine}-leaked-lock"
-                continue
-            lost = held_missing(body, held)
-            if lost:
-                last_err = f"{engine}-lost-lock"
-                continue
-            if _still_source_script(blob, body, tgt_n):
-                last_err = f"{engine}-still-source-script"
-                continue
-            if tgt_n != "en" and not _plausible(blob, body, tgt_n):
-                last_err = f"{engine}-implausible"
+            reason = _reject_reason(blob, body, tgt_n, held, engine)
+            if reason:
+                last_err = reason
                 continue
             result = MTResult(text=body, src=detected or src_n, tgt=tgt_n, engine=engine, ok=True)
-            cache.set(ck, result.as_dict() | {"text": result.text}, ttl_s=6 * 3600)
+            _cache_put(ck, result)
             return result
 
     return MTResult(text=blob, src=src_n, tgt=tgt_n, engine=f"failed:{last_err}", ok=False)
@@ -423,10 +678,10 @@ def _plausible(original: str, translated: str, tgt: str) -> bool:
     return True
 
 
-async def inbound(text: str, hint: str | None = None) -> MTResult:
+async def inbound(text: str, hint: str | None = None, picked: str | None = None) -> MTResult:
     """Detect language, then machine-translate the whole utterance to English for the LLM."""
     blob = text or ""
-    detected = detect_lang(blob, hint)
+    detected = detect_lang(blob, hint, picked)
     if not blob.strip() or detected == "en":
         return _identity(blob, detected or "en", "en")
     result = await translate(blob, detected, "en", whole=True)
@@ -448,6 +703,6 @@ async def outbound(text: str, tgt: str, src: str = "en") -> MTResult:
     if tgt_n == "en" or not blob.strip():
         return _identity(blob, "en", tgt_n)
     result = await translate(blob, src or "en", tgt_n, whole=True)
-    if result.ok and has_script(result.text, tgt_n):
+    if result.ok and has_script(result.text, VIA.get(tgt_n, tgt_n)):
         return result
     return MTResult(text=blob, src="en", tgt=tgt_n, engine=result.engine, ok=False)
