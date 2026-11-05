@@ -19,3 +19,7 @@ pytest==8.3.4
 pytest-asyncio==0.25.2
 python-multipart>=0.0.18
 h5py>=3.11.0
+# PN-Nowcast v7 runtime (CPU). Also listed in requirements-pn.txt for local opt-in installs.
+onnxruntime>=1.18
+opencv-python-headless>=4.9
+scipy>=1.11

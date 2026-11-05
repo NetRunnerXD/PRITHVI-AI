@@ -41,6 +41,17 @@ async def lifespan(_: FastAPI):
     from app.auth.alerts_job import should_start as sms_should_start
 
     await auth_connect()
+    # Best-effort private ONNX fetch when PN_ENABLED (uses PN_MODEL_DOWNLOAD_TOKEN only).
+    if (os.environ.get("PN_ENABLED") or "").strip().lower() in {"1", "true", "yes"}:
+        try:
+            import runpy
+            from pathlib import Path as _P
+
+            script = _P(__file__).resolve().parents[1] / "scripts" / "fetch_pn_models.py"
+            if script.is_file():
+                await asyncio.to_thread(runpy.run_path, str(script), run_name="__main__")
+        except Exception:
+            pass
     task = None if skip_loop else asyncio.create_task(_snapshot_loop())
     sms_task = None if not sms_should_start() or role == "ingest" else asyncio.create_task(sms_loop())
     prefetch_task = None
