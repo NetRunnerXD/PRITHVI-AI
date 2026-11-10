@@ -1,7 +1,8 @@
 """In-memory TTL cache with single-flight and stale-while-revalidate.
 
 Concurrent waiters for one key share a single factory call. After TTL a last-good
-value is still served while one background refresh runs.
+value is still served while one background refresh runs. A byte cap evicts LRU
+entries so decoded IR arrays cannot grow unbounded on a 512 MiB instance.
 """
 
 from __future__ import annotations
@@ -14,9 +15,13 @@ from threading import Lock
 from typing import Any
 
 _MAX = 512
+_MAX_CLOUD = 128
+_MAX_BYTES = 96 * 1024 * 1024
+_MAX_BYTES_CLOUD = 48 * 1024 * 1024
 _lock = Lock()
-# key -> (fresh_until, swr_until, value)
-_store: OrderedDict[str, tuple[float, float, Any]] = OrderedDict()
+_bytes = 0
+# key -> (fresh_until, swr_until, value, nbytes)
+_store: OrderedDict[str, tuple[float, float, Any, int]] = OrderedDict()
 _inflight: dict[str, asyncio.Task[Any]] = {}
 _alo: asyncio.Lock | None = None
 _alo_loop: asyncio.AbstractEventLoop | None = None
@@ -26,8 +31,56 @@ def _unpack(hit: tuple) -> tuple[float, float, Any]:
     if len(hit) == 2:
         exp, val = hit
         return float(exp), float(exp), val
-    fresh, swr, val = hit
+    fresh, swr, val = hit[0], hit[1], hit[2]
     return float(fresh), float(swr), val
+
+
+def _value_nbytes(value: Any) -> int:
+    """Best-effort payload size so the LRU can evict by bytes, not just key count."""
+    if value is None:
+        return 0
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return int(len(value))
+    if isinstance(value, str):
+        return int(len(value) * 2)
+    if isinstance(value, (int, float, bool)):
+        return 24
+    nbytes = getattr(value, "nbytes", None)
+    if isinstance(nbytes, (int, float)):
+        return int(nbytes)
+    if isinstance(value, dict):
+        return sum(_value_nbytes(k) + _value_nbytes(v) for k, v in value.items())
+    if isinstance(value, (list, tuple, set)):
+        return sum(_value_nbytes(x) for x in value)
+    return 64
+
+
+def _limits() -> tuple[int, int]:
+    try:
+        from app.config import cloud_light
+
+        if cloud_light():
+            return _MAX_CLOUD, _MAX_BYTES_CLOUD
+    except Exception:
+        pass
+    return _MAX, _MAX_BYTES
+
+
+def _evict_unlocked() -> None:
+    """Drop LRU entries until we are within the entry and byte caps."""
+    global _bytes
+    max_n, max_b = _limits()
+    while _store and (len(_store) > max_n or _bytes > max_b):
+        _k, ev = _store.popitem(last=False)
+        nb = ev[3] if len(ev) >= 4 else 0
+        _bytes = max(0, _bytes - int(nb))
+
+
+def _drop_unlocked(key: str) -> None:
+    global _bytes
+    ev = _store.pop(key, None)
+    if ev is not None and len(ev) >= 4:
+        _bytes = max(0, _bytes - int(ev[3]))
 
 
 def _aloop() -> asyncio.Lock:
@@ -40,6 +93,7 @@ def _aloop() -> asyncio.Lock:
 
 
 def get(key: str) -> Any | None:
+    global _bytes
     now = time.time()
     with _lock:
         hit = _store.get(key)
@@ -50,12 +104,13 @@ def get(key: str) -> Any | None:
             _store.move_to_end(key)
             return value
         if now >= swr:
-            _store.pop(key, None)
+            _drop_unlocked(key)
         return None
 
 
 def peek(key: str) -> Any | None:
     """Fresh or stale-within-SWR value. Does not start a refresh."""
+    global _bytes
     now = time.time()
     with _lock:
         hit = _store.get(key)
@@ -65,19 +120,24 @@ def peek(key: str) -> Any | None:
         if now < swr:
             _store.move_to_end(key)
             return value
-        _store.pop(key, None)
+        _drop_unlocked(key)
         return None
 
 
 def set(key: str, value: Any, ttl_s: float, swr_s: float = 0) -> None:
+    global _bytes
     now = time.time()
     ttl = max(0.0, float(ttl_s))
     extra = max(0.0, float(swr_s))
+    nb = max(0, _value_nbytes(value))
     with _lock:
-        _store[key] = (now + ttl, now + ttl + extra, value)
+        old = _store.pop(key, None)
+        if old is not None and len(old) >= 4:
+            _bytes = max(0, _bytes - int(old[3]))
+        _store[key] = (now + ttl, now + ttl + extra, value, nb)
         _store.move_to_end(key)
-        while len(_store) > _MAX:
-            _store.popitem(last=False)
+        _bytes += nb
+        _evict_unlocked()
 
 
 def keys_prefix(prefix: str) -> list[str]:
@@ -85,10 +145,16 @@ def keys_prefix(prefix: str) -> list[str]:
         return [k for k in _store if str(k).startswith(prefix)]
 
 
+def stats() -> dict[str, int]:
+    with _lock:
+        return {"entries": len(_store), "bytes": int(_bytes)}
+
+
 def clear() -> None:
-    global _alo, _alo_loop
+    global _alo, _alo_loop, _bytes
     with _lock:
         _store.clear()
+        _bytes = 0
     _inflight.clear()
     _alo = None
     _alo_loop = None

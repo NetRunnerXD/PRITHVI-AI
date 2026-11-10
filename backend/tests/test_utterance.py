@@ -193,3 +193,25 @@ def test_activity_and_state_disentanglement():
     resolved = resolve_named_place("assam")
     assert resolved is not None
     assert "Assam" in resolved.label or "Guwahati" in resolved.label
+
+
+def test_romanized_hindi_weather_is_grounded():
+    p = interpret("Haldia ke mausam ka short haal batao")
+    assert p.mode == "data"
+    assert "forecast" in p.needs
+    assert p.asked and "haldia" in (p.asked or "").lower()
+
+
+def test_devanagari_weather_is_data():
+    p = interpret("हल्दिया का मौसम बताओ")
+    assert p.mode == "data"
+    assert "forecast" in p.needs
+
+
+def test_romanized_hazard_and_aqi_are_data():
+    hz = interpret("Haldia ke khatra aur chetavani batao")
+    assert hz.mode == "data"
+    assert "warnings" in hz.needs
+    aqi = interpret("Delhi ka pradushan kaisa hai")
+    assert aqi.mode == "data"
+    assert "aqi" in aqi.needs

@@ -65,7 +65,9 @@ Local `uvicorn` on the laptop is unchanged.
 ONNX weights are **not** in the public git tree. On Render build, `scripts/fetch_pn_models.py` downloads
 them from private repo release tag `pn-models-v7` when:
 
-- `PN_ENABLED=1`
+- `PN_ENABLED=0` (Render Free cannot hold the ONNX nowcast in 512 MiB; leave off
+  so a blueprint sync cannot flip it back on)
+- `CLOUD_LIGHT=1` (skip GRIB decode, global lightning mosaics, and IR prefetch in the API)
 - `PN_MODEL_DOWNLOAD_TOKEN` is set (fine-grained PAT: Contents read on `PRITHVI-AI-Archive` only)
 
 Without the token, the API still boots; PN degrades to persistence / disabled with honest status flags.

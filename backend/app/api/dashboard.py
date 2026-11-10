@@ -448,11 +448,22 @@ async def storm_map_api(
 
     horizon = clamp_horizon(past_h)
     key = f"stormpack:{state.strip().lower()}:{horizon}"
+
+    async def _load() -> dict:
+        from app.config import cloud_light
+        from app.heavy import slot
+        from app.store import shared_packs
+
+        if cloud_light():
+            packed = shared_packs.load_storm()
+            if packed:
+                return shared_packs.crop_pack(packed, state, past_h=horizon)
+        async with slot():
+            return await build_storm_map(state, past_h=horizon)
+
     # 90 s fresh, 10 min stale-while-revalidate, single-flight: concurrent tabs share one
     # build and a slow rebuild never blocks a user who already has a recent map.
-    pack = await asyncio.shield(
-        cache.aget(key, lambda: build_storm_map(state, past_h=horizon), ttl_s=90, swr_s=600)
-    )
+    pack = await asyncio.shield(cache.aget(key, _load, ttl_s=90, swr_s=600))
     pack = dict(pack)
     try:
         from app.store import ingest_status
