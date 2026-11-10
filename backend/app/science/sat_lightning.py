@@ -262,13 +262,14 @@ async def estimate(bbox=None, res: float = 0.2, k: int = 5, when: datetime | Non
         cells.append({**c, "cape": ev.get("cape"), "li": ev.get("li"), "score": round(p, 3),
                       "category": "likely" if p >= 0.5 else "possible"})
     cover = float(np.isfinite(cur).mean())
+    prev_iso = (t - timedelta(minutes=20)).isoformat() if prev is not None else None
     # Free the mosaics before we return; they can be tens of MiB globally.
     del cur, prev, sc
     return {
         "ok": True,
         "kind": "satellite-estimated lightning likelihood (not detected strikes)",
         "valid": t.isoformat(),
-        "prev_frame": (t - timedelta(minutes=20)).isoformat() if prev is not None else None,
+        "prev_frame": prev_iso,
         "sources": SOURCES + ["Open-Meteo CAPE / lifted index"],
         "coverage_frac": round(cover, 3),
         "coverage_note": "No Meteosat in NASA GIBS: Europe, Africa, the Middle East and the Atlantic east of ~30°W are not covered.",
@@ -372,12 +373,13 @@ async def refresh() -> dict[str, Any]:
             pack["confidence"] = None if lk.get("far") is None else round(1 - lk["far"], 3)
             pack["_ts"] = time.time()
             cache.set(CK, pack, 3 * 3600)
-            try:
-                from app.store import shared_packs
+            if pack.get("ok"):
+                try:
+                    from app.store import shared_packs
 
-                shared_packs.save_lightning(pack)
-            except Exception:
-                pass
+                    shared_packs.save_lightning(pack)
+                except Exception:
+                    pass
             return pack
 
 
@@ -388,7 +390,7 @@ def _from_mongo() -> dict[str, Any] | None:
         hit = shared_packs.load_lightning()
     except Exception:
         return None
-    if isinstance(hit, dict):
+    if isinstance(hit, dict) and hit.get("ok"):
         if "_ts" not in hit:
             hit = dict(hit)
             hit["_ts"] = float(hit.get("saved_at") or time.time())
@@ -407,7 +409,7 @@ def peek(kick: bool = True) -> dict[str, Any] | None:
     fresh = isinstance(hit, dict) and time.time() - float(hit.get("_ts") or hit.get("saved_at") or 0) < 15 * 60
     if kick and not fresh and (_TASK is None or _TASK.done()):
         # On cloud, a slightly stale ingest pack is enough — do not start a mosaic here.
-        if isinstance(hit, dict):
+        if isinstance(hit, dict) and hit.get("ok"):
             try:
                 from app.config import cloud_light
 

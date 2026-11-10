@@ -68,3 +68,17 @@ def test_byte_cap_evicts_lru(monkeypatch):
     assert st["entries"] <= 2
     assert cache.get("a") is None  # LRU evicted
     assert cache.get("c") is not None
+
+
+def test_value_nbytes_accepts_pydantic_and_builtin_set():
+    """Regression: this module defines set(), which must not shadow isinstance(..., set)."""
+    from pydantic import BaseModel
+
+    class Snap(BaseModel):
+        temp_c: float
+        cells: list[int]
+
+    cache.set("snap", Snap(temp_c=26.1, cells=[1, 2, 3]), 60)
+    assert cache.get("snap").temp_c == 26.1
+    cache.set("aset", {1, 2, 3}, 60)
+    assert cache.get("aset") == {1, 2, 3}

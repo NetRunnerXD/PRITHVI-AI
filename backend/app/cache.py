@@ -50,8 +50,17 @@ def _value_nbytes(value: Any) -> int:
         return int(nbytes)
     if isinstance(value, dict):
         return sum(_value_nbytes(k) + _value_nbytes(v) for k, v in value.items())
-    if isinstance(value, (list, tuple, set)):
+    # `set` is also this module's cache setter; always use the builtin type.
+    import builtins
+
+    if isinstance(value, (list, tuple, builtins.set)):
         return sum(_value_nbytes(x) for x in value)
+    dump = getattr(value, "model_dump", None)
+    if callable(dump):
+        try:
+            return _value_nbytes(dump())
+        except Exception:
+            return 4096
     return 64
 
 
