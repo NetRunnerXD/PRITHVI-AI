@@ -394,3 +394,56 @@ def test_load_mongo_doc_waits_past_one_second_on_event_loop(monkeypatch):
     finally:
         with ingest_status._view_lock:
             ingest_status._mongo_view.clear()
+
+
+def test_snapshot_uses_mongo_cycle_when_mem_is_idle(monkeypatch):
+    """API process memory is idle; a Mongo cycle must still appear on /api/ready."""
+    store = {
+        "doc": {
+            "cycle_id": "abc123def456",
+            "phase": "fetching",
+            "ready": False,
+            "satellites": [{"id": "imd_ir1", "name": "INSAT", "status": "fetching"}],
+            "updated_ms": 1,
+            "started_ms": ingest_status.ms(ingest_status.now_utc()),
+            "data_time": None,
+            "finished_at": None,
+        }
+    }
+
+    class Col:
+        def find_one(self, *args, **kwargs):
+            return dict(store["doc"])
+
+        def replace_one(self, *args, **kwargs):
+            return None
+
+    with ingest_status._lock:
+        prev = dict(ingest_status._MEM)
+        ingest_status._MEM.clear()
+        ingest_status._MEM.update(
+            {
+                "cycle_id": None,
+                "phase": "idle",
+                "ready": True,
+                "message": "",
+                "satellites": [],
+                "started_ms": None,
+                "updated_ms": None,
+            }
+        )
+    try:
+        with ingest_status._view_lock:
+            ingest_status._mongo_view.clear()
+        with patch("app.store.ingest_status.sat_mongo.col", return_value=Col()):
+            with patch("app.store.ingest_status._overlay_mongo", return_value=True):
+                snap = ingest_status.snapshot()
+        assert snap["cycle_id"] == "abc123def456"
+        assert snap["phase"] == "fetching"
+        assert snap["satellites"][0]["id"] == "imd_ir1"
+    finally:
+        with ingest_status._lock:
+            ingest_status._MEM.clear()
+            ingest_status._MEM.update(prev)
+        with ingest_status._view_lock:
+            ingest_status._mongo_view.clear()
