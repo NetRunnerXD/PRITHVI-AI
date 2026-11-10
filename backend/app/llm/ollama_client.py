@@ -393,8 +393,18 @@ async def ping() -> tuple[bool, str]:
 
 def catalog() -> dict[str, Any]:
     s = get_settings()
-    active = registry.resolve(_active.get())
     home = hub.status()
+    skip_local = registry.skip_loopback_ollama(s) and not home.get("online")
+    active = registry.resolve(_active.get())
+    # On Render the loopback Ollama is not this machine. Surface the first keyed
+    # fallback (Gemini, then Groq) as active so the web settings default is honest.
+    # Does not change llm_fallback itself.
+    if skip_local and active.id in ("ollama", "local"):
+        for fid in registry.fallback_ids(s):
+            p = registry.spec(fid, s)
+            if p and p.keyed:
+                active = p
+                break
     choices = []
     for pid in registry.SETTINGS_IDS:
         p = registry.spec(pid, s)
@@ -406,8 +416,8 @@ def catalog() -> dict[str, Any]:
             ok = bool(p.keyed and home.get("online"))
             reason = "" if ok else ("no worker token" if not p.keyed else "home PC worker offline")
         elif pid == "local":
-            ok = True
-            reason = "this machine Ollama"
+            ok = not skip_local
+            reason = "this machine Ollama" if ok else "local Ollama is not on this host"
         elif pid in ("groq", "gemini") and not p.keyed:
             reason = "no API key on server"
         choices.append({"id": pid, "model": p.model, "ok": ok, "reason": reason})

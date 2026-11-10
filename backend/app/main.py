@@ -90,10 +90,12 @@ async def lifespan(_: FastAPI):
         if embedded_mode() != "off":
             ingest_task = asyncio.create_task(embedded_loop())
         if role != "ingest":
-            # Warm the worldwide GFS background (loads the on-disk cycle, or downloads ~20 MB).
+            # Warm the worldwide GFS background only when GRIB decode is enabled (local/PC).
+            # On Render/CLOUD_LIGHT, kick() is a no-op; map layers come from Open-Meteo on demand.
             from app.providers import gfs
 
-            gfs.kick()
+            if gfs.decode_enabled():
+                gfs.kick()
     try:
         yield
     finally:

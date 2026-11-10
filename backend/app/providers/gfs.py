@@ -41,9 +41,21 @@ QUANT: dict[str, tuple[float, float, str]] = {
     "precip_mm": (0.0, float(np.log1p(100.0)), "log1p"),
     "cape": (0.0, 5000.0, "lin"),
 }
-_STATE: dict[str, Any] = {"cycle": None, "fields": None, "checked": 0.0, "status": "idle", "error": None}
+_STATE: dict[str, Any] = {"cycle": None, "fields": None, "checked": 0.0, "status": "idle", "error": None, "source": None}
 _LOCK = asyncio.Lock()
 _TASK: asyncio.Task | None = None
+
+
+def decode_enabled() -> bool:
+    """Local/PC keeps NOMADS GRIB decode. Cloud/Render skips it (Open-Meteo serves the map)."""
+    raw = (os.environ.get("GFS_DECODE_ENABLED") or "").strip().lower()
+    if raw:
+        return raw in {"1", "true", "yes", "on"}
+    if (os.environ.get("CLOUD_LIGHT") or "").strip().lower() in {"1", "true", "yes", "on"}:
+        return False
+    if (os.environ.get("RENDER") or "").strip():
+        return False
+    return True
 
 
 def _dir() -> Path:
@@ -227,7 +239,95 @@ async def _load_cycle(c: datetime) -> dict[int, dict[str, np.ndarray]]:
     return out
 
 
+def _om_to_fields(pack: dict[str, Any]) -> dict[str, np.ndarray]:
+    """Resample an Open-Meteo world-grid pack onto the 1° GFS PNG raster."""
+    lats = np.asarray(pack.get("lats") or [], dtype=np.float64)
+    lons = np.asarray(pack.get("lons") or [], dtype=np.float64)
+    raw_fields = pack.get("fields") or {}
+    tlat = np.linspace(LAT_S, LAT_N, NY)
+    tlon = np.linspace(-180.0, 179.0, NX)
+    out: dict[str, np.ndarray] = {}
+    if lats.size < 2 or lons.size < 2:
+        z = np.zeros((NY, NX), dtype=np.uint8)
+        return {k: z.copy() for k in QUANT}
+    order = np.argsort(lats)
+    lats = lats[order]
+    yi = np.interp(tlat, lats, np.arange(len(lats)))
+    xi = np.interp(tlon, lons, np.arange(len(lons)))
+    I, J = np.meshgrid(yi, xi, indexing="ij")
+    i0 = np.clip(np.floor(I).astype(int), 0, len(lats) - 2)
+    j0 = np.clip(np.floor(J).astype(int), 0, len(lons) - 2)
+    di = I - i0
+    dj = J - j0
+    for key in QUANT:
+        vals = raw_fields.get(key)
+        if not vals:
+            out[key] = np.zeros((NY, NX), dtype=np.uint8)
+            continue
+        grid = np.asarray(vals, dtype=np.float64).reshape(len(order), len(lons))[order]
+        grid = np.nan_to_num(grid, nan=0.0)
+        sampled = (
+            grid[i0, j0] * (1 - di) * (1 - dj)
+            + grid[i0, j0 + 1] * (1 - di) * dj
+            + grid[i0 + 1, j0] * di * (1 - dj)
+            + grid[i0 + 1, j0 + 1] * di * dj
+        )
+        out[key] = _quant(key, sampled)
+    return out
+
+
+async def _fill_from_open_meteo(hour_ahead: int = 0) -> dict[str, Any]:
+    """Serve GFS-shaped map layers from the existing Open-Meteo world grid (no GRIB)."""
+    from app.providers.weather_grid import world_grid
+
+    hour = max(0, min(23, int(hour_ahead)))
+    pack = await world_grid(hour)
+    fields = _om_to_fields(pack)
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    valid = pack.get("valid")
+    if valid:
+        try:
+            stamp = datetime.fromisoformat(str(valid).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=UTC)
+            now = stamp.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+        except ValueError:
+            pass
+    step = min(STEPS, key=lambda s: abs(s - hour))
+    ok = bool(pack.get("ok", True))
+    _STATE.update(
+        cycle=now - timedelta(hours=step),
+        fields={step: fields},
+        status="ok" if ok else "error",
+        checked=time.time(),
+        error=None if ok else str(pack.get("note") or "open-meteo unavailable")[:160],
+        source="Open-Meteo GFS/IFS (no local GRIB decode)",
+        load_s=None,
+    )
+    return status()
+
+
+async def ensure(hour_ahead: int = 0) -> dict[str, Any]:
+    """Make sure map layers are ready. GRIB on a local PC; Open-Meteo on cloud."""
+    if decode_enabled():
+        kick()
+        return status()
+    async with _LOCK:
+        fresh = (
+            _STATE["fields"] is not None
+            and _STATE.get("source")
+            and "open-meteo" in str(_STATE.get("source")).lower()
+            and time.time() - _STATE["checked"] < 45 * 60
+            and pick_step(hour_ahead) is not None
+        )
+        if fresh:
+            return status()
+        return await _fill_from_open_meteo(hour_ahead)
+
+
 async def refresh(force: bool = False) -> dict[str, Any]:
+    if not decode_enabled():
+        return await ensure()
     async with _LOCK:
         if not force and _STATE["fields"] is not None and time.time() - _STATE["checked"] < 45 * 60:
             return status()
@@ -255,7 +355,10 @@ async def refresh(force: bool = False) -> dict[str, Any]:
 
 
 def kick() -> None:
+    """Start a background GRIB refresh. No-op on cloud (use ensure() / Open-Meteo instead)."""
     global _TASK
+    if not decode_enabled():
+        return
     fresh = _STATE["fields"] is not None and time.time() - _STATE["checked"] < 45 * 60
     if fresh or (_TASK is not None and not _TASK.done()):
         return
@@ -267,12 +370,21 @@ def kick() -> None:
 
 def status() -> dict[str, Any]:
     c = _STATE["cycle"]
+    src = _STATE.get("source")
+    if not src:
+        src = (
+            "NOAA GFS 0.5° (NOMADS), served at 1°"
+            if decode_enabled()
+            else "Open-Meteo GFS/IFS (no local GRIB decode)"
+        )
     return {
         "ok": _STATE["fields"] is not None,
         "status": _STATE["status"],
         "error": _STATE.get("error"),
         "cycle": c.isoformat() if c else None,
         "load_s": _STATE.get("load_s"),
+        "source": src,
+        "decode": decode_enabled(),
     }
 
 
@@ -287,7 +399,8 @@ def pick_step(hour_ahead: int) -> tuple[int, datetime] | None:
 
 
 def meta(hour_ahead: int) -> dict[str, Any]:
-    kick()
+    if decode_enabled():
+        kick()
     st = status()
     ps = pick_step(hour_ahead)
     if not ps:
@@ -300,7 +413,7 @@ def meta(hour_ahead: int) -> dict[str, Any]:
         "grid": {"nx": NX, "ny": NY, "south": LAT_S, "north": LAT_N, "west": -180.0, "dlon": 1.0, "dlat": 1.0},
         "quant": {k: {"min": lo, "max": hi, "transform": tr} for k, (lo, hi, tr) in QUANT.items()},
         "fields": sorted(_STATE["fields"][step].keys()),
-        "source": "NOAA GFS 0.5° (NOMADS), served at 1°",
+        "source": st.get("source") or "NOAA GFS 0.5° (NOMADS), served at 1°",
     }
 
 

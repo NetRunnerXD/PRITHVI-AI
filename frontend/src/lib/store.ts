@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { ensureThemeFonts } from "./themeFonts";
+import { defaultLlmProvider, isRemoteApi } from "./config";
 import type { ChatMsg, DashboardSnapshot, Density, Location, TabId, ThemeId, UiAction, UnitSys } from "@/types/dashboard";
 import { resolveTab } from "@/types/dashboard";
 import type { Locale } from "@/i18n/copy";
@@ -107,7 +108,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultTab: "home",
   showHints: false,
   locale: "en",
-  llmProvider: "local",
+  llmProvider: defaultLlmProvider(),
   showEvidence: false,
   displayNullValues: false,
   showAdvancedTabs: false,
@@ -123,7 +124,13 @@ export function readSettings(): AppSettings {
     const devDisabled = Array.isArray(raw.devDisabledProviders)
       ? raw.devDisabledProviders
       : DEFAULT_SETTINGS.devDisabledProviders;
-    return { ...DEFAULT_SETTINGS, ...raw, defaultTab: tab, devDisabledProviders: devDisabled };
+    const merged = { ...DEFAULT_SETTINGS, ...raw, defaultTab: tab, devDisabledProviders: devDisabled };
+    // Hosted web app: a saved "local"/"ollama" default would wait on a loopback
+    // Ollama that is not this machine. Keep worker/groq/gemini as the user left them.
+    if (isRemoteApi() && (merged.llmProvider === "local" || merged.llmProvider === "ollama")) {
+      merged.llmProvider = "gemini";
+    }
+    return merged;
   } catch {
     return DEFAULT_SETTINGS;
   }

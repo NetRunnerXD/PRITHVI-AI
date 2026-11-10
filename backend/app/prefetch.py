@@ -57,10 +57,11 @@ async def _run(name: str) -> None:
         # so keep that one snapshot warm (one Open-Meteo pin per ~9 min).
         from app.config import get_settings
         from app.services.location_svc import resolve_location
-        from app.services.snapshot import build_snapshot
+        from app.services.snapshot import build_core
 
         st = get_settings()
-        await build_snapshot(resolve_location(lat=float(st.default_lat), lon=float(st.default_lon)))
+        # Warm the core snapshot the Vercel client fetches first; do not also run a full enrich here.
+        await build_core(resolve_location(lat=float(st.default_lat), lon=float(st.default_lon)))
     elif name == "sachet_states":
         from app.providers import sachet
 
