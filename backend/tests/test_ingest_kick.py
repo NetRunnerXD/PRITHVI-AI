@@ -278,3 +278,67 @@ def test_finish_persists_and_snapshot_reads_mongo_when_mem_empty(monkeypatch):
             ingest_status._MEM.update(prev)
         with ingest_status._view_lock:
             ingest_status._mongo_view.clear()
+
+
+def test_stale_idle_cache_does_not_hide_finished_mongo_doc(monkeypatch, freezer=None):
+    import time as _time
+
+    store = {
+        "doc": {
+            "cycle_id": "cafef00d1234",
+            "phase": "ready",
+            "ready": True,
+            "satellites": [{"id": "imd_ir1", "status": "ok"}],
+            "updated_ms": ingest_status.ms(ingest_status.now_utc()),
+            "started_ms": ingest_status.ms(ingest_status.now_utc()),
+            "finished_at": "2026-11-10T15:27:00Z",
+            "data_time": "2026-11-10T15:20:12+00:00",
+        }
+    }
+
+    class Col:
+        def find_one(self, *args, **kwargs):
+            return dict(store["doc"])
+
+        def replace_one(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setenv("INGEST_STATUS_PERSIST_TEST", "1")
+    with ingest_status._lock:
+        prev = dict(ingest_status._MEM)
+        ingest_status._MEM.clear()
+        ingest_status._MEM.update(
+            {
+                "cycle_id": None,
+                "phase": "idle",
+                "ready": True,
+                "message": "",
+                "satellites": [],
+                "started_ms": None,
+                "updated_ms": None,
+            }
+        )
+    try:
+        # Seed a stale idle cache, as the API would after an early empty read.
+        ingest_status._cache_doc(
+            {
+                "cycle_id": None,
+                "phase": "idle",
+                "ready": True,
+                "satellites": [],
+                "updated_ms": 1,
+            }
+        )
+        ingest_status._mongo_view_at = _time.time() - 30
+        with patch("app.store.ingest_status.sat_mongo.col", return_value=Col()):
+            with patch("app.store.ingest_status._overlay_mongo", return_value=True):
+                snap = ingest_status.snapshot()
+        assert snap["cycle_id"] == "cafef00d1234"
+        assert snap["phase"] == "ready"
+        assert snap["satellites"][0]["id"] == "imd_ir1"
+    finally:
+        with ingest_status._lock:
+            ingest_status._MEM.clear()
+            ingest_status._MEM.update(prev)
+        with ingest_status._view_lock:
+            ingest_status._mongo_view.clear()
