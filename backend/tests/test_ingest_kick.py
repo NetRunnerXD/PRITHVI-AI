@@ -249,6 +249,7 @@ def test_finish_persists_and_snapshot_reads_mongo_when_mem_empty(monkeypatch):
             ingest_status.begin([{"id": "imd_ir1", "name": "INSAT"}])
             ingest_status.update(satellite={"id": "imd_ir1", "status": "ok"})
             ingest_status.finish(ok=True, data_time="2026-11-10T14:50:10+00:00")
+            assert ingest_status.persist_doc(ingest_status.mem_doc()) is True
             assert store.get("doc", {}).get("phase") == "ready"
             with ingest_status._lock:
                 ingest_status._MEM.clear()

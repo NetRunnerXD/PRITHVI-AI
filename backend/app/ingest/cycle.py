@@ -186,14 +186,16 @@ async def _run_cycle() -> dict[str, Any]:
         result["need_second_frame"] = pack.get("need_second_frame")
         data_time = jpeg_time or pack.get("ir_image_time") or pack.get("as_of")
         ingest_status.finish(ok=True, message="", data_time=str(data_time) if data_time else None)
+        persisted = await asyncio.to_thread(ingest_status.persist_doc, ingest_status.mem_doc())
         print(
-            f"ingest cycle finish cycle_id={cid} ok={result['ok']} counts={result.get('counts')} data_time={data_time}",
+            f"ingest cycle finish cycle_id={cid} ok={result['ok']} persisted={persisted} counts={result.get('counts')} data_time={data_time}",
             flush=True,
         )
         log.info("ingest cycle ready cycle_id=%s ok=%s counts=%s", cid, result["ok"], result.get("counts"))
         return result
     except Exception as e:
         ingest_status.finish(ok=False, message=str(e)[:200])
+        await asyncio.to_thread(ingest_status.persist_doc, ingest_status.mem_doc())
         result["error"] = str(e)[:200]
         print(f"ingest cycle error cycle_id={cid} err={result['error']}", flush=True)
         log.exception("ingest cycle error cycle_id=%s err=%s", cid, result["error"])
