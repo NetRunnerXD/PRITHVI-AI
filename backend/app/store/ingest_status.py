@@ -6,6 +6,7 @@ import json
 import os
 import queue
 import threading
+import time
 import uuid
 from typing import Any
 
@@ -27,6 +28,8 @@ DOC_ID = "ingest_status"
 
 _view_lock = threading.Lock()
 _mongo_view: dict[str, Any] = {}
+_mongo_view_at = 0.0
+_MONGO_VIEW_TTL_S = 5.0
 _persist_q: queue.SimpleQueue = queue.SimpleQueue()
 _writer_thread: threading.Thread | None = None
 _FLUSH = object()
@@ -261,14 +264,20 @@ def _on_event_loop() -> bool:
 
 
 def _cache_doc(doc: dict[str, Any]) -> None:
+    global _mongo_view_at
     with _view_lock:
         _mongo_view.clear()
         _mongo_view.update(doc)
+        _mongo_view_at = time.time()
 
 
-def cached_mongo_doc() -> dict[str, Any] | None:
+def cached_mongo_doc(*, max_age_s: float | None = _MONGO_VIEW_TTL_S) -> dict[str, Any] | None:
     with _view_lock:
-        return dict(_mongo_view) if _mongo_view else None
+        if not _mongo_view:
+            return None
+        if max_age_s is not None and (time.time() - _mongo_view_at) > max_age_s:
+            return None
+        return dict(_mongo_view)
 
 
 def persist_doc(doc: dict[str, Any]) -> bool:
@@ -318,11 +327,11 @@ def _load_mongo_doc_blocking() -> dict[str, Any] | None:
 
 
 def _mongo_status_doc() -> dict[str, Any] | None:
-    """Non-blocking when possible: memory cache, else a short thread read."""
-    hit = cached_mongo_doc()
+    """Short-lived cache so the API picks up a just-finished ingest cycle."""
+    hit = cached_mongo_doc(max_age_s=_MONGO_VIEW_TTL_S)
     if hit is not None:
         return hit
-    return load_mongo_doc(timeout_s=1.0)
+    return load_mongo_doc(timeout_s=1.0) or cached_mongo_doc(max_age_s=None)
 
 
 def _ensure_writer() -> None:
