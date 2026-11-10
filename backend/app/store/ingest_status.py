@@ -187,12 +187,12 @@ def finish(*, ok: bool = True, message: str | None = None, data_time: str | None
     if data_time:
         blob["data_time"] = data_time
     _write(blob)
-    persisted = flush_persist(timeout_s=5.0)
     print(
         f"ingest_status finish cycle_id={blob.get('cycle_id')} phase={blob.get('phase')} "
-        f"persisted={persisted} data_time={blob.get('data_time') or blob.get('finished_at')}",
+        f"data_time={blob.get('data_time') or blob.get('finished_at')}",
         flush=True,
     )
+    return blob
 
 
 def _slot_data_time() -> str | None:
@@ -283,13 +283,14 @@ def cached_mongo_doc(*, max_age_s: float | None = _MONGO_VIEW_TTL_S) -> dict[str
 def persist_doc(doc: dict[str, Any]) -> bool:
     """Write one status document to Mongo. Always safe to call from a worker thread."""
     try:
-        col = sat_mongo.col("ingest_status", ensure=True)
+        col = sat_mongo.col("ingest_status", ensure=False)
         if col is None:
             print("ingest_status persist skipped: no mongo collection", flush=True)
             return False
         payload = {k: v for k, v in doc.items() if k != "_id"}
         col.replace_one({"_id": DOC_ID}, {**payload, "_id": DOC_ID}, upsert=True)
         _cache_doc(payload)
+        print(f"ingest_status persist ok cycle_id={payload.get('cycle_id')} phase={payload.get('phase')}", flush=True)
         return True
     except Exception as exc:
         print(f"ingest_status persist failed: {type(exc).__name__}: {exc}", flush=True)
@@ -364,6 +365,11 @@ def flush_persist(*, timeout_s: float = 5.0) -> bool:
     done = threading.Event()
     _persist_q.put((_FLUSH, None, done))
     return bool(done.wait(timeout_s))
+
+
+def mem_doc() -> dict[str, Any]:
+    with _lock:
+        return dict(_MEM)
 
 
 def _write(doc: dict[str, Any]) -> None:
