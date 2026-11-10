@@ -28,6 +28,7 @@ async def run_cycle() -> dict[str, Any]:
     if _cycle_lock.locked():
         snap = ingest_status.snapshot()
         log.info("ingest cycle already running cycle_id=%s", snap.get("cycle_id"))
+        print(f"ingest cycle already running cycle_id={snap.get('cycle_id')}", flush=True)
         return {"ok": False, "status": "already_running", "cycle_id": snap.get("cycle_id")}
     async with _cycle_lock:
         return await _run_cycle()
@@ -39,6 +40,7 @@ async def _run_cycle() -> dict[str, Any]:
     now = now_utc()
     result: dict[str, Any] = {"cycle_id": cid, "as_of": iso_z(now), "ok": False}
     log.info("ingest cycle begin cycle_id=%s as_of=%s", cid, result["as_of"])
+    print(f"ingest cycle begin cycle_id={cid} as_of={result['as_of']}", flush=True)
 
     try:
         from app.providers import imd_insat, mosdac, gpm_imerg
@@ -132,18 +134,13 @@ async def _run_cycle() -> dict[str, Any]:
             ltg = await asyncio.wait_for(sat_lightning.refresh(), timeout=45)
             from app.store import shared_packs
 
-            shared_packs.save_lightning(ltg)
+            await asyncio.to_thread(shared_packs.save_lightning, ltg)
         except Exception:
             pass
+        await asyncio.sleep(0)
         from app.science.storm_map import build as build_storm_map
 
-        pack = await build_storm_map("India", past_h=12)
-        try:
-            from app.store import shared_packs
-
-            shared_packs.save_storm(pack)
-        except Exception:
-            pass
+        pack = await asyncio.wait_for(build_storm_map("India", past_h=12), timeout=90)
         ingest_status.update(
             satellite={
                 "id": "gibs",
@@ -152,44 +149,52 @@ async def _run_cycle() -> dict[str, Any]:
             }
         )
         ingest_status.update(phase="alerts")
-        persist_pack_incidents(pack, cycle_id=cid)
-        try:
-            from app.store import sat_mongo
-            from app.store.hazard_events import slim_event
 
-            col = sat_mongo.col("alert_windows")
-            if col is not None:
-                for inc in pack.get("incidents") or []:
-                    if not (inc.get("gate") or {}).get("ok"):
-                        continue
-                    if inc.get("kind") == "lightning" and not (inc.get("gate") or {}).get("ok"):
-                        continue
-                    row = slim_event({**inc, "ingest_cycle_id": cid})
-                    if row:
-                        col.update_one({"event_id": row["event_id"]}, {"$set": row}, upsert=True)
-        except Exception:
-            pass
-        prune_events()
-        prune_frames()
-        hem_time = next(
-            (r.get("granule_time") for r in mosdac_rows if r.get("product") == "3SIMG_L2B_HEM" and r.get("ok")),
-            None,
-        )
-        try:
+        def _publish() -> None:
+            from app.store import shared_packs, sat_mongo
+            from app.store.hazard_events import slim_event
             from app.ingest.worker import record_slot_frame
 
-            record_slot_frame(jpeg_time=jpeg_time if jpeg_ok else None, hem_time=hem_time)
-        except Exception:
-            pass
+            shared_packs.save_storm(pack)
+            persist_pack_incidents(pack, cycle_id=cid)
+            try:
+                col = sat_mongo.col("alert_windows")
+                if col is not None:
+                    for inc in pack.get("incidents") or []:
+                        if not (inc.get("gate") or {}).get("ok"):
+                            continue
+                        row = slim_event({**inc, "ingest_cycle_id": cid})
+                        if row:
+                            col.update_one({"event_id": row["event_id"]}, {"$set": row}, upsert=True)
+            except Exception:
+                pass
+            prune_events()
+            prune_frames()
+            hem_time = next(
+                (r.get("granule_time") for r in mosdac_rows if r.get("product") == "3SIMG_L2B_HEM" and r.get("ok")),
+                None,
+            )
+            try:
+                record_slot_frame(jpeg_time=jpeg_time if jpeg_ok else None, hem_time=hem_time)
+            except Exception:
+                pass
+
+        await asyncio.to_thread(_publish)
         result["ok"] = bool(pack.get("ok") or jpeg_ok)
         result["counts"] = pack.get("counts")
         result["mosdac"] = mosdac_rows
         result["need_second_frame"] = pack.get("need_second_frame")
-        ingest_status.finish(ok=True, message="")
+        data_time = jpeg_time or pack.get("ir_image_time") or pack.get("as_of")
+        ingest_status.finish(ok=True, message="", data_time=str(data_time) if data_time else None)
+        print(
+            f"ingest cycle finish cycle_id={cid} ok={result['ok']} counts={result.get('counts')} data_time={data_time}",
+            flush=True,
+        )
         log.info("ingest cycle ready cycle_id=%s ok=%s counts=%s", cid, result["ok"], result.get("counts"))
         return result
     except Exception as e:
         ingest_status.finish(ok=False, message=str(e)[:200])
         result["error"] = str(e)[:200]
+        print(f"ingest cycle error cycle_id={cid} err={result['error']}", flush=True)
         log.exception("ingest cycle error cycle_id=%s err=%s", cid, result["error"])
         return result

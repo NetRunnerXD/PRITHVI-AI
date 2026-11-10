@@ -151,8 +151,13 @@ async def _clock_loop() -> None:
         token = due_token(now, attempted, is_stale=stale or boot)
         if token:
             try:
+                print(f"ingest clock cycle start token={token} stale={stale} boot={boot}", flush=True)
                 log.info("ingest cycle start token=%s stale=%s boot=%s", token, stale, boot)
                 result = await run_cycle()
+                print(
+                    f"ingest clock cycle finish token={token} ok={(result or {}).get('ok')} cycle_id={(result or {}).get('cycle_id')}",
+                    flush=True,
+                )
                 log.info(
                     "ingest cycle finish token=%s ok=%s cycle_id=%s",
                     token,
@@ -160,6 +165,7 @@ async def _clock_loop() -> None:
                     (result or {}).get("cycle_id"),
                 )
             except Exception:
+                print(f"ingest clock cycle failed token={token}", flush=True)
                 log.exception("ingest cycle failed token=%s", token)
             attempted.add(token)
         boot = False

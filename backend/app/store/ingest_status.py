@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import threading
 import uuid
 from typing import Any
@@ -23,6 +24,12 @@ _MEM: dict[str, Any] = {
 }
 
 DOC_ID = "ingest_status"
+
+_view_lock = threading.Lock()
+_mongo_view: dict[str, Any] = {}
+_persist_q: queue.SimpleQueue = queue.SimpleQueue()
+_writer_thread: threading.Thread | None = None
+_FLUSH = object()
 
 
 def empty_snapshot(now=None) -> dict[str, Any]:
@@ -65,27 +72,13 @@ def snapshot() -> dict[str, Any]:
 def _snapshot() -> dict[str, Any]:
     now = now_utc()
     blob = dict(_MEM)
-    col = None
-    try:
-        col = sat_mongo.col("ingest_status")
-    except Exception:
-        col = None
-    if col is not None and _overlay_mongo():
-        try:
-            doc = col.find_one({"_id": DOC_ID}, {"_id": 0}, max_time_ms=1500)
-            if isinstance(doc, dict):
-                # A stale/idle Mongo doc must not hide a newer in-process cycle.
-                # The API (separate process) still wins when Mongo is fresher.
-                def _ms(raw) -> int:
-                    try:
-                        return int(raw or 0)
-                    except (TypeError, ValueError):
-                        return 0
-
-                if _ms(doc.get("updated_ms")) >= _ms(blob.get("updated_ms")):
-                    blob.update(doc)
-        except Exception:
-            pass
+    if _overlay_mongo():
+        doc = _mongo_status_doc()
+        if isinstance(doc, dict):
+            # A stale/idle Mongo doc must not hide a newer in-process cycle.
+            # The API (separate process) still wins when Mongo is fresher.
+            if _ms(doc.get("updated_ms")) >= _ms(blob.get("updated_ms")):
+                blob.update(doc)
     started = blob.get("started_ms")
     age_s = None
     if started:
@@ -175,7 +168,7 @@ def update(*, phase: str | None = None, satellite: dict[str, Any] | None = None,
     _write(blob)
 
 
-def finish(*, ok: bool = True, message: str | None = None) -> None:
+def finish(*, ok: bool = True, message: str | None = None, data_time: str | None = None) -> None:
     now = now_utc()
     with _lock:
         blob = dict(_MEM)
@@ -188,7 +181,15 @@ def finish(*, ok: bool = True, message: str | None = None) -> None:
         blob["message"] = ""
     if ok:
         blob["finished_at"] = iso_z(now)
+    if data_time:
+        blob["data_time"] = data_time
     _write(blob)
+    persisted = flush_persist(timeout_s=5.0)
+    print(
+        f"ingest_status finish cycle_id={blob.get('cycle_id')} phase={blob.get('phase')} "
+        f"persisted={persisted} data_time={blob.get('data_time') or blob.get('finished_at')}",
+        flush=True,
+    )
 
 
 def _slot_data_time() -> str | None:
@@ -234,14 +235,134 @@ def _slot_blobs() -> list[dict[str, Any]]:
     return out
 
 
+def _ms(raw) -> int:
+    try:
+        return int(raw or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _should_persist() -> bool:
+    if os.environ.get("INGEST_STATUS_PERSIST_TEST"):
+        return True
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return False
+    return True
+
+
+def _on_event_loop() -> bool:
+    try:
+        import asyncio
+
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
+
+
+def _cache_doc(doc: dict[str, Any]) -> None:
+    with _view_lock:
+        _mongo_view.clear()
+        _mongo_view.update(doc)
+
+
+def cached_mongo_doc() -> dict[str, Any] | None:
+    with _view_lock:
+        return dict(_mongo_view) if _mongo_view else None
+
+
+def persist_doc(doc: dict[str, Any]) -> bool:
+    """Write one status document to Mongo. Always safe to call from a worker thread."""
+    try:
+        col = sat_mongo.col("ingest_status", ensure=True)
+        if col is None:
+            print("ingest_status persist skipped: no mongo collection", flush=True)
+            return False
+        payload = {k: v for k, v in doc.items() if k != "_id"}
+        col.replace_one({"_id": DOC_ID}, {**payload, "_id": DOC_ID}, upsert=True)
+        _cache_doc(payload)
+        return True
+    except Exception as exc:
+        print(f"ingest_status persist failed: {type(exc).__name__}: {exc}", flush=True)
+        return False
+
+
+def load_mongo_doc(*, timeout_s: float = 1.5) -> dict[str, Any] | None:
+    """Read ingest_status from Mongo (or the in-process cache). Never call col() on the event loop."""
+    if _on_event_loop():
+        hit = cached_mongo_doc()
+        if hit is not None:
+            return hit
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(_load_mongo_doc_blocking).result(timeout=timeout_s)
+        except Exception:
+            return cached_mongo_doc()
+    return _load_mongo_doc_blocking()
+
+
+def _load_mongo_doc_blocking() -> dict[str, Any] | None:
+    try:
+        col = sat_mongo.col("ingest_status")
+        if col is None:
+            return cached_mongo_doc()
+        doc = col.find_one({"_id": DOC_ID}, {"_id": 0}, max_time_ms=1500)
+        if isinstance(doc, dict):
+            _cache_doc(doc)
+            return doc
+    except Exception as exc:
+        print(f"ingest_status mongo read failed: {type(exc).__name__}: {exc}", flush=True)
+    return cached_mongo_doc()
+
+
+def _mongo_status_doc() -> dict[str, Any] | None:
+    """Non-blocking when possible: memory cache, else a short thread read."""
+    hit = cached_mongo_doc()
+    if hit is not None:
+        return hit
+    return load_mongo_doc(timeout_s=1.0)
+
+
+def _ensure_writer() -> None:
+    global _writer_thread
+    if _writer_thread is not None and _writer_thread.is_alive():
+        return
+    _writer_thread = threading.Thread(target=_writer_loop, name="ingest-status-writer", daemon=True)
+    _writer_thread.start()
+
+
+def _writer_loop() -> None:
+    while True:
+        item = _persist_q.get()
+        if item is None:
+            continue
+        kind, payload, event = item
+        try:
+            if kind == "doc":
+                persist_doc(payload)
+        finally:
+            if event is not None:
+                event.set()
+
+
+def flush_persist(*, timeout_s: float = 5.0) -> bool:
+    """Wait until earlier queued writes have been attempted. No-op if we are not persisting."""
+    if not _should_persist():
+        return False
+    _ensure_writer()
+    done = threading.Event()
+    _persist_q.put((_FLUSH, None, done))
+    return bool(done.wait(timeout_s))
+
+
 def _write(doc: dict[str, Any]) -> None:
+    """Update in-process memory immediately; persist to Mongo off the event loop."""
     with _lock:
         _MEM.clear()
         _MEM.update(doc)
-    col = sat_mongo.col("ingest_status")
-    if col is None or os.environ.get("PYTEST_CURRENT_TEST"):
+    if not _should_persist():
         return
-    try:
-        col.update_one({"_id": DOC_ID}, {"$set": {k: v for k, v in doc.items() if k != "_id"}}, upsert=True)
-    except Exception:
-        pass
+    _ensure_writer()
+    _persist_q.put(("doc", dict(doc), None))
