@@ -33,6 +33,9 @@ _MONGO_VIEW_TTL_S = 5.0
 _persist_q: queue.SimpleQueue = queue.SimpleQueue()
 _writer_thread: threading.Thread | None = None
 _FLUSH = object()
+_last_persisted_ms = 0
+_read_pool = None
+_read_pool_lock = threading.Lock()
 
 
 def empty_snapshot(now=None) -> dict[str, Any]:
@@ -282,13 +285,26 @@ def cached_mongo_doc(*, max_age_s: float | None = _MONGO_VIEW_TTL_S) -> dict[str
 
 def persist_doc(doc: dict[str, Any]) -> bool:
     """Write one status document to Mongo. Always safe to call from a worker thread."""
+    global _last_persisted_ms
     try:
+        updated_ms = _ms(doc.get("updated_ms"))
+        with _lock:
+            if updated_ms and updated_ms < _last_persisted_ms:
+                print(
+                    f"ingest_status persist skip stale updated_ms={updated_ms} last={_last_persisted_ms}",
+                    flush=True,
+                )
+                return False
         col = sat_mongo.col("ingest_status", ensure=False)
         if col is None:
             print("ingest_status persist skipped: no mongo collection", flush=True)
             return False
         payload = {k: v for k, v in doc.items() if k != "_id"}
         col.replace_one({"_id": DOC_ID}, {**payload, "_id": DOC_ID}, upsert=True)
+        if updated_ms:
+            with _lock:
+                if updated_ms >= _last_persisted_ms:
+                    _last_persisted_ms = updated_ms
         _cache_doc(payload)
         print(f"ingest_status persist ok cycle_id={payload.get('cycle_id')} phase={payload.get('phase')}", flush=True)
         return True
@@ -304,24 +320,29 @@ def load_mongo_doc(*, timeout_s: float = 1.5) -> dict[str, Any] | None:
         if hit is not None:
             return hit
         try:
-            from concurrent.futures import ThreadPoolExecutor
-
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(_load_mongo_doc_blocking).result(timeout=timeout_s)
-        except Exception:
-            return cached_mongo_doc()
+            fut = _reader_pool().submit(_load_mongo_doc_blocking)
+            return fut.result(timeout=max(timeout_s, 3.0))
+        except Exception as exc:
+            print(f"ingest_status mongo read timeout or error: {type(exc).__name__}: {exc}", flush=True)
+            return cached_mongo_doc(max_age_s=None)
     return _load_mongo_doc_blocking()
 
 
 def _load_mongo_doc_blocking() -> dict[str, Any] | None:
     try:
-        col = sat_mongo.col("ingest_status")
+        col = sat_mongo.col("ingest_status", ensure=False)
         if col is None:
             return cached_mongo_doc()
-        doc = col.find_one({"_id": DOC_ID}, {"_id": 0}, max_time_ms=1500)
+        # 1.5s was aborting cold Atlas reads on the API before the doc could land.
+        doc = col.find_one({"_id": DOC_ID}, {"_id": 0}, max_time_ms=8000)
         if isinstance(doc, dict):
             _cache_doc(doc)
+            print(
+                f"ingest_status mongo read ok cycle_id={doc.get('cycle_id')} phase={doc.get('phase')}",
+                flush=True,
+            )
             return doc
+        print("ingest_status mongo read empty", flush=True)
     except Exception as exc:
         print(f"ingest_status mongo read failed: {type(exc).__name__}: {exc}", flush=True)
     return cached_mongo_doc()
@@ -332,7 +353,16 @@ def _mongo_status_doc() -> dict[str, Any] | None:
     hit = cached_mongo_doc(max_age_s=_MONGO_VIEW_TTL_S)
     if hit is not None:
         return hit
-    return load_mongo_doc(timeout_s=1.0) or cached_mongo_doc(max_age_s=None)
+    return load_mongo_doc(timeout_s=3.0) or cached_mongo_doc(max_age_s=None)
+
+
+def _reader_pool():
+    global _read_pool
+    with _read_pool_lock:
+        if _read_pool is None:
+            from concurrent.futures import ThreadPoolExecutor
+            _read_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ingest-status-read")
+        return _read_pool
 
 
 def _ensure_writer() -> None:
@@ -380,4 +410,16 @@ def _write(doc: dict[str, Any]) -> None:
     if not _should_persist():
         return
     _ensure_writer()
+    # Keep only the latest status doc so progress ticks cannot backlog or
+    # overwrite a newer finish() write.
+    pending_events = []
+    while True:
+        try:
+            item = _persist_q.get_nowait()
+        except queue.Empty:
+            break
+        if item and item[0] != "doc":
+            pending_events.append(item)
+    for item in pending_events:
+        _persist_q.put(item)
     _persist_q.put(("doc", dict(doc), None))

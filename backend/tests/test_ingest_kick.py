@@ -343,3 +343,54 @@ def test_stale_idle_cache_does_not_hide_finished_mongo_doc(monkeypatch, freezer=
             ingest_status._MEM.update(prev)
         with ingest_status._view_lock:
             ingest_status._mongo_view.clear()
+
+
+def test_persist_skips_older_updated_ms(monkeypatch):
+    store: dict = {}
+
+    class Col:
+        def replace_one(self, _filt, doc, upsert=False):
+            store["doc"] = {k: v for k, v in doc.items() if k != "_id"}
+
+    monkeypatch.setenv("INGEST_STATUS_PERSIST_TEST", "1")
+    prev_ms = ingest_status._last_persisted_ms
+    with ingest_status._view_lock:
+        ingest_status._mongo_view.clear()
+    try:
+        ingest_status._last_persisted_ms = 0
+        with patch("app.store.ingest_status.sat_mongo.col", return_value=Col()):
+            assert ingest_status.persist_doc({"cycle_id": "c1", "phase": "ready", "updated_ms": 2000}) is True
+            assert store["doc"]["phase"] == "ready"
+            assert ingest_status.persist_doc({"cycle_id": "c1", "phase": "fetching", "updated_ms": 1500}) is False
+            assert store["doc"]["phase"] == "ready"
+    finally:
+        ingest_status._last_persisted_ms = prev_ms
+        with ingest_status._view_lock:
+            ingest_status._mongo_view.clear()
+
+
+def test_load_mongo_doc_waits_past_one_second_on_event_loop(monkeypatch):
+    import time
+
+    class Col:
+        def find_one(self, *args, **kwargs):
+            time.sleep(1.2)
+            return {"cycle_id": "cafef00d1234", "phase": "ready"}
+
+    monkeypatch.setenv("INGEST_STATUS_PERSIST_TEST", "1")
+    with ingest_status._view_lock:
+        ingest_status._mongo_view.clear()
+    try:
+        with patch("app.store.ingest_status.sat_mongo.col", return_value=Col()):
+            with patch("app.store.ingest_status._on_event_loop", return_value=True):
+                t0 = time.monotonic()
+                doc = ingest_status.load_mongo_doc(timeout_s=1.0)
+                elapsed = time.monotonic() - t0
+        assert elapsed >= 1.1
+        assert elapsed < 3.0
+        assert doc is not None
+        assert doc["cycle_id"] == "cafef00d1234"
+        assert doc["phase"] == "ready"
+    finally:
+        with ingest_status._view_lock:
+            ingest_status._mongo_view.clear()
