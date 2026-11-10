@@ -34,7 +34,20 @@ def _good_path(kind: str, lat: float, lon: float):
     return _GOOD / f"{kind}_{round(lat, 2)}_{round(lon, 2)}.json"
 
 
+LIVE_RETRY_BACKOFF_S = 0.6
+_STALE_CACHE_TTL_S = 15.0
+_STALE_CACHE_SWR_S = 30.0
+
+
+def _is_climatology(data: dict[str, Any] | None) -> bool:
+    if not isinstance(data, dict):
+        return False
+    return data.get("source") == "india-climatology" or data.get("_stale_reason") == "climatological-fallback"
+
+
 def _save_good(kind: str, lat: float, lon: float, data: dict[str, Any]) -> None:
+    if _is_climatology(data):
+        return
     try:
         _GOOD.mkdir(parents=True, exist_ok=True)
         slim = {k: v for k, v in data.items() if not str(k).startswith("_")}
@@ -49,7 +62,11 @@ def _load_good(kind: str, lat: float, lon: float) -> dict[str, Any] | None:
         return None
     try:
         blob = json.loads(p.read_text(encoding="utf-8"))
-        return blob if isinstance(blob, dict) and (blob.get("current") or blob.get("hourly") or blob.get("daily")) else None
+        if not isinstance(blob, dict) or not (blob.get("current") or blob.get("hourly") or blob.get("daily")):
+            return None
+        if _is_climatology(blob):
+            return None
+        return blob
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -242,6 +259,23 @@ def _merge_om(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _remember_stale(key: str, data: dict[str, Any]) -> dict[str, Any]:
+    """A failed or fallback pack must not occupy the live TTL / SWR window."""
+    cache.set(key, data, _STALE_CACHE_TTL_S, _STALE_CACHE_SWR_S)
+    return data
+
+
+async def _live_forecast_get(lat: float, lon: float, params: dict[str, Any]) -> dict[str, Any] | None:
+    r = await client().get(FORECAST, params=params)
+    if r.status_code == 429:
+        return None
+    r.raise_for_status()
+    data = r.json()
+    if isinstance(data, dict) and not data.get("error"):
+        return data
+    return None
+
+
 async def forecast(lat: float, lon: float) -> dict[str, Any]:
     key = f"om:fc4:{round(lat, 3)}:{round(lon, 3)}"
 
@@ -256,38 +290,33 @@ async def forecast(lat: float, lon: float) -> dict[str, Any]:
             "forecast_days": 7,
             "timezone": "Asia/Kolkata",
         }
-        try:
-            r = await client().get(FORECAST, params=params)
-            if r.status_code == 429:
-                good = _load_good("fc", lat, lon) or await _archive_fallback(lat, lon)
-                if good:
-                    good["_stale"] = True
-                    good["_stale_reason"] = "open-meteo-429"
-                    return good
-                r.raise_for_status()
-            r.raise_for_status()
-            data = r.json()
-            if isinstance(data, dict) and not data.get("error"):
-                _save_good("fc", lat, lon, data)
-                return data
-            good = _load_good("fc", lat, lon)
-            if good:
-                good["_stale"] = True
-                return good
-            fallback = _climatological_fallback(lat, lon)
-            _save_good("fc", lat, lon, fallback)
-            return fallback
-        except Exception:
-            good = _load_good("fc", lat, lon) or await _archive_fallback(lat, lon)
-            if good:
-                good["_stale"] = True
-                good["_stale_reason"] = "open-meteo-error"
-                return good
-            fallback = _climatological_fallback(lat, lon)
-            _save_good("fc", lat, lon, fallback)
-            return fallback
+        last_exc: Exception | None = None
+        for attempt in (0, 1):
+            try:
+                data = await _live_forecast_get(lat, lon, params)
+                if data:
+                    _save_good("fc", lat, lon, data)
+                    return data
+            except Exception as exc:
+                last_exc = exc
+            if attempt == 0:
+                if LIVE_RETRY_BACKOFF_S > 0:
+                    await asyncio.sleep(LIVE_RETRY_BACKOFF_S)
+                continue
+        reason = "open-meteo-error"
+        if last_exc is None:
+            reason = "open-meteo-429"
+        good = _load_good("fc", lat, lon) or await _archive_fallback(lat, lon)
+        if good:
+            good["_stale"] = True
+            good["_stale_reason"] = reason
+            return good
+        return _climatological_fallback(lat, lon)
 
-    return await cache.aget(key, factory, ttl_s=90, swr_s=600)
+    result = await cache.aget(key, factory, ttl_s=90, swr_s=600)
+    if isinstance(result, dict) and (result.get("_stale") or _is_climatology(result)):
+        return _remember_stale(key, result)
+    return result
 
 
 async def forecast_models(lat: float, lon: float) -> dict[str, Any]:
@@ -340,46 +369,53 @@ async def forecast_models(lat: float, lon: float) -> dict[str, Any]:
         "models": ",".join(unique_models),
     }
 
-    try:
-        r = await client().get(FORECAST, params=params)
-        if r.status_code == 429:
-            await asyncio.sleep(0.4)
+    for attempt in (0, 1):
+        try:
             r = await client().get(FORECAST, params=params)
-        if r.status_code < 400:
-            data = r.json()
-            if isinstance(data, dict) and not data.get("error"):
-                d_block = data.get("daily") or {}
-                h_block = data.get("hourly") or {}
-                time_d = d_block.get("time") or []
-                time_h = h_block.get("time") or []
+            if r.status_code == 429:
+                if attempt == 0:
+                    if LIVE_RETRY_BACKOFF_S > 0:
+                        await asyncio.sleep(LIVE_RETRY_BACKOFF_S)
+                    continue
+            elif r.status_code < 400:
+                data = r.json()
+                if isinstance(data, dict) and not data.get("error"):
+                    d_block = data.get("daily") or {}
+                    h_block = data.get("hourly") or {}
+                    time_d = d_block.get("time") or []
+                    time_h = h_block.get("time") or []
 
-                for sid, m in BLEND_MODELS:
-                    sub_daily = {"time": time_d}
-                    has_data = False
-                    for v in daily_vars:
-                        k = f"{v}_{m}"
-                        if k in d_block:
-                            sub_daily[v] = d_block[k]
-                            has_data = True
-                    sub_hourly = {"time": time_h}
-                    for v in hourly_vars:
-                        k = f"{v}_{m}"
-                        if k in h_block:
-                            sub_hourly[v] = h_block[k]
-                    if has_data:
-                        member_pack = {
-                            "latitude": lat,
-                            "longitude": lon,
-                            "daily": sub_daily,
-                            "hourly": sub_hourly,
-                        }
-                        key = f"om:blend:{sid}:{round(lat, 3)}:{round(lon, 3)}"
-                        cache.set(key, member_pack, 900)
-                        cached[sid] = member_pack
-                if cached:
-                    return cached
-    except Exception:
-        pass
+                    for sid, m in BLEND_MODELS:
+                        sub_daily = {"time": time_d}
+                        has_data = False
+                        for v in daily_vars:
+                            k = f"{v}_{m}"
+                            if k in d_block:
+                                sub_daily[v] = d_block[k]
+                                has_data = True
+                        sub_hourly = {"time": time_h}
+                        for v in hourly_vars:
+                            k = f"{v}_{m}"
+                            if k in h_block:
+                                sub_hourly[v] = h_block[k]
+                        if has_data:
+                            member_pack = {
+                                "latitude": lat,
+                                "longitude": lon,
+                                "daily": sub_daily,
+                                "hourly": sub_hourly,
+                            }
+                            key = f"om:blend:{sid}:{round(lat, 3)}:{round(lon, 3)}"
+                            cache.set(key, member_pack, 900)
+                            cached[sid] = member_pack
+                    if cached:
+                        return cached
+        except Exception:
+            pass
+        if attempt == 0:
+            if LIVE_RETRY_BACKOFF_S > 0:
+                await asyncio.sleep(LIVE_RETRY_BACKOFF_S)
+            continue
 
     if not cached:
         base_fc = await forecast(lat, lon)
@@ -580,6 +616,7 @@ def _climatological_fallback(lat: float, lon: float) -> dict[str, Any]:
         "timezone": "Asia/Kolkata",
         "timezone_abbreviation": "IST",
         "elevation": 50.0,
+        "source": "india-climatology",
         "current": current_dict,
         "hourly": {
             "time": hourly_times,

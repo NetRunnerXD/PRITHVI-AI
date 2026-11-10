@@ -25,6 +25,25 @@ from app.providers import (
 from app.science.astro import at_pin as moon_at
 from app.schemas.location import Location
 
+# One bounded retry for the live forecast only. Other providers stay single-shot.
+OM_RETRY_PROVIDERS = frozenset({"open-meteo", "open-meteo-models"})
+OM_RETRY_BACKOFF_S = 0.6
+
+
+def _om_retry_timeout(timeout: float) -> float:
+    return min(2.0, max(1.0, float(timeout) * 0.6))
+
+
+def _status_for(val: Any) -> str:
+    if isinstance(val, dict) and val.get("_stale"):
+        reason = str(val.get("_stale_reason") or "")
+        source = str(val.get("source") or "")
+        if reason == "climatological-fallback" or source == "india-climatology":
+            return "fallback"
+        return "stale"
+    return "ok"
+
+
 def _blank_obs() -> dict[str, Any]:
     return {
         "om": {},
@@ -93,21 +112,33 @@ async def gather_observations(
         return False
 
     async def run(name: str, coro, default, timeout: float = 4.5):
+        factory = coro if callable(coro) else None
+        if factory is not None:
+            coro = factory()
         if is_disabled(name):
             status[name] = "disabled"
             if asyncio.iscoroutine(coro):
                 coro.close()
             return default
-        try:
-            val = await asyncio.wait_for(coro, timeout=timeout)
-            if isinstance(val, dict) and val.get("_stale"):
-                status[name] = "stale"
-            else:
-                status[name] = "ok"
+
+        async def once(pending, budget: float):
+            val = await asyncio.wait_for(pending, timeout=budget)
+            status[name] = _status_for(val)
             return val
+
+        try:
+            return await once(coro, timeout)
         except Exception:
-            status[name] = "error"
-            return default
+            if factory is None or name not in OM_RETRY_PROVIDERS:
+                status[name] = "error"
+                return default
+            try:
+                if OM_RETRY_BACKOFF_S > 0:
+                    await asyncio.sleep(OM_RETRY_BACKOFF_S)
+                return await once(factory(), _om_retry_timeout(timeout))
+            except Exception:
+                status[name] = "error"
+                return default
 
     async def run_pair(name: str, coro, default, timeout: float = 3.5):
         if is_disabled(name):
@@ -173,7 +204,7 @@ async def gather_observations(
 
     if not enrich:
         om, caps = await asyncio.gather(
-            run("open-meteo", open_meteo.forecast(loc.lat, loc.lon), {}, timeout=2.0),
+            run("open-meteo", lambda: open_meteo.forecast(loc.lat, loc.lon), {}, timeout=2.0),
             run("imd-cap", cached_nat("nat:imd-cap", imd.cap_alerts, 900), [], timeout=1.2),
         )
         out = _blank_obs()
@@ -209,7 +240,7 @@ async def gather_observations(
         era5,
         imerg_live,
     ) = await asyncio.gather(
-        run("open-meteo", open_meteo.forecast(loc.lat, loc.lon), {}, timeout=4.0),
+        run("open-meteo", lambda: open_meteo.forecast(loc.lat, loc.lon), {}, timeout=4.0),
         run("open-meteo-flood", open_meteo.flood(loc.lat, loc.lon), {}, timeout=2.5),
         run("open-meteo-air", open_meteo.air_quality(loc.lat, loc.lon), {}, timeout=2.5),
         run("open-meteo-marine", marine_bundle(), {}, timeout=2.5),
@@ -228,7 +259,7 @@ async def gather_observations(
         run("mosdac", mosdac.fetch_live(), {}, timeout=2.0),
         run_pair("sachet", sachet.alerts_fast(loc.state, budget_s=2.0), [], timeout=2.5),
         run_pair("imd-port", port_signal.hooghly(), {}, timeout=2.0),
-        run("open-meteo-models", open_meteo.forecast_models(loc.lat, loc.lon), {}, timeout=3.0),
+        run("open-meteo-models", lambda: open_meteo.forecast_models(loc.lat, loc.lon), {}, timeout=3.0),
         run("nasa-power-clim", nasa_power.daily_years(loc.lat, loc.lon, 8), {}, timeout=2.5),
         run("era5", open_meteo.era5_context(loc.lat, loc.lon), {}, timeout=2.5),
         run("gpm-imerg", gpm_imerg.fetch_pin(loc.lat, loc.lon, heavy=False), {}, timeout=1.5),

@@ -96,6 +96,17 @@ export default function Page() {
 
   const [analyticsSubTab, setAnalyticsSubTab] = useState<"metrics" | "nowcast" | "forecast">("metrics");
   const [dataSubTab, setDataSubTab] = useState<"meteorology" | "environment" | "hydrology" | "seismology" | "agriculture" | "risks">("meteorology");
+  const [forecastRetrying, setForecastRetrying] = useState(false);
+
+  async function retryLiveForecast() {
+    if (forecastRetrying) return;
+    setForecastRetrying(true);
+    try {
+      await refresh({ force: true });
+    } finally {
+      setForecastRetrying(false);
+    }
+  }
 
   useEffect(() => {
     refresh();
@@ -235,6 +246,14 @@ export default function Page() {
               <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
               <span>Live forecast link busy. Displaying India Climatology &amp; Regional AI Synthesis.</span>
             </span>
+              <button
+                type="button"
+                className="neo-btn shrink-0 px-2 py-0.5 text-[11px] font-semibold disabled:cursor-wait disabled:opacity-70"
+                disabled={forecastRetrying}
+                onClick={() => void retryLiveForecast()}
+              >
+                {forecastRetrying ? "Retrying…" : "Retry"}
+              </button>
           </div>
         ) : dashboard?.provider_status?.["open-meteo"] === "error" ? (
           <div className="flex items-center justify-between gap-2 rounded-xl bg-amber-500/10 border border-amber-500/25 px-3.5 py-2 text-xs text-amber-800 dark:text-amber-300 shadow-xs" role="status">
@@ -242,6 +261,14 @@ export default function Page() {
               <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
               <span>Weather model link busy. Displaying synthesized regional meteorological telemetry.</span>
             </span>
+              <button
+                type="button"
+                className="neo-btn shrink-0 px-2 py-0.5 text-[11px] font-semibold disabled:cursor-wait disabled:opacity-70"
+                disabled={forecastRetrying}
+                onClick={() => void retryLiveForecast()}
+              >
+                {forecastRetrying ? "Retrying…" : "Retry"}
+              </button>
           </div>
         ) : null}
 

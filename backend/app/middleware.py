@@ -56,6 +56,10 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
         if resp.status_code >= 400:
             resp.headers["Cache-Control"] = "no-store"
             return resp
+        flag = (request.query_params.get("refresh") or "").strip().lower()
+        if flag in {"1", "true", "yes", "on"}:
+            resp.headers["Cache-Control"] = "no-store"
+            return resp
         sub = _strip(request.url.path)
         for suffix, value in _CACHE_RULES:
             if sub == suffix or sub.startswith(suffix + "?"):

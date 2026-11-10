@@ -80,16 +80,17 @@ async def dashboard(
     locale: str = "en",
     disable: str | None = Query(default=None, description="Comma-separated provider/process IDs to bypass"),
     view: str = Query(default="full", pattern="^(full|core)$"),
+    refresh: bool = Query(default=False, description="Bypass snapshot cache and refetch the live forecast"),
 ):
     disabled_set = {d.strip().lower() for d in disable.split(",")} if disable else None
     if view == "core":
         from app.services.snapshot import build_core, slim_dump
 
-        snap, is_full = await build_core(loc, locale, disabled=disabled_set)
+        snap, is_full = await build_core(loc, locale, disabled=disabled_set, refresh=refresh)
         body = slim_dump(snap)
         body["enriching"] = not is_full
         return body
-    snap = await build_snapshot(loc, locale, full=True, disabled=disabled_set)
+    snap = await build_snapshot(loc, locale, full=True, disabled=disabled_set, refresh=refresh)
     return snap.model_dump()
 
 
@@ -122,9 +123,10 @@ async def dashboard_enrich(
     loc: Location = Depends(loc_from_query),
     locale: str = "en",
     disable: str | None = Query(default=None, description="Comma-separated provider/process IDs to bypass"),
+    refresh: bool = Query(default=False, description="Bypass snapshot cache and refetch the live forecast"),
 ):
     disabled_set = {d.strip().lower() for d in disable.split(",")} if disable else None
-    snap = await build_snapshot(loc, locale, full=True, disabled=disabled_set)
+    snap = await build_snapshot(loc, locale, full=True, disabled=disabled_set, refresh=refresh)
     return snap.model_dump()
 
 

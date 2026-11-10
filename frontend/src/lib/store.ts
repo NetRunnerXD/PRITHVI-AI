@@ -263,7 +263,7 @@ type State = {
   setTab: (t: TabId) => void;
   setLocation: (l: Location) => Promise<void>;
   toggleFavorite: (l: Location) => void;
-  refresh: () => Promise<void>;
+  refresh: (opts?: { force?: boolean }) => Promise<void>;
   quietRefresh: () => Promise<void>;
   applySnapshot: (d: DashboardSnapshot) => void;
   addChat: (m: ChatMsg) => void;
@@ -302,9 +302,9 @@ type GetFn = () => State;
  * waiting for the client Open-Meteo + USGS/POWER downloads first (that serial wait plus a
  * 13 s full build made a new place take ~30 s on a slow link). The client Open-Meteo pack is
  * still fetched in parallel, but only to paint an optimistic shell sooner. */
-async function hydrate(loc: Location | undefined, ac: AbortController, set: SetFn, get: GetFn): Promise<DashboardSnapshot | null> {
+async function hydrate(loc: Location | undefined, ac: AbortController, set: SetFn, get: GetFn, refresh = false): Promise<DashboardSnapshot | null> {
   const disabled = get().settings.devDisabledProviders || [];
-  if (loc) {
+  if (loc && !refresh) {
     void loadOmPack(loc, disabled)
       .then((om) => {
         if (om && dashAbort === ac && get().syncStatus === "syncing") {
@@ -313,7 +313,7 @@ async function hydrate(loc: Location | undefined, ac: AbortController, set: SetF
       })
       .catch(() => undefined);
   }
-  const core = await fetchDashboardCore(loc, ac.signal, disabled);
+  const core = await fetchDashboardCore(loc, ac.signal, disabled, refresh);
   if (dashAbort !== ac) return null;
   const apply = (d: DashboardSnapshot, done: boolean) => {
     if (!d.enriching) writeCachedSnapshot(d);
@@ -331,7 +331,7 @@ async function hydrate(loc: Location | undefined, ac: AbortController, set: SetF
   apply(core, !core.enriching);
   if (!core.enriching) return core;
   try {
-    const full = await fetchDashboardEnrich(loc || core.location, ac.signal, disabled);
+    const full = await fetchDashboardEnrich(loc || core.location, ac.signal, disabled, refresh);
     if (dashAbort !== ac) return core;
     apply(full, true);
     return full;
@@ -505,7 +505,8 @@ export const useApp = create<State>((set, get) => ({
       }
     }
   },
-  refresh: async () => {
+  refresh: async (opts) => {
+    const force = Boolean(opts?.force);
     const ac = new AbortController();
     const prev = dashAbort;
     dashAbort = ac;
@@ -551,10 +552,10 @@ export const useApp = create<State>((set, get) => ({
     }
 
     try {
-      const dashboard = await hydrate(loc || undefined, ac, set, get);
+      const dashboard = await hydrate(loc || undefined, ac, set, get, force);
       if (!dashboard) return;
       if (defaultedLocId === "pending") defaultedLocId = dashboard.location.id;
-      prefetchPlaces(get);
+      if (!force) prefetchPlaces(get);
     } catch (e) {
       if (ac.signal.aborted || dashAbort !== ac) return;
       if (get().dashboard) {
