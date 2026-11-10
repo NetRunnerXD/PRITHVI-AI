@@ -81,3 +81,34 @@ def test_peek_does_not_kick_when_cloud_has_stale_pack(monkeypatch):
     hit = sl.peek(kick=True)
     assert hit and hit["cells"] == [1]
     assert kicked["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_estimate_builds_prev_frame_after_freeing_arrays(monkeypatch):
+    """Regression: do not reference `prev` after del in the return dict."""
+    from datetime import datetime, timezone
+
+    async def fake_pair(*_a, **_k):
+        t = datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc)
+        cur = __import__("numpy").full((10, 10), 250.0)
+        prev = __import__("numpy").full((10, 10), 255.0)
+        return t, cur, prev
+
+    def fake_score(cur, prev, dt):
+        import numpy as np
+        return {"p": np.zeros(cur.shape, np.float32), "cool": np.full(cur.shape, np.nan), "ot": np.zeros(cur.shape, bool)}
+
+    def fake_boxes(*_a, **_k):
+        return [], None
+
+    async def fake_env(points, when):
+        return []
+
+    monkeypatch.setattr(sl, "_pair", fake_pair)
+    monkeypatch.setattr(sl, "score", fake_score)
+    monkeypatch.setattr(sl, "boxes", fake_boxes)
+    monkeypatch.setattr(sl, "env_at", fake_env)
+    pack = await sl.estimate(bbox=sl.INDIA_BBOX)
+    assert pack["ok"] is True
+    assert pack["prev_frame"]
+    assert "cells" in pack
