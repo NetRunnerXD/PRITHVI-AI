@@ -16,18 +16,31 @@ from app.data.closed_class import is_closed_query, is_closed_token, is_time_only
 from app.data.india_districts import is_state_name, match_states
 from app.services.location_svc import resolve_named_place
 
-_RAIN = ("rain", "precip", "shower", "monsoon", "rainfall", "downpour", "mm ")
+_RAIN = (
+    "rain", "precip", "shower", "monsoon", "rainfall", "downpour", "mm ",
+    "baarish", "barish", "barsaat", "barsha", "brishti", "बारिश", "বৃষ্টি", "বর্ষা",
+)
 _NOW = ("nowcast", "next 2", "next two", "hour", "hours", "tonight", "pump", "onset", "should i irrigat", "irrigate now")
-_AQI = ("aqi", "air quality", "pollution", "pm2", "smog", "the air", "air bad")
+_AQI = (
+    "aqi", "air quality", "pollution", "pm2", "smog", "the air", "air bad",
+    "pradushan", "hawa kaisi", "प्रदूषण", "বায়ু",
+)
 _MANDI = ("mandi", "agmark", "quintal", "modal price")
-_WARN = ("warning", "imd cap", "alert", "tsunami", "earthquake", "quake", "watch", "hazard")
+_WARN = (
+    "warning", "imd cap", "alert", "tsunami", "earthquake", "quake", "watch", "hazard",
+    "khatra", "chetavani", "chetaavni", "bipod", "বিপদ", "खतरा", "चेतावनी",
+)
 _RISK = ("risk", "risks", "flood risk", "heat risk", "drought risk")
 _FORE = ("7 day", "seven day", "outlook", "next 3 day", "next three", "week ahead")
 _RANK = ("rank", "ranking", "which district", "worst", "most flood", "prone")
 _VISIT = ("visit", "tourist", "tourism", "holiday", "vacation", "trip", "best place", "best places")
 _PET = ("pet", "dog", "cat", "elephant", "tiger", "puppy", "animal")
 _PET_ACT = ("take", "island", "islands", "outing", "walk", "zoo", "safari", "bring")
-_WX_NOW = ("weather", "temperature", "temp ", "how is the sky", "current condition", "conditions in")
+_WX_NOW = (
+    "weather", "temperature", "temp ", "how is the sky", "current condition", "conditions in",
+    "mausam", "mousam", "hawaman", "abohawa", "abohaowa", "ka haal", "kya haal", "ka hal",
+    "मौसम", "आबहवा", "আবহাওয়া", "আবহাওয়া",
+)
 _OUTDOOR = (
     "skydive", "sky div", "sky-div", "paraglid", "hang glid", "glide",
     "hike", "hiking", "trek", "picnic", "cricket match", "play cricket",

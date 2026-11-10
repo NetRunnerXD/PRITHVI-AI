@@ -37,6 +37,27 @@ OM = "https://api.open-meteo.com/v1/forecast"
 CK = "satltg:v1"
 _LOCK = asyncio.Lock()
 _TASK: asyncio.Task | None = None
+# India (same box as GIBS IR). Global 50S–50N × 360° mosaics are too big for a 512 MiB API.
+INDIA_BBOX = (5.0, 65.0, 38.0, 100.0)
+WORLD_BBOX = (-50.0, -180.0, 50.0, 180.0)
+
+
+def default_bbox() -> tuple[float, float, float, float]:
+    from app.config import cloud_light
+
+    return INDIA_BBOX if cloud_light() else WORLD_BBOX
+
+
+def validate_enabled() -> bool:
+    """IMERG skill scoring is research-only and memory-heavy; skip it on cloud."""
+    import os
+
+    raw = (os.environ.get("SATLTG_VALIDATE") or "").strip().lower()
+    if raw:
+        return raw in {"1", "true", "yes", "on"}
+    from app.config import cloud_light
+
+    return not cloud_light()
 
 
 def _tb(png: bytes) -> np.ndarray:
@@ -221,10 +242,11 @@ async def _pair(t_candidates: list[datetime], bbox, res):
     return None, None, None
 
 
-async def estimate(bbox=(-50.0, -180.0, 50.0, 180.0), res: float = 0.2, k: int = 5, when: datetime | None = None) -> dict[str, Any]:
+async def estimate(bbox=None, res: float = 0.2, k: int = 5, when: datetime | None = None) -> dict[str, Any]:
+    bbox = tuple(bbox) if bbox is not None else default_bbox()
     t, cur, prev = await _pair(_times(when), bbox, res)
     if cur is None:
-        return {"ok": False, "status": "no_ir_frame"}
+        return {"ok": False, "status": "no_ir_frame", "bbox": bbox}
     sc = await asyncio.to_thread(score, cur, prev, 20.0)
     cand, _ = await asyncio.to_thread(boxes, sc, cur, bbox, res, k)
     # 10°W–60°E is either the extreme GOES-East limb or uncovered (no Meteosat in GIBS).
@@ -240,6 +262,8 @@ async def estimate(bbox=(-50.0, -180.0, 50.0, 180.0), res: float = 0.2, k: int =
         cells.append({**c, "cape": ev.get("cape"), "li": ev.get("li"), "score": round(p, 3),
                       "category": "likely" if p >= 0.5 else "possible"})
     cover = float(np.isfinite(cur).mean())
+    # Free the mosaics before we return; they can be tens of MiB globally.
+    del cur, prev, sc
     return {
         "ok": True,
         "kind": "satellite-estimated lightning likelihood (not detected strikes)",
@@ -318,37 +342,79 @@ async def validate(n_hours: int = 3) -> dict[str, Any]:
 
 
 async def refresh() -> dict[str, Any]:
-    async with _LOCK:
-        hit = cache.get(CK)
-        if isinstance(hit, dict) and time.time() - float(hit.get("_ts", 0)) < 15 * 60:
-            return hit
-        try:
-            pack = await estimate()
-        except Exception as e:  # noqa: BLE001
-            pack = {"ok": False, "status": "error", "error": str(e)[:200]}
-        val = cache.get(CK + ":val")
-        if not isinstance(val, dict) or time.time() - float(val.get("_ts", 0)) > 3600:
+    from app.heavy import slot
+
+    async with slot():
+        async with _LOCK:
+            hit = cache.get(CK)
+            if isinstance(hit, dict) and time.time() - float(hit.get("_ts", 0)) < 15 * 60:
+                return hit
             try:
-                val = await validate(3)
+                pack = await estimate()
             except Exception as e:  # noqa: BLE001
-                val = {"ok": False, "status": "error", "error": str(e)[:200]}
-            val["_ts"] = time.time()
-            cache.set(CK + ":val", val, 6 * 3600)
-        tot = (val or {}).get("total") or {}
-        pack["validation"] = {k: v for k, v in val.items() if not k.startswith("_")}
-        # Confidence shown to users = measured success ratio (1 − FAR) of the 'likely' class.
-        lk = tot.get("likely") or {}
-        pack["confidence"] = None if lk.get("far") is None else round(1 - lk["far"], 3)
-        pack["_ts"] = time.time()
-        cache.set(CK, pack, 3 * 3600)
-        return pack
+                pack = {"ok": False, "status": "error", "error": str(e)[:200]}
+            val = cache.get(CK + ":val")
+            if validate_enabled() and (
+                not isinstance(val, dict) or time.time() - float(val.get("_ts", 0)) > 3600
+            ):
+                try:
+                    val = await validate(3)
+                except Exception as e:  # noqa: BLE001
+                    val = {"ok": False, "status": "error", "error": str(e)[:200]}
+                val["_ts"] = time.time()
+                cache.set(CK + ":val", val, 6 * 3600)
+            elif not isinstance(val, dict):
+                val = {"ok": False, "status": "skipped_on_cloud"}
+            tot = (val or {}).get("total") or {}
+            pack["validation"] = {k: v for k, v in (val or {}).items() if not k.startswith("_")}
+            # Confidence shown to users = measured success ratio (1 − FAR) of the 'likely' class.
+            lk = tot.get("likely") or {}
+            pack["confidence"] = None if lk.get("far") is None else round(1 - lk["far"], 3)
+            pack["_ts"] = time.time()
+            cache.set(CK, pack, 3 * 3600)
+            try:
+                from app.store import shared_packs
+
+                shared_packs.save_lightning(pack)
+            except Exception:
+                pass
+            return pack
+
+
+def _from_mongo() -> dict[str, Any] | None:
+    try:
+        from app.store import shared_packs
+
+        hit = shared_packs.load_lightning()
+    except Exception:
+        return None
+    if isinstance(hit, dict):
+        if "_ts" not in hit:
+            hit = dict(hit)
+            hit["_ts"] = float(hit.get("saved_at") or time.time())
+        cache.set(CK, hit, 15 * 60)
+        return hit
+    return None
 
 
 def peek(kick: bool = True) -> dict[str, Any] | None:
     global _TASK
     hit = cache.get(CK)
-    fresh = isinstance(hit, dict) and time.time() - float(hit.get("_ts", 0)) < 15 * 60
+    if not isinstance(hit, dict):
+        hit = cache.peek(CK)
+    if not isinstance(hit, dict):
+        hit = _from_mongo()
+    fresh = isinstance(hit, dict) and time.time() - float(hit.get("_ts") or hit.get("saved_at") or 0) < 15 * 60
     if kick and not fresh and (_TASK is None or _TASK.done()):
+        # On cloud, a slightly stale ingest pack is enough — do not start a mosaic here.
+        if isinstance(hit, dict):
+            try:
+                from app.config import cloud_light
+
+                if cloud_light():
+                    return hit
+            except Exception:
+                pass
         try:
             _TASK = asyncio.get_running_loop().create_task(refresh())
         except RuntimeError:

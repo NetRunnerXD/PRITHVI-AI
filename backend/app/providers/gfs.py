@@ -51,11 +51,9 @@ def decode_enabled() -> bool:
     raw = (os.environ.get("GFS_DECODE_ENABLED") or "").strip().lower()
     if raw:
         return raw in {"1", "true", "yes", "on"}
-    if (os.environ.get("CLOUD_LIGHT") or "").strip().lower() in {"1", "true", "yes", "on"}:
-        return False
-    if (os.environ.get("RENDER") or "").strip():
-        return False
-    return True
+    from app.config import cloud_light
+
+    return not cloud_light()
 
 
 def _dir() -> Path:

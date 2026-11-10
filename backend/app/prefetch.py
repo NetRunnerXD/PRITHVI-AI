@@ -25,6 +25,17 @@ JOBS: tuple[tuple[str, float], ...] = (
     ("sachet_states", 1800.0),
     ("default_pin", 540.0),
 )
+# IR decode + all-India storm-map already run on the ingest service. Doing them again
+# in the API process is what pushed rituchakra-api from ~100 MiB to 420+ MiB.
+_CLOUD_SKIP = frozenset({"insat", "gibs", "storm_india"})
+
+
+def active_jobs() -> tuple[tuple[str, float], ...]:
+    from app.config import cloud_light
+
+    if cloud_light():
+        return tuple(j for j in JOBS if j[0] not in _CLOUD_SKIP)
+    return JOBS
 
 
 async def _run(name: str) -> None:
@@ -70,8 +81,9 @@ async def _run(name: str) -> None:
 
 async def prefetch_loop() -> None:
     await asyncio.sleep(float(os.environ.get("PREFETCH_DELAY_S") or 20))
-    due = {name: 0.0 for name, _ in JOBS}
-    period = dict(JOBS)
+    jobs = active_jobs()
+    due = {name: 0.0 for name, _ in jobs}
+    period = dict(jobs)
     while True:
         now = time.monotonic()
         for name in list(due):

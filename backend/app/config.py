@@ -141,6 +141,17 @@ def get_settings() -> Settings:
     return Settings()
 
 
+def cloud_light() -> bool:
+    """True on Render or when CLOUD_LIGHT=1: skip heavy in-process work (GRIB, global
+    lightning mosaics, IR prefetch) and read ingest-persisted storm/lightning packs."""
+    import os
+
+    raw = (os.environ.get("CLOUD_LIGHT") or "").strip().lower()
+    if raw:
+        return raw in {"1", "true", "yes", "on"}
+    return bool((os.environ.get("RENDER") or "").strip())
+
+
 def _export_runtime_flags() -> None:
     """Feature flags read via os.environ (PN_*, INGEST_*) are not Settings fields, so a
     local backend/.env would be ignored for them. Export only those prefixes, never

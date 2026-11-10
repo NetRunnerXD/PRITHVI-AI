@@ -112,9 +112,24 @@ async def run_cycle() -> dict[str, Any]:
             ingest_status.update(satellite={"id": "imerg", "status": "fail", "detail": detail})
 
         ingest_status.update(phase="predict", satellite={"id": "gibs", "status": "fetching"})
+        try:
+            from app.science import sat_lightning
+
+            ltg = await sat_lightning.refresh()
+            from app.store import shared_packs
+
+            shared_packs.save_lightning(ltg)
+        except Exception:
+            pass
         from app.science.storm_map import build as build_storm_map
 
         pack = await build_storm_map("India", past_h=12)
+        try:
+            from app.store import shared_packs
+
+            shared_packs.save_storm(pack)
+        except Exception:
+            pass
         ingest_status.update(
             satellite={
                 "id": "gibs",

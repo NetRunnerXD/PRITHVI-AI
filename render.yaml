@@ -62,8 +62,10 @@ services:
         sync: false
       - key: WEATHERBIT_API_KEY
         sync: false
-      - key: PN_ENABLED
+      - key: CLOUD_LIGHT
         value: "1"
+      - key: PN_ENABLED
+        value: "0"
       - key: PN_VERSION
         value: "v7"
       - key: PN_CORRECT_ENABLED
