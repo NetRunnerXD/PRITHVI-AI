@@ -83,6 +83,7 @@ async def map_gfs_meta(hour: int = Query(default=0, ge=-12, le=24)):
     """Worldwide GFS background: newest complete cycle, chosen step, de-quantisation."""
     from app.providers import gfs
 
+    await gfs.ensure(hour)
     return gfs.meta(hour)
 
 
@@ -93,6 +94,7 @@ async def map_gfs_png(field: str, step: int = Query(ge=0, le=24), cycle: str | N
 
     if field not in gfs.QUANT:
         raise HTTPException(404, "unknown field")
+    await gfs.ensure(step)
     blob = gfs.png(field, step)
     if blob is None:
         raise HTTPException(404, "not loaded")

@@ -123,3 +123,20 @@ def test_successful_download_writes_file(tmp_path, monkeypatch):
         assert fetch.main() == 0
     assert dest.is_file() and dest.stat().st_size == 2048
     assert calls["n"] == 2
+
+
+def test_skip_when_pn_disabled(monkeypatch, capsys):
+    monkeypatch.setenv("PN_ENABLED", "0")
+    monkeypatch.delenv("PN_MODEL_DOWNLOAD_TOKEN", raising=False)
+    with patch("urllib.request.urlopen") as urlopen:
+        assert fetch.main() == 0
+        urlopen.assert_not_called()
+    assert "PN_ENABLED not set; skip" in capsys.readouterr().out
+
+
+def test_skip_when_pn_enabled_unset(monkeypatch, capsys):
+    monkeypatch.delenv("PN_ENABLED", raising=False)
+    with patch("urllib.request.urlopen") as urlopen:
+        assert fetch.main() == 0
+        urlopen.assert_not_called()
+    assert "PN_ENABLED not set; skip" in capsys.readouterr().out

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ReplyLangSelect } from "./ReplyLangSelect";
 import { COPY, type Locale } from "@/i18n/copy";
-import { apiUrl, SHOW_DEV } from "@/lib/config";
+import { apiUrl, SHOW_DEV, defaultLlmProvider } from "@/lib/config";
 import { gpsFix, patchAlertLocation, patchProfile } from "@/lib/auth";
 import { useApp } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
@@ -56,7 +56,7 @@ export function SettingsPanel() {
     })),
   );
   const t = COPY[locale];
-  const [llms, setLlms] = useState<LlmRow[]>([{ id: "ollama", model: "qwen2.5:3b" }]);
+  const [llms, setLlms] = useState<LlmRow[]>([{ id: defaultLlmProvider(), model: defaultLlmProvider() === "gemini" ? "gemini-3.1-flash-lite" : "qwen2.5:3b" }]);
   useEffect(() => {
     let stop = false;
     fetch(apiUrl("/health"))
@@ -385,7 +385,7 @@ export function SettingsPanel() {
           {t.advisorModel}
           <select
             className="neo-in mt-1 w-full px-3 py-2"
-            value={settings.llmProvider === "ollama" ? "local" : settings.llmProvider || "local"}
+            value={settings.llmProvider === "ollama" ? "local" : settings.llmProvider || defaultLlmProvider()}
             onChange={(e) => setSettings({ llmProvider: e.target.value })}
           >
             {llms.map((row) => (

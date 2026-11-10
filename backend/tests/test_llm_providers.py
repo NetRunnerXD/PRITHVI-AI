@@ -452,3 +452,28 @@ def _s(**over):
 
     base = Settings()
     return base.model_copy(update=over)
+
+
+def test_catalog_surfaces_gemini_when_loopback_skipped(monkeypatch):
+    """Web settings should not advertise a loopback Ollama as the active advisor."""
+    s = _s(
+        gemini_api_key="secret",
+        llm_provider="ollama",
+        public_base_url="https://rituchakra-api.onrender.com",
+        llm_fallback="gemini,groq",
+    )
+    monkeypatch.setattr("app.llm.providers.get_settings", lambda: s)
+    monkeypatch.setattr("app.llm.ollama_client.get_settings", lambda: s)
+    monkeypatch.setattr("app.llm.ollama_client.hub.status", lambda: {"online": False})
+    from app.llm import ollama_client
+
+    cat = ollama_client.catalog()
+    assert cat["active"] == "gemini"
+    assert cat["model"]
+    local = next(r for r in cat["settings"] if r["id"] == "local")
+    assert local["ok"] is False
+    gem = next(r for r in cat["settings"] if r["id"] == "gemini")
+    assert gem["ok"] is True
+    # Fallback chain / resolve() defaults are unchanged.
+    assert registry.resolve(None, s).id == "ollama"
+    assert registry.fallback_ids(s)[0] == "gemini"

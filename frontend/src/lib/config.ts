@@ -29,4 +29,18 @@ export const SHOW_DEV =
   process.env.SHOW_DEV === "true" ||
   process.env.SHOW_DEV === "True";
 
+/** True when this web client talks to a hosted API (Vercel → Render), not a local PC. */
+export function isRemoteApi(): boolean {
+  if (!API_BASE) return false;
+  try {
+    const host = new URL(API_BASE).hostname;
+    return host !== "localhost" && host !== "127.0.0.1" && host !== "::1";
+  } catch {
+    return false;
+  }
+}
 
+/** Web default advisor: Gemini on the hosted API, local Ollama on a PC. */
+export function defaultLlmProvider(): "gemini" | "local" {
+  return isRemoteApi() ? "gemini" : "local";
+}
