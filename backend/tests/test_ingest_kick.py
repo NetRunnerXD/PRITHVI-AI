@@ -56,6 +56,8 @@ def test_due_token_runs_when_stale_even_if_slot_file_exists(monkeypatch, tmp_pat
 
 
 def test_snapshot_prefers_newer_memory_over_stale_mongo():
+    with ingest_status._view_lock:
+        ingest_status._mongo_view.clear()
     class _Col:
         def find_one(self, *args, **kwargs):
             return {
@@ -98,6 +100,8 @@ def test_snapshot_prefers_newer_memory_over_stale_mongo():
 
 
 def test_snapshot_uses_fresher_mongo_doc():
+    with ingest_status._view_lock:
+        ingest_status._mongo_view.clear()
     class _Col:
         def find_one(self, *args, **kwargs):
             return {
@@ -183,3 +187,94 @@ def test_cloud_storm_map_does_not_rebuild_when_pack_missing(monkeypatch):
     body = r.json()
     assert body["source"] == "ingest-pack-pending"
     assert built["n"] == 0
+
+
+def test_write_does_not_block_on_slow_mongo(monkeypatch):
+    import time
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+
+    class Slow:
+        def replace_one(self, *args, **kwargs):
+            started.set()
+            release.wait(5)
+            return None
+
+        def find_one(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setenv("INGEST_STATUS_PERSIST_TEST", "1")
+    with ingest_status._view_lock:
+        ingest_status._mongo_view.clear()
+    with ingest_status._lock:
+        prev = dict(ingest_status._MEM)
+    try:
+        with patch("app.store.ingest_status.sat_mongo.col", return_value=Slow()):
+            t0 = time.monotonic()
+            cid = ingest_status.begin([{"id": "imd_ir1", "name": "INSAT"}])
+            assert time.monotonic() - t0 < 0.3
+            assert ingest_status._MEM["cycle_id"] == cid
+            assert ingest_status.snapshot()["cycle_id"] == cid
+            assert started.wait(2)
+            release.set()
+            assert ingest_status.flush_persist(timeout_s=2)
+    finally:
+        release.set()
+        with ingest_status._lock:
+            ingest_status._MEM.clear()
+            ingest_status._MEM.update(prev)
+        with ingest_status._view_lock:
+            ingest_status._mongo_view.clear()
+
+
+def test_finish_persists_and_snapshot_reads_mongo_when_mem_empty(monkeypatch):
+    store: dict = {}
+
+    class Col:
+        def replace_one(self, _filt, doc, upsert=False):
+            store["doc"] = {k: v for k, v in doc.items() if k != "_id"}
+
+        def find_one(self, *args, **kwargs):
+            return dict(store.get("doc") or {})
+
+    monkeypatch.setenv("INGEST_STATUS_PERSIST_TEST", "1")
+    with ingest_status._view_lock:
+        ingest_status._mongo_view.clear()
+    with ingest_status._lock:
+        prev = dict(ingest_status._MEM)
+    try:
+        with patch("app.store.ingest_status.sat_mongo.col", return_value=Col()):
+            ingest_status.begin([{"id": "imd_ir1", "name": "INSAT"}])
+            ingest_status.update(satellite={"id": "imd_ir1", "status": "ok"})
+            ingest_status.finish(ok=True, data_time="2026-11-10T14:50:10+00:00")
+            assert store.get("doc", {}).get("phase") == "ready"
+            with ingest_status._lock:
+                ingest_status._MEM.clear()
+                ingest_status._MEM.update(
+                    {
+                        "cycle_id": None,
+                        "phase": "idle",
+                        "ready": True,
+                        "message": "",
+                        "satellites": [],
+                        "started_ms": None,
+                        "updated_ms": None,
+                    }
+                )
+            with ingest_status._view_lock:
+                ingest_status._mongo_view.clear()
+            with patch("app.store.ingest_status._overlay_mongo", return_value=True):
+                snap = ingest_status.snapshot()
+        assert snap["cycle_id"]
+        assert snap["phase"] == "ready"
+        assert any(s.get("id") == "imd_ir1" for s in snap["satellites"])
+        assert snap["data_time"] == "2026-11-10T14:50:10+00:00"
+        assert snap["finished_at"]
+    finally:
+        with ingest_status._lock:
+            ingest_status._MEM.clear()
+            ingest_status._MEM.update(prev)
+        with ingest_status._view_lock:
+            ingest_status._mongo_view.clear()

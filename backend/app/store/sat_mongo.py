@@ -49,11 +49,13 @@ def db():
     return c[db_name()]
 
 
-def col(name: str):
+def col(name: str, *, ensure: bool = False):
+    """Return a collection. Index setup stays off the request/event-loop path."""
     database = db()
     if database is None:
         return None
-    _ensure_indexes(database)
+    if ensure:
+        _ensure_indexes(database)
     return database[name]
 
 
