@@ -7,12 +7,15 @@ slot only when that slot has no saved frame.
 from __future__ import annotations
 
 import asyncio
+import logging
 import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.config import get_settings
+
+log = logging.getLogger("app.ingest")
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -91,12 +94,19 @@ def record_slot_frame(*, jpeg_time=None, hem_time=None, now: datetime | None = N
     return True
 
 
-def due_token(now: datetime, attempted: set[str]) -> str | None:
-    """One opening attempt before slot+10min, one retry after, while the slot file is missing."""
+def due_token(now: datetime, attempted: set[str], *, is_stale: bool = False) -> str | None:
+    """One opening attempt before slot+10min, one retry after, while the slot file is missing.
+
+    When ``is_stale`` is true (no fresh shared pack / empty ingest status), a
+    restart still runs the current slot even if a slot file already exists —
+    the file only means a frame was downloaded, not that packs were published.
+    """
     key, _start, _nxt, retry = slot_bounds(now)
-    if slot_has_frame(key):
+    if slot_has_frame(key) and not is_stale:
         return None
     token = key if now.astimezone(IST) < retry else f"{key}:retry"
+    if is_stale and token in attempted:
+        token = f"{key}:stale"
     if token in attempted:
         return None
     return token
@@ -115,20 +125,49 @@ def sleep_s(now: datetime, attempted: set[str]) -> float:
     return max(1.0, min(seconds_until(now, t) for t in targets))
 
 
+def _status_stale() -> bool:
+    """True when this process has no usable cycle or the shared storm pack is missing/old."""
+    try:
+        from app.store import ingest_status
+        from app.store import shared_packs
+
+        snap = ingest_status.snapshot()
+        if not snap.get("cycle_id") or snap.get("stale") or snap.get("phase") in {"idle", "error"}:
+            return True
+        pack = shared_packs.load_storm(max_age_s=shared_packs.STORM_FRESH_S)
+        return pack is None
+    except Exception:
+        return True
+
+
 async def _clock_loop() -> None:
     from app.ingest.cycle import run_cycle
 
     attempted: set[str] = set()
+    boot = True
     while True:
         now = datetime.now(timezone.utc)
-        token = due_token(now, attempted)
+        stale = _status_stale()
+        token = due_token(now, attempted, is_stale=stale or boot)
         if token:
             try:
-                await run_cycle()
+                log.info("ingest cycle start token=%s stale=%s boot=%s", token, stale, boot)
+                result = await run_cycle()
+                log.info(
+                    "ingest cycle finish token=%s ok=%s cycle_id=%s",
+                    token,
+                    (result or {}).get("ok"),
+                    (result or {}).get("cycle_id"),
+                )
             except Exception:
-                pass
+                log.exception("ingest cycle failed token=%s", token)
             attempted.add(token)
-        await asyncio.sleep(sleep_s(datetime.now(timezone.utc), attempted))
+        boot = False
+        delay = sleep_s(datetime.now(timezone.utc), attempted)
+        if stale and delay > 10 * 60:
+            # Don't wait a full half-hour to republish a missing pack.
+            delay = 10 * 60.0
+        await asyncio.sleep(delay)
 
 
 async def ingest_loop() -> None:
@@ -137,12 +176,31 @@ async def ingest_loop() -> None:
 
 def embedded_mode() -> str:
     """INGEST_EMBEDDED: 'auto' (default) = run cycles in the API process only while no
-    dedicated worker keeps the shared status fresh; '1' = always; '0' = never."""
+    dedicated worker keeps the shared status fresh; '1' = always; '0' = never.
+
+    Auto turns off when INGEST_BASE_URL is set or the API is running in
+    CLOUD_LIGHT/Render — those hosts must not rebuild IR in-process.
+    """
     v = (os.environ.get("INGEST_EMBEDDED") or "auto").strip().lower()
     if v in {"0", "false", "no", "off"}:
         return "off"
     if v in {"1", "true", "yes", "on", "always"}:
         return "on"
+    try:
+        from app.ingest.kick import ingest_base_url
+
+        if ingest_base_url():
+            return "off"
+    except Exception:
+        pass
+    try:
+        from app.config import cloud_light
+
+        role = (get_settings().app_role or "api").strip().lower()
+        if cloud_light() and role != "ingest":
+            return "off"
+    except Exception:
+        pass
     return "auto"
 
 

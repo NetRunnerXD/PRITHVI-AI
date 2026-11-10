@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 from app.config import get_settings
@@ -10,6 +11,9 @@ from app.store import ingest_status
 from app.store.hazard_events import persist_pack_incidents, prune as prune_events
 from app.store.sat_frames import prune as prune_frames
 from app.store.time import iso_z, now_utc
+
+log = logging.getLogger("app.ingest.cycle")
+_cycle_lock = asyncio.Lock()
 
 SATELLITES = (
     {"id": "imd_ir1", "name": "INSAT-3DS IR1 JPEG"},
@@ -21,10 +25,20 @@ SATELLITES = (
 
 
 async def run_cycle() -> dict[str, Any]:
+    if _cycle_lock.locked():
+        snap = ingest_status.snapshot()
+        log.info("ingest cycle already running cycle_id=%s", snap.get("cycle_id"))
+        return {"ok": False, "status": "already_running", "cycle_id": snap.get("cycle_id")}
+    async with _cycle_lock:
+        return await _run_cycle()
+
+
+async def _run_cycle() -> dict[str, Any]:
     settings = get_settings()
     cid = ingest_status.begin(list(SATELLITES))
     now = now_utc()
     result: dict[str, Any] = {"cycle_id": cid, "as_of": iso_z(now), "ok": False}
+    log.info("ingest cycle begin cycle_id=%s as_of=%s", cid, result["as_of"])
 
     try:
         from app.providers import imd_insat, mosdac, gpm_imerg
@@ -115,7 +129,7 @@ async def run_cycle() -> dict[str, Any]:
         try:
             from app.science import sat_lightning
 
-            ltg = await sat_lightning.refresh()
+            ltg = await asyncio.wait_for(sat_lightning.refresh(), timeout=45)
             from app.store import shared_packs
 
             shared_packs.save_lightning(ltg)
@@ -172,8 +186,10 @@ async def run_cycle() -> dict[str, Any]:
         result["mosdac"] = mosdac_rows
         result["need_second_frame"] = pack.get("need_second_frame")
         ingest_status.finish(ok=True, message="")
+        log.info("ingest cycle ready cycle_id=%s ok=%s counts=%s", cid, result["ok"], result.get("counts"))
         return result
     except Exception as e:
         ingest_status.finish(ok=False, message=str(e)[:200])
         result["error"] = str(e)[:200]
+        log.exception("ingest cycle error cycle_id=%s err=%s", cid, result["error"])
         return result

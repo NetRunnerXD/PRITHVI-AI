@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     app_role: str = "api"
     ingest_on_cron: bool = True
     ingest_cron_secret: str = ""
+    # Dedicated ingest service the API can HTTP-kick when packs are stale.
+    # Empty = no kick (local/single-process). Render API sets the ingest URL.
+    ingest_base_url: str = ""
     mosdac_allow_l1b: bool = False
     jwt_secret: str = ""
     fast2sms_api_key: str = ""

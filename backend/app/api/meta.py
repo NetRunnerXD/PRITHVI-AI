@@ -131,6 +131,12 @@ async def health():
 async def ready():
     body = {"ok": True, "service": "prithvi-ai-api", "version": settings.api_version, "role": settings.app_role}
     try:
+        from app.store.sat_mongo import sat_mongo_ok
+
+        body["mongo_configured"] = bool(sat_mongo_ok())
+    except Exception:
+        body["mongo_configured"] = False
+    try:
         from app.store import ingest_status
 
         body["ingest"] = ingest_status.snapshot()
@@ -154,6 +160,18 @@ async def ready():
                 "age_s": None,
                 "as_of": None,
             }
+    # Visitors keep ingest fresh: cheap HTTP kick, throttled to 10 minutes.
+    try:
+        import os
+        from app.ingest.kick import kick_if_stale, pack_or_status_stale
+
+        role = (settings.app_role or "api").strip().lower()
+        if role != "ingest" and not os.environ.get("PYTEST_CURRENT_TEST") and pack_or_status_stale():
+            import asyncio
+
+            asyncio.create_task(kick_if_stale("ready-stale"))
+    except Exception:
+        pass
     return JSONResponse(body)
 
 
