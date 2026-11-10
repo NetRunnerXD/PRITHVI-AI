@@ -35,6 +35,8 @@ def _om_retry_timeout(timeout: float) -> float:
 
 
 def _status_for(val: Any) -> str:
+    if isinstance(val, dict) and (val.get("_client_seed") or val.get("source") == "client"):
+        return "client"
     if isinstance(val, dict) and val.get("_stale"):
         reason = str(val.get("_stale_reason") or "")
         source = str(val.get("source") or "")

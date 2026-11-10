@@ -41,6 +41,15 @@ def peek_snapshot(loc: Location) -> DashboardSnapshot | None:
     return hit if isinstance(hit, DashboardSnapshot) else None
 
 
+def drop_snapshots_for_pin(lat: float, lon: float) -> None:
+    """Drop snapshot cache for this pin so a fresh client seed is assembled next."""
+    la = round(round(float(lat) / 0.05) * 0.05, 2)
+    lo = round(round(float(lon) / 0.05) * 0.05, 2)
+    prefix = f"snap8:{la}:{lo}"
+    for k in cache.keys_prefix(prefix):
+        cache.delete(k)
+
+
 def _drop_location_caches(loc: Location, disabled: set[str] | None = None) -> None:
     """Forget snapshot and live forecast packs so a Retry hits Open-Meteo again."""
     key = pin_key(loc)
