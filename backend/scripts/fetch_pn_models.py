@@ -8,11 +8,16 @@ Uses ONLY these env vars (set in Render Dashboard; never commit values):
 
 Skips quietly when token unset or files already present. Does not use the
 deploy SSH/git token implicitly — token must be explicitly provided.
+
+HTTP / network errors are logged (status only, never the token) and return 0
+so a Render build or startup fetch cannot take the service down.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -24,6 +29,79 @@ ASSETS = (
     ("pn_net_v4.onnx", None),
     ("static_v4.npy", None),
 )
+
+
+def _log_http(action: str, err: urllib.error.HTTPError) -> None:
+    # Reason/status only — never dump headers or body (may echo auth challenges).
+    reason = getattr(err, "reason", "") or ""
+    print(
+        f"fetch_pn_models: {action} HTTP {err.code} {reason}; skipping download",
+        file=sys.stderr,
+    )
+
+
+def _release_meta(repo: str, tag: str, token: str) -> dict | None:
+    url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "prithvi-pn-fetch",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        _log_http("release lookup", e)
+        return None
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as e:
+        print(
+            f"fetch_pn_models: release lookup failed ({type(e).__name__}); skipping download",
+            file=sys.stderr,
+        )
+        return None
+
+
+def _download(asset: dict, dest: Path, token: str) -> bool:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    dl = urllib.request.Request(
+        asset["url"],
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/octet-stream",
+            "User-Agent": "prithvi-pn-fetch",
+        },
+    )
+    try:
+        with urllib.request.urlopen(dl, timeout=300) as r, open(tmp, "wb") as f:
+            while True:
+                chunk = r.read(1024 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+        tmp.replace(dest)
+        print(f"downloaded {dest} ({dest.stat().st_size} bytes)")
+        return True
+    except urllib.error.HTTPError as e:
+        _log_http(f"download {asset.get('name', dest.name)}", e)
+        return False
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        print(
+            f"fetch_pn_models: download {asset.get('name', dest.name)} failed "
+            f"({type(e).__name__}); skipping",
+            file=sys.stderr,
+        )
+        return False
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
 
 def main() -> int:
@@ -50,42 +128,16 @@ def main() -> int:
             file=sys.stderr,
         )
         return 0
+    meta = _release_meta(repo, tag, token)
+    if not meta:
+        return 0
+    assets = meta.get("assets") or []
     for name, dest in missing:
-        url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
-        # resolve asset via API then download
-        req = urllib.request.Request(
-            url,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "prithvi-pn-fetch",
-            },
-        )
-        import json
-
-        with urllib.request.urlopen(req, timeout=60) as r:
-            meta = json.load(r)
-        asset = next((a for a in meta.get("assets") or [] if a.get("name") == name), None)
+        asset = next((a for a in assets if a.get("name") == name), None)
         if not asset:
             print(f"asset not in release: {name}", file=sys.stderr)
             continue
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dl = urllib.request.Request(
-            asset["url"],
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/octet-stream",
-                "User-Agent": "prithvi-pn-fetch",
-            },
-        )
-        with urllib.request.urlopen(dl, timeout=300) as r, open(dest, "wb") as f:
-            while True:
-                chunk = r.read(1024 * 1024)
-                if not chunk:
-                    break
-                f.write(chunk)
-        print(f"downloaded {dest} ({dest.stat().st_size} bytes)")
+        _download(asset, dest, token)
     return 0
 
 
