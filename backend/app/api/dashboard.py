@@ -458,6 +458,29 @@ async def storm_map_api(
             packed = shared_packs.load_storm()
             if packed:
                 return shared_packs.crop_pack(packed, state, past_h=horizon)
+            try:
+                from app.ingest.kick import kick_if_stale
+
+                await kick_if_stale("storm-map-miss")
+            except Exception:
+                pass
+            # Do not rebuild IR on the API (the ~49s memory climb). Serve a
+            # thin pending pack until ingest publishes one.
+            from app.data.india_districts import state_frame
+
+            frame = state_frame(state)
+            return {
+                "ok": False,
+                "source": "ingest-pack-pending",
+                "state": frame.get("state") or state,
+                "frame": frame,
+                "past_h": horizon,
+                "cells": [],
+                "incidents": [],
+                "predicted": [],
+                "sensors": {},
+                "message": "Waiting for ingest storm pack",
+            }
         async with slot():
             return await build_storm_map(state, past_h=horizon)
 

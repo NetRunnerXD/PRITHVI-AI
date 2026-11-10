@@ -50,6 +50,11 @@ def _coerce_satellites(raw: Any) -> list[dict[str, Any]]:
     return [s for s in raw if isinstance(s, dict)]
 
 
+def _overlay_mongo() -> bool:
+    """False under pytest unless a test patches this."""
+    return not bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
 def snapshot() -> dict[str, Any]:
     try:
         return _snapshot()
@@ -65,11 +70,20 @@ def _snapshot() -> dict[str, Any]:
         col = sat_mongo.col("ingest_status")
     except Exception:
         col = None
-    if col is not None and not os.environ.get("PYTEST_CURRENT_TEST"):
+    if col is not None and _overlay_mongo():
         try:
-            doc = col.find_one({"_id": DOC_ID}, {"_id": 0})
+            doc = col.find_one({"_id": DOC_ID}, {"_id": 0}, max_time_ms=1500)
             if isinstance(doc, dict):
-                blob.update(doc)
+                # A stale/idle Mongo doc must not hide a newer in-process cycle.
+                # The API (separate process) still wins when Mongo is fresher.
+                def _ms(raw) -> int:
+                    try:
+                        return int(raw or 0)
+                    except (TypeError, ValueError):
+                        return 0
+
+                if _ms(doc.get("updated_ms")) >= _ms(blob.get("updated_ms")):
+                    blob.update(doc)
         except Exception:
             pass
     started = blob.get("started_ms")

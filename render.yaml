@@ -82,3 +82,7 @@ services:
         sync: false
       - key: INGEST_CRON_SECRET
         sync: false
+      - key: INGEST_BASE_URL
+        value: https://prithvi-ai-ingest.onrender.com
+      - key: INGEST_EMBEDDED
+        value: "off"

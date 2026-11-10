@@ -32,6 +32,7 @@ async def test_cycle_always_fetches_insat_jpeg():
             patch("app.providers.mosdac.ingest_latest", mosdac),
             patch("app.providers.gpm_imerg.fetch_pin", imerg),
             patch("app.science.storm_map.build", AsyncMock(return_value=pack)),
+            patch("app.science.sat_lightning.refresh", AsyncMock(return_value={"ok": True, "cells": []})),
         ):
             out = await run_cycle()
     finally:
@@ -63,6 +64,7 @@ async def test_mosdac_timeout_fails_hem_only():
             patch("app.providers.mosdac.ingest_latest", mosdac),
             patch("app.providers.gpm_imerg.fetch_pin", imerg),
             patch("app.science.storm_map.build", AsyncMock(return_value=pack)),
+            patch("app.science.sat_lightning.refresh", AsyncMock(return_value={"ok": True, "cells": []})),
         ):
             await run_cycle()
     finally:
