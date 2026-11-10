@@ -135,7 +135,25 @@ async def ready():
 
         body["ingest"] = ingest_status.snapshot()
     except Exception:
-        pass
+        try:
+            from app.store.ingest_status import empty_snapshot
+
+            body["ingest"] = empty_snapshot()
+        except Exception:
+            body["ingest"] = {
+                "cycle_id": None,
+                "phase": "idle",
+                "ready": True,
+                "stale": False,
+                "message": "",
+                "satellites": [],
+                "started_ms": None,
+                "updated_ms": None,
+                "finished_at": None,
+                "data_time": None,
+                "age_s": None,
+                "as_of": None,
+            }
     return JSONResponse(body)
 
 

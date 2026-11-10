@@ -62,9 +62,6 @@ async def build_snapshot(
     return await cache.aget(key, factory, ttl_s=ttl, swr_s=swr)
 
 
-_BG: set = set()
-
-
 def slim_dump(snap: DashboardSnapshot) -> dict[str, Any]:
     """Core payload for first paint (< 60 KB gzip): drop the heavy VERA diagnostics that
     only the Predictions/Science tabs read; /dashboard/enrich returns the full snapshot."""
@@ -85,10 +82,9 @@ def slim_dump(snap: DashboardSnapshot) -> dict[str, Any]:
 
 
 async def build_core(loc: Location, locale: str = "en", *, disabled: set[str] | None = None) -> tuple[DashboardSnapshot, bool]:
-    """(snapshot, is_full). Fresh full snapshot if cached; else a core build (no VERA) and
-    the full build starts in the background (single-flight via the same cache key)."""
-    import asyncio
-
+    """(snapshot, is_full). Return a cached full snapshot when available; otherwise a core
+    build (no VERA). The client calls /dashboard/enrich for the full pack — do not also
+    start a background full build here (that doubled RAM use on Free-tier instances)."""
     full = peek_snapshot(loc) if not disabled else None
     if full is not None and not getattr(full, "enriching", False):
         return full, True
@@ -98,9 +94,6 @@ async def build_core(loc: Location, locale: str = "en", *, disabled: set[str] | 
         return await _assemble_snapshot(loc, locale, enrich=True, disabled=disabled, core=True)
 
     core = await cache.aget(key, factory, ttl_s=300, swr_s=900)
-    t = asyncio.create_task(build_snapshot(loc, locale, full=True, disabled=disabled))
-    _BG.add(t)
-    t.add_done_callback(_BG.discard)
     return core, False
 
 

@@ -45,6 +45,44 @@ export async function fetchNowcastSat(
   return null;
 }
 
+const TRANSIENT_HTTP = new Set([429, 502, 503, 504]);
+
+/** Retry transient Free-tier 502/503/429 (and brief network errors) without hanging on abort. */
+async function fetchResilient(url: string, init: RequestInit, label: string, retries = 2): Promise<Response> {
+  let lastStatus: number | undefined;
+  for (let i = 0; i <= retries; i++) {
+    if (init.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    try {
+      const r = await fetch(url, init);
+      if (r.ok) return r;
+      lastStatus = r.status;
+      if (!TRANSIENT_HTTP.has(r.status) || i === retries) throw new Error(`${label} ${r.status}`);
+    } catch (err) {
+      if (init.signal?.aborted) throw err;
+      const msg = err instanceof Error ? err.message : "";
+      const status = Number(msg.split(" ").pop());
+      if (msg.startsWith(label) && !TRANSIENT_HTTP.has(status)) throw err;
+      if (i === retries) throw err;
+    }
+    const wait = 800 * (i + 1);
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, wait);
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      if (init.signal) {
+        if (init.signal.aborted) {
+          onAbort();
+          return;
+        }
+        init.signal.addEventListener("abort", onAbort, { once: true });
+      }
+    });
+  }
+  throw new Error(`${label} ${lastStatus ?? "failed"}`);
+}
+
 export async function fetchDashboard(
   loc?: Location,
   signal?: AbortSignal,
@@ -60,7 +98,7 @@ export async function fetchDashboard(
   if (disabled && disabled.length > 0) q.set("disable", disabled.join(","));
 
   if (om?.forecast) {
-    const r = await fetch(apiUrl("/dashboard"), {
+    const r = await fetchResilient(apiUrl("/dashboard"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -83,13 +121,11 @@ export async function fetchDashboard(
         nasa_power: obs?.nasa_power || undefined,
       }),
       signal,
-    });
-    if (!r.ok) throw new Error(`dashboard ${r.status}`);
+    }, "dashboard");
     return await r.json();
   }
 
-  const r = await fetch(`${apiUrl("/dashboard")}?${q.toString()}`, { signal });
-  if (!r.ok) throw new Error(`dashboard ${r.status}`);
+  const r = await fetchResilient(`${apiUrl("/dashboard")}?${q.toString()}`, { signal }, "dashboard");
   return await r.json();
 }
 
@@ -104,18 +140,16 @@ function dashQuery(loc?: Location, disabled?: string[]): URLSearchParams {
 }
 
 /** Fast first paint: every observation provider, no heavy VERA diagnostics (~25 KB gzip).
- * The server starts the full build in the background; fetchDashboardEnrich joins it. */
+ * The client then calls fetchDashboardEnrich for the full pack. */
 export async function fetchDashboardCore(loc?: Location, signal?: AbortSignal, disabled?: string[]): Promise<DashboardSnapshot> {
   const q = dashQuery(loc, disabled);
   q.set("view", "core");
-  const r = await fetch(`${apiUrl("/dashboard")}?${q.toString()}`, { signal });
-  if (!r.ok) throw new Error(`dashboard ${r.status}`);
+  const r = await fetchResilient(`${apiUrl("/dashboard")}?${q.toString()}`, { signal }, "dashboard");
   return await r.json();
 }
 
 export async function fetchDashboardEnrich(loc?: Location, signal?: AbortSignal, disabled?: string[]): Promise<DashboardSnapshot> {
-  const r = await fetch(`${apiUrl("/dashboard/enrich")}?${dashQuery(loc, disabled).toString()}`, { signal });
-  if (!r.ok) throw new Error(`dashboard enrich ${r.status}`);
+  const r = await fetchResilient(`${apiUrl("/dashboard/enrich")}?${dashQuery(loc, disabled).toString()}`, { signal }, "dashboard enrich");
   return await r.json();
 }
 
@@ -244,6 +278,8 @@ export type StormMapPack = {
   stale?: boolean;
   ingest_age_s?: number;
   need_second_frame?: boolean;
+  ir_image_time?: string | null;
+
   past_h?: number;
   processing?: {
     ready?: boolean;
