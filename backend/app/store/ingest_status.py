@@ -25,22 +25,61 @@ _MEM: dict[str, Any] = {
 DOC_ID = "ingest_status"
 
 
+def empty_snapshot(now=None) -> dict[str, Any]:
+    """Stable ingest shape used when no cycle is recorded or snapshot construction fails."""
+    now = now or now_utc()
+    return {
+        "cycle_id": None,
+        "phase": "idle",
+        "ready": True,
+        "stale": False,
+        "message": "",
+        "satellites": [],
+        "started_ms": None,
+        "updated_ms": None,
+        "finished_at": None,
+        "data_time": None,
+        "age_s": None,
+        "as_of": iso_z(now),
+    }
+
+
+def _coerce_satellites(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    return [s for s in raw if isinstance(s, dict)]
+
+
 def snapshot() -> dict[str, Any]:
+    try:
+        return _snapshot()
+    except Exception:
+        return empty_snapshot()
+
+
+def _snapshot() -> dict[str, Any]:
     now = now_utc()
     blob = dict(_MEM)
-    col = sat_mongo.col("ingest_status")
+    col = None
+    try:
+        col = sat_mongo.col("ingest_status")
+    except Exception:
+        col = None
     if col is not None and not os.environ.get("PYTEST_CURRENT_TEST"):
         try:
             doc = col.find_one({"_id": DOC_ID}, {"_id": 0})
-            if doc:
+            if isinstance(doc, dict):
                 blob.update(doc)
         except Exception:
             pass
     started = blob.get("started_ms")
     age_s = None
     if started:
-        age_s = max(0.0, (ms(now) - int(started)) / 1000.0)
-    sats = list(blob.get("satellites") or [])
+        try:
+            age_s = max(0.0, (ms(now) - int(started)) / 1000.0)
+        except (TypeError, ValueError):
+            age_s = None
+    sats = _coerce_satellites(blob.get("satellites"))
     names = [s.get("name") or s.get("id") for s in sats if s.get("status") in {None, "pending", "fetching"}]
     if not names:
         names = [s.get("name") or s.get("id") for s in sats if s.get("status") == "ok"]

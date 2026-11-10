@@ -11,6 +11,7 @@ import { useApp } from "@/lib/store";
 import { fetchGfsGrid, gfsFieldsFor } from "@/lib/gfsGrid";
 import { visibleInterval } from "@/lib/visibility";
 import { apiUrl } from "@/lib/config";
+import { parseIngestSnap, stormDataTime, type IngestSat, type IngestSnap } from "@/lib/ingestSnap";
 
 let cachedStates: string[] = [];
 let cachedRadarPack: { host: string; radarPath: string | null; satPath: string | null } | null = null;
@@ -76,9 +77,6 @@ const SAT_HIGHLIGHTS = new Set<string>([
 
 const HORIZON_H = [1, 3, 6, 12] as const;
 
-type IngestSat = { id?: string; name?: string; status?: string; detail?: string; bytes_read?: number; bytes_total?: number };
-type IngestSnap = { phase?: string; message?: string; satellites?: IngestSat[]; finished_at?: string | null; data_time?: string | null };
-
 function dataTimeLabel(iso?: string | null): string {
   if (!iso) return "No data time";
   const d = new Date(iso);
@@ -116,7 +114,8 @@ function satTone(status?: string): string {
   return "bg-sky-500";
 }
 
-function satBar(s: IngestSat): { pct: number; indeterminate: boolean } {
+function satBar(s: IngestSat | null | undefined): { pct: number; indeterminate: boolean } {
+  if (!s || typeof s !== "object") return { pct: 0, indeterminate: false };
   const st = s.status || "pending";
   if (st === "fetching") {
     const total = Number(s.bytes_total);
@@ -134,10 +133,11 @@ function IngestProgress({ open, dataTime }: { open: boolean; dataTime?: string |
     if (!open) return;
     let dead = false;
     const tick = () =>
-      void fetch(apiUrl("/ready"))
-        .then((r) => (r.ok ? r.json() : null))
+      void fetch(apiUrl("/ready"), { cache: "no-store" })
+        .then((r) => (r.ok ? r.json().catch(() => null) : null))
         .then((j) => {
-          if (!dead && j?.ingest) setIng(j.ingest as IngestSnap);
+          const parsed = parseIngestSnap(j && typeof j === "object" ? (j as { ingest?: unknown }).ingest : null);
+          if (!dead && parsed) setIng(parsed);
         })
         .catch(() => {});
     tick();
@@ -147,7 +147,7 @@ function IngestProgress({ open, dataTime }: { open: boolean; dataTime?: string |
       window.clearInterval(id);
     };
   }, [open]);
-  const sats = ing?.satellites?.length ? ing.satellites : INGEST_FALLBACK;
+  const sats = ing?.satellites && ing.satellites.length > 0 ? ing.satellites : INGEST_FALLBACK;
   const analysis = analysisOf(ing?.phase);
   return (
     <div className="pt-2 border-t border-[var(--line)] space-y-2">
@@ -157,10 +157,10 @@ function IngestProgress({ open, dataTime }: { open: boolean; dataTime?: string |
           {dataTimeLabel(dataTime || ing?.data_time)}
         </p>
       </div>
-      {sats.map((s) => {
+      {sats.filter((s): s is IngestSat => !!s && typeof s === "object").map((s, i) => {
         const bar = satBar(s);
         return (
-          <div key={s.id || s.name} className="space-y-0.5">
+          <div key={s.id || s.name || `sat-${i}`} className="space-y-0.5">
             <div className="flex items-center justify-between gap-2 text-[10px]">
               <span className="font-bold text-neo-text truncate">{s.name || s.id}</span>
               <span className={`font-mono shrink-0 ${s.status === "fail" ? "text-rose-500" : s.status === "disabled" ? "text-neo-muted" : "text-sky-400"}`}>{s.status || "pending"}</span>
@@ -1231,7 +1231,7 @@ export function SquareMap({
                         </div>
                       </div>
 
-                      <IngestProgress open dataTime={(storm as { ir_image_time?: string | null }).ir_image_time} />
+                      <IngestProgress open dataTime={stormDataTime(storm)} />
                     </div>
                   )}
                 </section>
