@@ -149,6 +149,12 @@ def set(key: str, value: Any, ttl_s: float, swr_s: float = 0) -> None:
         _evict_unlocked()
 
 
+def delete(key: str) -> None:
+    """Drop one key so a forced refresh cannot serve a failed or stale value."""
+    with _lock:
+        _drop_unlocked(key)
+
+
 def keys_prefix(prefix: str) -> list[str]:
     with _lock:
         return [k for k in _store if str(k).startswith(prefix)]

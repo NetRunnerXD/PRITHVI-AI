@@ -129,27 +129,28 @@ export async function fetchDashboard(
   return await r.json();
 }
 
-function dashQuery(loc?: Location, disabled?: string[]): URLSearchParams {
+function dashQuery(loc?: Location, disabled?: string[], refresh = false): URLSearchParams {
   const q = new URLSearchParams();
   if (loc?.district) q.set("district", loc.district);
   if (loc?.place_name) q.set("place", loc.place_name);
   if (loc?.lat != null) q.set("lat", String(loc.lat));
   if (loc?.lon != null) q.set("lon", String(loc.lon));
   if (disabled && disabled.length > 0) q.set("disable", disabled.join(","));
+  if (refresh) q.set("refresh", "1");
   return q;
 }
 
 /** Fast first paint: every observation provider, no heavy VERA diagnostics (~25 KB gzip).
  * The client then calls fetchDashboardEnrich for the full pack. */
-export async function fetchDashboardCore(loc?: Location, signal?: AbortSignal, disabled?: string[]): Promise<DashboardSnapshot> {
-  const q = dashQuery(loc, disabled);
+export async function fetchDashboardCore(loc?: Location, signal?: AbortSignal, disabled?: string[], refresh = false): Promise<DashboardSnapshot> {
+  const q = dashQuery(loc, disabled, refresh);
   q.set("view", "core");
-  const r = await fetchResilient(`${apiUrl("/dashboard")}?${q.toString()}`, { signal }, "dashboard");
+  const r = await fetchResilient(`${apiUrl("/dashboard")}?${q.toString()}`, { signal, cache: refresh ? "no-store" : "default" }, "dashboard");
   return await r.json();
 }
 
-export async function fetchDashboardEnrich(loc?: Location, signal?: AbortSignal, disabled?: string[]): Promise<DashboardSnapshot> {
-  const r = await fetchResilient(`${apiUrl("/dashboard/enrich")}?${dashQuery(loc, disabled).toString()}`, { signal }, "dashboard enrich");
+export async function fetchDashboardEnrich(loc?: Location, signal?: AbortSignal, disabled?: string[], refresh = false): Promise<DashboardSnapshot> {
+  const r = await fetchResilient(`${apiUrl("/dashboard/enrich")}?${dashQuery(loc, disabled, refresh).toString()}`, { signal, cache: refresh ? "no-store" : "default" }, "dashboard enrich");
   return await r.json();
 }
 

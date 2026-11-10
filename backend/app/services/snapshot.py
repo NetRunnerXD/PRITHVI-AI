@@ -25,6 +25,11 @@ from app.services.snapshot_assemble import (
 
 # Tests and callers import these from this module.
 
+_STALE_OM = frozenset({"stale", "fallback", "error"})
+_STALE_SNAP_TTL_S = 15.0
+_STALE_SNAP_SWR_S = 30.0
+
+
 def pin_key(loc: Location) -> str:
     la = round(round(float(loc.lat) / 0.05) * 0.05, 2)
     lo = round(round(float(loc.lon) / 0.05) * 0.05, 2)
@@ -36,12 +41,37 @@ def peek_snapshot(loc: Location) -> DashboardSnapshot | None:
     return hit if isinstance(hit, DashboardSnapshot) else None
 
 
+def _drop_location_caches(loc: Location, disabled: set[str] | None = None) -> None:
+    """Forget snapshot and live forecast packs so a Retry hits Open-Meteo again."""
+    key = pin_key(loc)
+    cache.delete(key)
+    cache.delete(f"{key}:core")
+    if disabled:
+        suffix = f":dis:{'_'.join(sorted(disabled))}"
+        cache.delete(key + suffix)
+        cache.delete(f"{key}:core{suffix}")
+    la, lo = round(float(loc.lat), 3), round(float(loc.lon), 3)
+    cache.delete(f"om:fc4:{la}:{lo}")
+    for k in cache.keys_prefix("om:blend:"):
+        if str(k).endswith(f":{la}:{lo}"):
+            cache.delete(k)
+
+
+def _store_snapshot(key: str, snap: DashboardSnapshot, ttl: float, swr: float) -> None:
+    st = (getattr(snap, "provider_status", None) or {}).get("open-meteo")
+    if st in _STALE_OM:
+        cache.set(key, snap, _STALE_SNAP_TTL_S, _STALE_SNAP_SWR_S)
+    else:
+        cache.set(key, snap, ttl, swr)
+
+
 async def build_snapshot(
     loc: Location,
     locale: str = "en",
     *,
     full: bool | None = None,
     disabled: set[str] | None = None,
+    refresh: bool = False,
 ) -> DashboardSnapshot:
     """Always wait for the complete snapshot (all providers) before returning."""
     key = pin_key(loc)
@@ -59,7 +89,17 @@ async def build_snapshot(
         snap.enriching = False
         return snap
 
-    return await cache.aget(key, factory, ttl_s=ttl, swr_s=swr)
+    if refresh:
+        _drop_location_caches(loc, disabled)
+        snap = await factory()
+        _store_snapshot(key, snap, ttl, swr)
+        return snap
+
+    snap = await cache.aget(key, factory, ttl_s=ttl, swr_s=swr)
+    st = (getattr(snap, "provider_status", None) or {}).get("open-meteo")
+    if st in _STALE_OM:
+        cache.set(key, snap, _STALE_SNAP_TTL_S, _STALE_SNAP_SWR_S)
+    return snap
 
 
 def slim_dump(snap: DashboardSnapshot) -> dict[str, Any]:
@@ -81,19 +121,36 @@ def slim_dump(snap: DashboardSnapshot) -> dict[str, Any]:
     return d
 
 
-async def build_core(loc: Location, locale: str = "en", *, disabled: set[str] | None = None) -> tuple[DashboardSnapshot, bool]:
+async def build_core(
+    loc: Location,
+    locale: str = "en",
+    *,
+    disabled: set[str] | None = None,
+    refresh: bool = False,
+) -> tuple[DashboardSnapshot, bool]:
     """(snapshot, is_full). Return a cached full snapshot when available; otherwise a core
     build (no VERA). The client calls /dashboard/enrich for the full pack — do not also
     start a background full build here (that doubled RAM use on Free-tier instances)."""
-    full = peek_snapshot(loc) if not disabled else None
-    if full is not None and not getattr(full, "enriching", False):
-        return full, True
+    if refresh:
+        _drop_location_caches(loc, disabled)
+    else:
+        full = peek_snapshot(loc) if not disabled else None
+        if full is not None and not getattr(full, "enriching", False):
+            return full, True
     key = pin_key(loc) + ":core" + (f":dis:{'_'.join(sorted(disabled))}" if disabled else "")
 
     async def factory() -> DashboardSnapshot:
         return await _assemble_snapshot(loc, locale, enrich=True, disabled=disabled, core=True)
 
+    if refresh:
+        core = await factory()
+        _store_snapshot(key, core, 300.0, 900.0)
+        return core, False
+
     core = await cache.aget(key, factory, ttl_s=300, swr_s=900)
+    st = (getattr(core, "provider_status", None) or {}).get("open-meteo")
+    if st in _STALE_OM:
+        cache.set(key, core, _STALE_SNAP_TTL_S, _STALE_SNAP_SWR_S)
     return core, False
 
 
