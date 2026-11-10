@@ -78,12 +78,15 @@ def snapshot() -> dict[str, Any]:
 def _snapshot() -> dict[str, Any]:
     now = now_utc()
     blob = dict(_MEM)
+    mem_cycle = blob.get("cycle_id")
+    mem_ms = _ms(blob.get("updated_ms"))
     if _overlay_mongo():
         doc = _mongo_status_doc()
         if isinstance(doc, dict):
-            # A stale/idle Mongo doc must not hide a newer in-process cycle.
-            # The API (separate process) still wins when Mongo is fresher.
-            if _ms(doc.get("updated_ms")) >= _ms(blob.get("updated_ms")):
+            # Prefer Mongo when it has a cycle the in-process memory does not,
+            # even if updated_ms is missing or older than a leftover mem stamp.
+            mongo_ms = _ms(doc.get("updated_ms"))
+            if mongo_ms >= mem_ms or (doc.get("cycle_id") and not mem_cycle):
                 blob.update(doc)
     started = blob.get("started_ms")
     age_s = None
@@ -110,7 +113,7 @@ def _snapshot() -> dict[str, Any]:
     if not ready and not msg:
         label = ", ".join(str(n) for n in names if n) or "satellite"
         msg = f"Analyzing {label} data"
-    return {
+    out = {
         "cycle_id": blob.get("cycle_id"),
         "phase": phase,
         "ready": ready,
@@ -124,6 +127,12 @@ def _snapshot() -> dict[str, Any]:
         "age_s": age_s,
         "as_of": iso_z(now),
     }
+    print(
+        f"ingest_status snapshot cycle_id={out.get('cycle_id')} phase={out.get('phase')} "
+        f"mem_cycle={mem_cycle} mem_ms={mem_ms} out_ms={out.get('updated_ms')}",
+        flush=True,
+    )
+    return out
 
 
 def begin(satellites: list[dict[str, Any]]) -> str:
@@ -171,7 +180,12 @@ def update(*, phase: str | None = None, satellite: dict[str, Any] | None = None,
         if pending and not blob.get("ready"):
             blob["message"] = f"Analyzing {', '.join(str(n) for n in pending if n)} data"
     blob["updated_ms"] = ms(now)
-    _write(blob)
+    persist = bool(phase) or bool(
+        satellite
+        and satellite.get("status")
+        and satellite.get("status") not in {"pending", "fetching"}
+    )
+    _write(blob, persist=persist)
 
 
 def finish(*, ok: bool = True, message: str | None = None, data_time: str | None = None) -> None:
@@ -402,12 +416,12 @@ def mem_doc() -> dict[str, Any]:
         return dict(_MEM)
 
 
-def _write(doc: dict[str, Any]) -> None:
+def _write(doc: dict[str, Any], *, persist: bool = True) -> None:
     """Update in-process memory immediately; persist to Mongo off the event loop."""
     with _lock:
         _MEM.clear()
         _MEM.update(doc)
-    if not _should_persist():
+    if not persist or not _should_persist():
         return
     _ensure_writer()
     # Keep only the latest status doc so progress ticks cannot backlog or
