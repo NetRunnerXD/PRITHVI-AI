@@ -115,8 +115,97 @@ def _om_key(kind: str, lat: float, lon: float) -> str:
     return f"om:{kind}:{la}:{lo}"
 
 
+CLIENT_ACCEPT_AGE_S = 2 * 3600.0
+CLIENT_COORD_TOL_DEG = 0.1
+CLIENT_MAX_BYTES = 1_500_000
+CLIENT_CACHE_TTL_S = 1800.0
+CLIENT_CACHE_SWR_S = 1800.0
+_FUTURE_SKEW_S = 120.0
+
+
 def client_seeded(lat: float, lon: float) -> bool:
     return bool(cache.get(_om_key("client", lat, lon)))
+
+
+def _parse_fetched_at(fetched_at: float | str | None) -> float | None:
+    if fetched_at is None:
+        return None
+    try:
+        if not isinstance(fetched_at, str):
+            return float(fetched_at)
+        raw = fetched_at.strip()
+        if not raw:
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            from datetime import datetime
+
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _pack_size_ok(obj: Any, limit: int = CLIENT_MAX_BYTES) -> bool:
+    n = 0
+
+    def walk(x: Any) -> None:
+        nonlocal n
+        if n > limit:
+            return
+        if isinstance(x, (bytes, bytearray, memoryview)):
+            n += len(x)
+        elif isinstance(x, str):
+            n += len(x) * 2
+        elif isinstance(x, dict):
+            if len(x) > 500:
+                n = limit + 1
+                return
+            for k, v in x.items():
+                walk(k)
+                walk(v)
+        elif isinstance(x, (list, tuple)):
+            if len(x) > 20_000:
+                n = limit + 1
+                return
+            for item in x:
+                walk(item)
+        else:
+            n += 24
+
+    walk(obj)
+    return n <= limit
+
+
+def _coords_ok(block: dict[str, Any] | None, lat: float, lon: float) -> bool:
+    if not isinstance(block, dict):
+        return True
+    if "latitude" not in block and "longitude" not in block:
+        return True
+    try:
+        plat = float(block["latitude"]) if block.get("latitude") is not None else lat
+        plon = float(block["longitude"]) if block.get("longitude") is not None else lon
+    except (TypeError, ValueError):
+        return False
+    return abs(plat - lat) <= CLIENT_COORD_TOL_DEG and abs(plon - lon) <= CLIENT_COORD_TOL_DEG
+
+
+def _clean_client_block(data: dict[str, Any]) -> dict[str, Any]:
+    out = {k: v for k, v in data.items() if not str(k).startswith("_")}
+    out["_client_seed"] = True
+    return out
+
+
+def _use_seeded(key: str, lat: float, lon: float) -> dict[str, Any] | None:
+    """Return a live client-seeded pack for this rounded pin; never a stale/climatology pack."""
+    if not client_seeded(lat, lon):
+        return None
+    hit = cache.peek(key)
+    if not isinstance(hit, dict) or hit.get("_stale") or _is_climatology(hit):
+        return None
+    if hit.get("current") or hit.get("hourly") or hit.get("daily") or hit.get("_client_seed"):
+        return hit
+    return None
 
 
 def seed_from_client(
@@ -125,48 +214,61 @@ def seed_from_client(
     om: dict[str, Any] | None,
     fetched_at: float | str | None = None,
 ) -> bool:
-    """Cache browser Open-Meteo JSON so Render does not spend the shared quota."""
-    if not isinstance(om, dict):
-        return False
-    max_age = float(get_settings().om_client_max_age_s or 900)
-    age_ok = True
-    if fetched_at is not None:
-        try:
-            ts = float(fetched_at) if not isinstance(fetched_at, str) else None
-            if ts is None and isinstance(fetched_at, str) and fetched_at.strip():
-                from datetime import datetime
+    """Cache a browser Open-Meteo pack for this rounded lat/lon only.
 
-                raw = fetched_at.strip().replace("Z", "+00:00")
-                ts = datetime.fromisoformat(raw).timestamp()
-            if ts is not None and (time.time() - ts) > max_age:
-                age_ok = False
-        except (TypeError, ValueError, OSError):
-            age_ok = True
-    if not age_ok:
+    Render's shared egress IP is often rate-limited by Open-Meteo; a visitor's
+    own IP can fetch the same JSON and seed it here so later GET/chat builds
+    reuse it without another Render-side fetch.
+    """
+    if not isinstance(om, dict) or not _pack_size_ok(om):
+        return False
+    ts = _parse_fetched_at(fetched_at)
+    now = time.time()
+    if ts is not None and (now - ts > CLIENT_ACCEPT_AGE_S or ts - now > _FUTURE_SKEW_S):
         return False
     fc = om.get("forecast")
     if not isinstance(fc, dict):
         fc = om if (om.get("current") or om.get("hourly") or om.get("daily")) else None
     if not isinstance(fc, dict) or not (fc.get("current") or fc.get("hourly") or fc.get("daily")):
         return False
-    ttl, swr = 90.0, 600.0
-    cache.set(_om_key("fc4", lat, lon), fc, ttl, swr)
+    if _is_climatology(fc) or fc.get("_stale"):
+        return False
+    if not _coords_ok(fc, lat, lon):
+        return False
+    for key in ("air", "flood", "marine", "era5"):
+        block = om.get(key)
+        if isinstance(block, dict) and not _coords_ok(block, lat, lon):
+            return False
+    models = om.get("models")
+    if isinstance(models, dict):
+        for block in models.values():
+            if isinstance(block, dict) and not _coords_ok(block, lat, lon):
+                return False
+
+    ttl = max(CLIENT_CACHE_TTL_S, float(get_settings().om_client_max_age_s or 0) or 0)
+    swr = CLIENT_CACHE_SWR_S
+    cache.set(_om_key("fc4", lat, lon), _clean_client_block(fc), ttl, swr)
     air = om.get("air")
     if isinstance(air, dict) and (air.get("current") or air.get("hourly")):
-        cache.set(_om_key("aq2", lat, lon), air, 120.0, 600.0)
+        cache.set(_om_key("aq2", lat, lon), _clean_client_block(air), ttl, swr)
     flood = om.get("flood")
-    if isinstance(flood, dict):
-        cache.set(_om_key("fl2", lat, lon), flood, 180.0, 900.0)
+    if isinstance(flood, dict) and (flood.get("daily") or flood.get("current")):
+        cache.set(_om_key("fl2", lat, lon), _clean_client_block(flood), ttl, swr)
     marine = om.get("marine")
     if isinstance(marine, dict):
-        cache.set(_om_key("mr2", lat, lon), marine, 180.0, 900.0)
-    models = om.get("models")
+        cache.set(_om_key("mr2", lat, lon), _clean_client_block(marine), ttl, swr)
     if isinstance(models, dict):
         _seed_models(lat, lon, models)
     era5 = om.get("era5")
     if isinstance(era5, dict):
         _seed_era5(lat, lon, era5)
-    cache.set(_om_key("client", lat, lon), True, max_age, 0)
+    cache.set(_om_key("client", lat, lon), True, ttl, 0)
+    try:
+        from app.services.snapshot import drop_snapshots_for_pin
+
+        drop_snapshots_for_pin(lat, lon)
+    except Exception:
+        pass
     return True
 
 
@@ -175,7 +277,7 @@ def _seed_models(lat: float, lon: float, models: dict[str, Any]) -> None:
     if any(isinstance(v, dict) and (v.get("daily") or v.get("hourly")) for v in models.values()):
         for sid, pack in models.items():
             if isinstance(pack, dict) and (pack.get("daily") or pack.get("hourly")):
-                cache.set(f"om:blend:{sid}:{round(lat, 3)}:{round(lon, 3)}", pack, 900)
+                cache.set(f"om:blend:{sid}:{round(lat, 3)}:{round(lon, 3)}", pack, CLIENT_CACHE_TTL_S, CLIENT_CACHE_SWR_S)
         return
     d_block = models.get("daily") or {}
     h_block = models.get("hourly") or {}
@@ -219,7 +321,8 @@ def _seed_models(lat: float, lon: float, models: dict[str, Any]) -> None:
             cache.set(
                 f"om:blend:{sid}:{round(lat, 3)}:{round(lon, 3)}",
                 {"latitude": lat, "longitude": lon, "daily": sub_daily, "hourly": sub_hourly},
-                900,
+                CLIENT_CACHE_TTL_S,
+                CLIENT_CACHE_SWR_S,
             )
 
 
@@ -278,6 +381,9 @@ async def _live_forecast_get(lat: float, lon: float, params: dict[str, Any]) -> 
 
 async def forecast(lat: float, lon: float) -> dict[str, Any]:
     key = f"om:fc4:{round(lat, 3)}:{round(lon, 3)}"
+    seeded = _use_seeded(key, lat, lon)
+    if seeded is not None:
+        return seeded
 
     async def factory() -> dict[str, Any]:
         params = {
@@ -797,6 +903,9 @@ async def era5_context(lat: float, lon: float) -> dict[str, Any]:
 
 async def flood(lat: float, lon: float) -> dict[str, Any]:
     key = f"om:fl2:{round(lat, 3)}:{round(lon, 3)}"
+    seeded = _use_seeded(key, lat, lon)
+    if seeded is not None:
+        return seeded
 
     async def _pull(a: float, b: float) -> dict[str, Any]:
         r = await client().get(
@@ -852,6 +961,9 @@ async def flood(lat: float, lon: float) -> dict[str, Any]:
 
 async def air_quality(lat: float, lon: float) -> dict[str, Any]:
     key = f"om:aq2:{round(lat, 3)}:{round(lon, 3)}"
+    seeded = _use_seeded(key, lat, lon)
+    if seeded is not None:
+        return seeded
 
     async def factory() -> dict[str, Any]:
         aq_vars = (
@@ -903,6 +1015,9 @@ async def air_quality(lat: float, lon: float) -> dict[str, Any]:
 
 async def marine(lat: float, lon: float) -> dict[str, Any]:
     key = f"om:mr2:{round(lat, 3)}:{round(lon, 3)}"
+    seeded = _use_seeded(key, lat, lon)
+    if seeded is not None:
+        return seeded
 
     async def factory() -> dict[str, Any]:
         marine_vars = (

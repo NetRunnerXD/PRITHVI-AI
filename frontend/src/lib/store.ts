@@ -54,6 +54,17 @@ export const DEFAULT_MAP_SESSION: MapSessionState = {
   openSection: "weather",
 };
 
+const OM_LIVE_STATUS = new Set(["ok", "client", "direct-edge"]);
+const OM_SEED_KEYS = ["open-meteo", "open-meteo-models", "open-meteo-air", "open-meteo-flood", "open-meteo-marine"];
+
+function omNeedsClientSeed(d: DashboardSnapshot | null | undefined): boolean {
+  const ps = d?.provider_status || {};
+  return OM_SEED_KEYS.some((k) => {
+    const v = ps[k];
+    return Boolean(v) && v !== "disabled" && v !== "test-skip" && !OM_LIVE_STATUS.has(v);
+  });
+}
+
 async function loadOmPack(loc: Location | null | undefined, disabled: string[]): Promise<OmClientPack | undefined> {
   if (!loc || disabled.includes("open-meteo")) return undefined;
   try {
@@ -298,23 +309,12 @@ let dashAbort: AbortController | null = null;
 type SetFn = (p: Partial<State>) => void;
 type GetFn = () => State;
 
-/** Place switch: call the backend immediately (it fetches Open-Meteo server-side) instead of
- * waiting for the client Open-Meteo + USGS/POWER downloads first (that serial wait plus a
- * 13 s full build made a new place take ~30 s on a slow link). The client Open-Meteo pack is
- * still fetched in parallel, but only to paint an optimistic shell sooner. */
+/** Place switch: call the backend immediately (it fetches Open-Meteo server-side).
+ * If Render's shared IP is rate-limited, POST a pack fetched from the browser IP
+ * and apply that snapshot so the busy banner clears. Do not call Open-Meteo from
+ * the browser when the server already returned a live forecast. */
 async function hydrate(loc: Location | undefined, ac: AbortController, set: SetFn, get: GetFn, refresh = false): Promise<DashboardSnapshot | null> {
   const disabled = get().settings.devDisabledProviders || [];
-  if (loc && !refresh) {
-    void loadOmPack(loc, disabled)
-      .then((om) => {
-        if (om && dashAbort === ac && get().syncStatus === "syncing") {
-          set({ dashboard: buildOptimisticSnapshot(loc, om.forecast, om.air), location: loc, status: "ready", syncStatus: "direct" });
-        }
-      })
-      .catch(() => undefined);
-  }
-  const core = await fetchDashboardCore(loc, ac.signal, disabled, refresh);
-  if (dashAbort !== ac) return null;
   const apply = (d: DashboardSnapshot, done: boolean) => {
     if (!d.enriching) writeCachedSnapshot(d);
     writeSavedLoc(d.location);
@@ -328,11 +328,45 @@ async function hydrate(loc: Location | undefined, ac: AbortController, set: SetF
       recent: get().recent.length ? get().recent : readList(REC_KEY),
     });
   };
+
+  async function postClientPack(target: Location, forceFresh: boolean): Promise<DashboardSnapshot | null> {
+    const om = forceFresh
+      ? await fetchClientOmPack(target.lat, target.lon, !disabled.includes("open-meteo-air")).catch(() => null)
+      : await loadOmPack(target, disabled);
+    if (!om || dashAbort !== ac) return null;
+    try {
+      const seeded = await fetchDashboard(target, ac.signal, disabled, om);
+      if (dashAbort !== ac) return null;
+      apply(seeded, !seeded.enriching);
+      return seeded;
+    } catch {
+      return null;
+    }
+  }
+
+  // Retry: fetch a fresh pack from the user's IP first, then POST it.
+  if (refresh && loc) {
+    const seeded = await postClientPack(loc, true);
+    if (seeded) return seeded;
+    if (dashAbort !== ac) return null;
+  }
+
+  const core = await fetchDashboardCore(loc, ac.signal, disabled, refresh);
+  if (dashAbort !== ac) return null;
   apply(core, !core.enriching);
+  if (omNeedsClientSeed(core) && (loc || core.location)) {
+    const seeded = await postClientPack(loc || core.location, refresh);
+    if (seeded) return seeded;
+    if (dashAbort !== ac) return null;
+  }
   if (!core.enriching) return core;
   try {
     const full = await fetchDashboardEnrich(loc || core.location, ac.signal, disabled, refresh);
     if (dashAbort !== ac) return core;
+    if (omNeedsClientSeed(full) && (loc || full.location)) {
+      const seeded = await postClientPack(loc || full.location, refresh);
+      if (seeded) return seeded;
+    }
     apply(full, true);
     return full;
   } catch {
