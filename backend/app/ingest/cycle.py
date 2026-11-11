@@ -15,6 +15,33 @@ from app.store.time import iso_z, now_utc
 log = logging.getLogger("app.ingest.cycle")
 _cycle_lock = asyncio.Lock()
 
+
+async def wait_or_cancel(aw, timeout: float, *, cancel_grace_s: float = 2.0):
+    """Wait for a coroutine, then cancel it and only wait a short grace period.
+
+    asyncio.wait_for can hang past the budget if the cancelled download keeps
+    reading (a 391 MB MOSDAC L1B is the usual case). This helper lets the
+    cycle continue so GIBS/IR/IMERG can still publish a pack.
+    """
+    task = asyncio.ensure_future(aw)
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+    except asyncio.TimeoutError:
+        if task.done() and not task.cancelled():
+            return task.result()
+        if not task.done():
+            task.cancel()
+            try:
+                await asyncio.wait({task}, timeout=cancel_grace_s)
+            except Exception:
+                pass
+        raise
+    except asyncio.CancelledError:
+        if not task.done():
+            task.cancel()
+        raise
+
+
 SATELLITES = (
     {"id": "imd_ir1", "name": "INSAT-3DS IR1 JPEG"},
     {"id": "mosdac_hem", "name": "INSAT-3DS HEM"},
@@ -69,7 +96,7 @@ async def _run_cycle() -> dict[str, Any]:
                 sid = "mosdac_l1b" if "L1B" in str(product) else "mosdac_hem"
                 ingest_status.update(satellite={"id": sid, "status": "fetching", "bytes_read": n, "bytes_total": total})
 
-            mosdac_rows = await asyncio.wait_for(
+            mosdac_rows = await wait_or_cancel(
                 mosdac.ingest_latest(allow_l1b=bool(settings.mosdac_allow_l1b), on_progress=_hem),
                 timeout=45,
             )
@@ -128,15 +155,19 @@ async def _run_cycle() -> dict[str, Any]:
             ingest_status.update(satellite={"id": "imerg", "status": "fail", "detail": detail})
 
         ingest_status.update(phase="predict", satellite={"id": "gibs", "status": "fetching"})
+        ltg_built = False
+        ltg_saved = False
         try:
             from app.science import sat_lightning
-
-            ltg = await asyncio.wait_for(sat_lightning.refresh(), timeout=45)
             from app.store import shared_packs
 
-            await asyncio.to_thread(shared_packs.save_lightning, ltg)
-        except Exception:
-            pass
+            ltg = await asyncio.wait_for(sat_lightning.refresh(), timeout=45)
+            ltg_built = True
+            ltg_saved = bool(await asyncio.to_thread(shared_packs.save_lightning, ltg))
+            log.info("ingest lightning pack saved=%s cycle_id=%s", ltg_saved, cid)
+            print(f"ingest lightning pack saved={ltg_saved} cycle_id={cid}", flush=True)
+        except Exception as e:
+            log.info("ingest lightning skipped cycle_id=%s err=%s", cid, type(e).__name__)
         await asyncio.sleep(0)
         from app.science.storm_map import build as build_storm_map
 
@@ -150,24 +181,32 @@ async def _run_cycle() -> dict[str, Any]:
         )
         ingest_status.update(phase="alerts")
 
-        def _publish() -> None:
+        def _publish() -> bool:
             from app.store import shared_packs, sat_mongo
             from app.store.hazard_events import slim_event
             from app.ingest.worker import record_slot_frame
 
-            shared_packs.save_storm(pack)
-            persist_pack_incidents(pack, cycle_id=cid)
-            try:
-                col = sat_mongo.col("alert_windows")
-                if col is not None:
-                    for inc in pack.get("incidents") or []:
-                        if not (inc.get("gate") or {}).get("ok"):
-                            continue
-                        row = slim_event({**inc, "ingest_cycle_id": cid})
-                        if row:
-                            col.update_one({"event_id": row["event_id"]}, {"$set": row}, upsert=True)
-            except Exception:
-                pass
+            storm_saved = bool(shared_packs.save_storm(pack))
+            log.info(
+                "ingest storm pack saved=%s cycle_id=%s counts=%s",
+                storm_saved,
+                cid,
+                pack.get("counts"),
+            )
+            print(f"ingest storm pack saved={storm_saved} cycle_id={cid} counts={pack.get('counts')}", flush=True)
+            if storm_saved:
+                persist_pack_incidents(pack, cycle_id=cid)
+                try:
+                    col = sat_mongo.col("alert_windows")
+                    if col is not None:
+                        for inc in pack.get("incidents") or []:
+                            if not (inc.get("gate") or {}).get("ok"):
+                                continue
+                            row = slim_event({**inc, "ingest_cycle_id": cid})
+                            if row:
+                                col.update_one({"event_id": row["event_id"]}, {"$set": row}, upsert=True)
+                except Exception:
+                    pass
             prune_events()
             prune_frames()
             hem_time = next(
@@ -178,20 +217,33 @@ async def _run_cycle() -> dict[str, Any]:
                 record_slot_frame(jpeg_time=jpeg_time if jpeg_ok else None, hem_time=hem_time)
             except Exception:
                 pass
+            return storm_saved
 
-        await asyncio.to_thread(_publish)
-        result["ok"] = bool(pack.get("ok") or jpeg_ok)
+        storm_saved = bool(await asyncio.to_thread(_publish))
+        publish_ok = storm_saved and (ltg_saved if ltg_built else True)
+        result["ok"] = bool(publish_ok and (pack.get("ok") or jpeg_ok))
+        result["storm_saved"] = storm_saved
+        result["lightning_saved"] = ltg_saved if ltg_built else None
         result["counts"] = pack.get("counts")
         result["mosdac"] = mosdac_rows
         result["need_second_frame"] = pack.get("need_second_frame")
         data_time = jpeg_time or pack.get("ir_image_time") or pack.get("as_of")
-        ingest_status.finish(ok=True, message="", data_time=str(data_time) if data_time else None)
+        if not publish_ok:
+            if not storm_saved:
+                msg = "failed to save storm pack"
+            else:
+                msg = "failed to save lightning pack"
+            ingest_status.finish(ok=False, message=msg, data_time=str(data_time) if data_time else None)
+            log.info("ingest cycle not ready cycle_id=%s reason=%s", cid, msg)
+        else:
+            ingest_status.finish(ok=True, message="", data_time=str(data_time) if data_time else None)
         persisted = await asyncio.to_thread(ingest_status.persist_doc, ingest_status.mem_doc())
         print(
-            f"ingest cycle finish cycle_id={cid} ok={result['ok']} persisted={persisted} counts={result.get('counts')} data_time={data_time}",
+            f"ingest cycle finish cycle_id={cid} ok={result['ok']} published={publish_ok} "
+            f"persisted={persisted} counts={result.get('counts')} data_time={data_time}",
             flush=True,
         )
-        log.info("ingest cycle ready cycle_id=%s ok=%s counts=%s", cid, result["ok"], result.get("counts"))
+        log.info("ingest cycle finish cycle_id=%s ok=%s published=%s counts=%s", cid, result["ok"], publish_ok, result.get("counts"))
         return result
     except Exception as e:
         ingest_status.finish(ok=False, message=str(e)[:200])

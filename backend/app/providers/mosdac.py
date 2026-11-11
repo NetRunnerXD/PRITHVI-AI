@@ -30,6 +30,9 @@ DATASETS = ("3SIMG_L2B_HEM", "3SIMG_L2C_FOG", "3SIMG_L1B_STD", "3RIMG_L2B_HEM", 
 PRIORITY = ("3SIMG_L2B_HEM", "3SIMG_L2C_FOG")
 L1B = {"3SIMG_L1B_STD", "3RIMG_L1B_STD"}
 QUOTA_CAP = 400
+# HEM is a few MB; L1B STD is ~391 MB. Cap default downloads so a cancelled
+# L1B cannot fill a 512 Mi Render instance. Lifted only when allow_l1b is on.
+MOSDAC_MAX_BYTES = 32 * 1024 * 1024
 
 
 class NotConfigured(RuntimeError):
@@ -202,7 +205,7 @@ async def search_latest() -> dict[str, Any]:
     return last
 
 
-async def download_granule(record_id: str, filename: str | None = None, on_progress=None) -> dict[str, Any]:
+async def download_granule(record_id: str, filename: str | None = None, on_progress=None, max_bytes: int | None = MOSDAC_MAX_BYTES) -> dict[str, Any]:
     tok = await _token()
     if not tok.get("ok"):
         return tok
@@ -212,6 +215,12 @@ async def download_granule(record_id: str, filename: str | None = None, on_progr
     name = filename or f"{record_id}.h5"
     dest = ARCHIVE / Path(name).name
     if dest.exists() and dest.stat().st_size > 1024:
+        if max_bytes is not None and dest.stat().st_size > int(max_bytes):
+            try:
+                dest.unlink()
+            except OSError:
+                pass
+            return {"ok": False, "status": "too_large", "error": f"cached file exceeds max_bytes={max_bytes}"}
         mm_h = _sample_h5(dest, 22.07, 88.07)
         nbytes = dest.stat().st_size
         if on_progress:
@@ -223,17 +232,26 @@ async def download_granule(record_id: str, filename: str | None = None, on_progr
         return {"ok": True, "bytes": nbytes, "cached": True, "mm_h": mm_h, "kept": False}
     headers = {"Authorization": f"Bearer {tok['access_token']}"}
     params = {"id": record_id, "gId": record_id}
-    status, _hdrs, body = await read_body(DOWNLOAD_URL, timeout=httpx.Timeout(connect=20.0, read=120.0, write=30.0, pool=20.0), headers=headers, params=params, on_progress=on_progress)
+    timeout = httpx.Timeout(connect=20.0, read=120.0, write=30.0, pool=20.0)
+    status, _hdrs, body = await read_body(
+        DOWNLOAD_URL,
+        timeout=timeout,
+        headers=headers,
+        params=params,
+        on_progress=on_progress,
+        max_bytes=max_bytes,
+    )
     if status in {401, 403}:
         tok = await _refresh(tok)
         if not tok.get("ok"):
             return tok
         status, _hdrs, body = await read_body(
             DOWNLOAD_URL,
-            timeout=httpx.Timeout(connect=20.0, read=120.0, write=30.0, pool=20.0),
+            timeout=timeout,
             headers={"Authorization": f"Bearer {tok['access_token']}"},
             params=params,
             on_progress=on_progress,
+            max_bytes=max_bytes,
         )
     if status >= 400:
         return {"ok": False, "status": f"http_{status}", "error": body[:180].decode("utf-8", "replace")}
@@ -356,8 +374,15 @@ async def ingest_latest(*, allow_l1b: bool = False, on_progress=None) -> list[di
                 except TypeError:
                     on_progress(n, total)
 
+        # Never lift the size cap for L1B unless the caller explicitly allowed it.
+        max_bytes = None if (product in L1B and allow_l1b) else MOSDAC_MAX_BYTES
         try:
-            dl = await download_granule(gid, g.get("identifier"), on_progress=_prog if on_progress else None)
+            dl = await download_granule(
+                gid,
+                g.get("identifier"),
+                on_progress=_prog if on_progress else None,
+                max_bytes=max_bytes,
+            )
         except Exception as e:  # one bad granule must not kill the whole ingest cycle
             out.append({"ok": False, "product": product, "granule_id": gid, "status": "download_error", "error": f"{type(e).__name__}: {e}"[:180]})
             continue

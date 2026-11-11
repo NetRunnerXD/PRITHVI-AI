@@ -394,3 +394,69 @@ def test_load_mongo_doc_waits_past_one_second_on_event_loop(monkeypatch):
     finally:
         with ingest_status._view_lock:
             ingest_status._mongo_view.clear()
+
+
+def test_cloud_storm_map_serves_stale_pack(monkeypatch):
+    import time
+
+    from fastapi.testclient import TestClient
+    from app import cache
+    from app.main import app
+
+    monkeypatch.setenv("CLOUD_LIGHT", "1")
+    cache.clear()
+    packed = {
+        "ok": True,
+        "source": "ingest-pack",
+        "state": "India",
+        "cells": [{"lat": 22.07, "lon": 88.07, "kind": "storm"}],
+        "predicted": [{"lat": 22.2, "lon": 88.2, "kind": "storm"}],
+        "incidents": [{"lat": 22.07, "lon": 88.07, "kind": "storm"}],
+        "saved_at": time.time() - 7 * 3600,
+        "stale": True,
+        "ingest_age_s": 7 * 3600,
+        "message": "Showing last saved storm pack (stale); ingest will refresh.",
+    }
+    with (
+        patch("app.store.shared_packs.load_storm", return_value=packed),
+        patch("app.config.cloud_light", return_value=True),
+    ):
+        client = TestClient(app)
+        r = client.get("/api/nowcast/storm-map", params={"state": "India", "past_h": 6})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["source"] == "ingest-pack"
+    assert body["stale"] is True
+    assert body["cells"]
+    assert body["predicted"]
+    assert "stale" in (body.get("message") or "").lower()
+
+
+def test_pending_storm_pack_is_not_cached_long(monkeypatch):
+    import time
+
+    from fastapi.testclient import TestClient
+    from app import cache
+    from app.main import app
+
+    monkeypatch.setenv("CLOUD_LIGHT", "1")
+    cache.clear()
+    with (
+        patch("app.store.shared_packs.load_storm", return_value=None),
+        patch("app.config.cloud_light", return_value=True),
+    ):
+        client = TestClient(app)
+        r = client.get("/api/nowcast/storm-map", params={"state": "India", "past_h": 6})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source"] == "ingest-pack-pending"
+    assert r.headers.get("cache-control") == "no-store"
+    key = "stormpack:india:6"
+    hit = cache._store.get(key)
+    assert hit is not None
+    fresh, swr, value = hit[0], hit[1], hit[2]
+    assert value.get("source") == "ingest-pack-pending"
+    # Must be far shorter than the 90s/600s window used for real packs.
+    assert fresh - time.time() <= 10
+    assert swr - time.time() <= 10

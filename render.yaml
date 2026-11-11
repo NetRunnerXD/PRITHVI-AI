@@ -64,6 +64,8 @@ services:
         sync: false
       - key: CLOUD_LIGHT
         value: "1"
+      - key: MOSDAC_ALLOW_L1B
+        value: "false"
       - key: PN_ENABLED
         value: "0"
       - key: PN_VERSION

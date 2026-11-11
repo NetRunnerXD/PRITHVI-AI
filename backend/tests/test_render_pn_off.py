@@ -12,6 +12,8 @@ def test_blueprint_pins_pn_off_and_cloud_light():
     env = {item["key"]: item.get("value") for item in services["rituchakra-api"]["envVars"]}
     assert env["PN_ENABLED"] == "0"
     assert env["CLOUD_LIGHT"] == "1"
+    assert env["MOSDAC_ALLOW_L1B"] == "false"
+    assert env["LLM_FALLBACK"] == "gemini,groq"
 
 
 def test_cloud_light_flags(monkeypatch):
