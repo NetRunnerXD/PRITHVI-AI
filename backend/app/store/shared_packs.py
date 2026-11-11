@@ -14,9 +14,13 @@ from typing import Any
 STORM_ID = "india"
 LTG_ID = "satltg:v1"
 STORM_FRESH_S = 20 * 60
-STORM_STALE_S = 6 * 3600
+# How long the API may still draw a saved pack (with stale=true after FRESH).
+# The old 6h cutoff blanked the map whenever ingest slept overnight.
+STORM_SERVE_S = 48 * 3600
+STORM_STALE_S = STORM_SERVE_S
 LTG_FRESH_S = 20 * 60
-LTG_STALE_S = 6 * 3600
+LTG_SERVE_S = 48 * 3600
+LTG_STALE_S = LTG_SERVE_S
 
 _DROP = {"grid", "rgba", "body", "tb", "gray"}
 _GEO_KEYS = (
@@ -104,7 +108,26 @@ def save_storm(pack: dict[str, Any] | None) -> bool:
         return False
 
 
-def load_storm(max_age_s: float = STORM_STALE_S) -> dict[str, Any] | None:
+def annotate_age(pack: dict[str, Any] | None, *, fresh_s: float = STORM_FRESH_S, kind: str = "storm") -> dict[str, Any] | None:
+    """Mark a loaded pack stale when it is older than the fresh window, but keep it."""
+    if not pack:
+        return pack
+    out = dict(pack)
+    saved = float(out.get("saved_at") or 0)
+    age = (time.time() - saved) if saved else None
+    if age is None:
+        return out
+    out["ingest_age_s"] = int(age)
+    if age > float(fresh_s):
+        out["stale"] = True
+        if not out.get("message"):
+            out["message"] = f"Showing last saved {kind} pack (stale); ingest will refresh."
+    else:
+        out.setdefault("stale", False)
+    return out
+
+
+def load_storm(max_age_s: float = STORM_SERVE_S) -> dict[str, Any] | None:
     col = _col("storm_packs")
     if col is None:
         return None
@@ -118,7 +141,7 @@ def load_storm(max_age_s: float = STORM_STALE_S) -> dict[str, Any] | None:
     if saved and (time.time() - saved) > float(max_age_s):
         return None
     row.pop("_id", None)
-    return row
+    return annotate_age(row, fresh_s=STORM_FRESH_S, kind="storm")
 
 
 def save_lightning(pack: dict[str, Any] | None) -> bool:
@@ -134,7 +157,7 @@ def save_lightning(pack: dict[str, Any] | None) -> bool:
         return False
 
 
-def load_lightning(max_age_s: float = LTG_STALE_S) -> dict[str, Any] | None:
+def load_lightning(max_age_s: float = LTG_SERVE_S) -> dict[str, Any] | None:
     col = _col("lightning_pack")
     if col is None:
         return None
@@ -148,7 +171,7 @@ def load_lightning(max_age_s: float = LTG_STALE_S) -> dict[str, Any] | None:
     if saved and (time.time() - saved) > float(max_age_s):
         return None
     row.pop("_id", None)
-    return row
+    return annotate_age(row, fresh_s=LTG_FRESH_S, kind="lightning")
 
 
 def crop_pack(pack: dict[str, Any], state: str, past_h: float | None = None) -> dict[str, Any]:

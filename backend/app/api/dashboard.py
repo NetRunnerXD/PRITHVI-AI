@@ -459,6 +459,13 @@ async def storm_map_api(
         if cloud_light():
             packed = shared_packs.load_storm()
             if packed:
+                if packed.get("stale"):
+                    try:
+                        from app.ingest.kick import kick_if_stale
+
+                        await kick_if_stale("storm-map-stale")
+                    except Exception:
+                        pass
                 return shared_packs.crop_pack(packed, state, past_h=horizon)
             try:
                 from app.ingest.kick import kick_if_stale
@@ -467,7 +474,7 @@ async def storm_map_api(
             except Exception:
                 pass
             # Do not rebuild IR on the API (the ~49s memory climb). Serve a
-            # thin pending pack until ingest publishes one.
+            # thin pending pack only when Mongo has no pack at all.
             from app.data.india_districts import state_frame
 
             frame = state_frame(state)
@@ -488,8 +495,13 @@ async def storm_map_api(
 
     # 90 s fresh, 10 min stale-while-revalidate, single-flight: concurrent tabs share one
     # build and a slow rebuild never blocks a user who already has a recent map.
+    # Pending empty packs must not sit in that 10 min SWR window or the map stays blank
+    # after ingest finally publishes.
     pack = await asyncio.shield(cache.aget(key, _load, ttl_s=90, swr_s=600))
     pack = dict(pack)
+    pending = pack.get("source") == "ingest-pack-pending"
+    if pending:
+        cache.set(key, pack, ttl_s=8, swr_s=0)
     try:
         from app.store import ingest_status
 
@@ -509,6 +521,10 @@ async def storm_map_api(
     except Exception:
         pass
     pack["past_h"] = horizon
+    if pending:
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(pack, headers={"Cache-Control": "no-store"})
     return pack
 
 

@@ -154,11 +154,25 @@ def client() -> httpx.AsyncClient:
     return _client
 
 
-async def read_body(url: str, *, timeout: float | httpx.Timeout = 20.0, headers: dict | None = None, params: dict | None = None, on_progress=None):
-    """GET a body. Calls on_progress(bytes_read, bytes_total | None) when Content-Length is known."""
+async def read_body(
+    url: str,
+    *,
+    timeout: float | httpx.Timeout = 20.0,
+    headers: dict | None = None,
+    params: dict | None = None,
+    on_progress=None,
+    max_bytes: int | None = None,
+):
+    """GET a body. Calls on_progress(bytes_read, bytes_total | None) when Content-Length is known.
+
+    If max_bytes is set, abort before buffering a huge body (INSAT L1B is ~391 MB).
+    """
     async with client().stream("GET", url, timeout=timeout, headers=headers, params=params) as r:
         raw = r.headers.get("content-length")
         total = int(raw) if raw and str(raw).isdigit() else None
+        if max_bytes is not None and total is not None and total > int(max_bytes):
+            await r.aclose()
+            raise OSError(f"content-length {total} exceeds max_bytes {max_bytes}")
         parts: list[bytes] = []
         n = 0
         async for chunk in r.aiter_bytes():
@@ -166,6 +180,9 @@ async def read_body(url: str, *, timeout: float | httpx.Timeout = 20.0, headers:
             n += len(chunk)
             if on_progress and total:
                 on_progress(n, total)
+            if max_bytes is not None and n > int(max_bytes):
+                await r.aclose()
+                raise OSError(f"download exceeded max_bytes={max_bytes}")
         return r.status_code, {k.lower(): v for k, v in r.headers.items()}, b"".join(parts)
 
 
