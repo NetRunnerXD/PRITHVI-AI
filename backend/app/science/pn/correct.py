@@ -51,9 +51,9 @@ def status() -> dict[str, Any]:
     needs = []
     if not os.path.exists(model_path()):
         needs.append("PN_CORRECT_MODEL_PATH (pn_correct_v6.onnx)")
-    try:
-        import scipy.ndimage  # noqa: F401
-    except Exception:  # noqa: BLE001
+    import importlib.util
+
+    if importlib.util.find_spec("scipy") is None:  # no import on the dashboard path
         needs.append("pip install scipy")
     return {"enabled": bool(enabled_flag() and not needs), "flag": enabled_flag(), "needs": needs,
             "layer": "rain within 25 km, 6/9/12 h (separate from the v7 field)"}
