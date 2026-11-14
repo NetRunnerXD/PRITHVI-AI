@@ -72,19 +72,47 @@ def optical_flow(prev: list[list[float]], curr: list[list[float]], step: int = 4
     }
 
 
+def _advect_np(g, u: float, v: float):
+    """One semi-Lagrangian step: out[y][x] = bilinear(g, y - v, x - u), 0 off-grid.
+
+    u, v are uniform over the grid, so the bilinear weights are the same everywhere and
+    the step is a shifted weighted sum. Same arithmetic as ``_bilinear`` but vectorised:
+    the pure-Python loop made 1.4M calls per dashboard and held the event loop for ~2 s
+    locally (far longer on a Render Free CPU share), timing out /api/ready.
+    """
+    import numpy as np
+
+    h, w = g.shape
+    out = np.zeros((h, w), dtype=np.float64)
+    if h < 2 or w < 2:
+        return out
+    oy = int(math.floor(-v))
+    ox = int(math.floor(-u))
+    wy = -v - oy
+    wx = -u - ox
+    ylo, yhi = max(0, -oy), min(h, h - 1 - oy)  # need 0 <= y+oy and y+oy+1 < h
+    xlo, xhi = max(0, -ox), min(w, w - 1 - ox)
+    if ylo >= yhi or xlo >= xhi:
+        return out
+    y0 = slice(ylo + oy, yhi + oy)
+    y1 = slice(ylo + oy + 1, yhi + oy + 1)
+    x0 = slice(xlo + ox, xhi + ox)
+    x1 = slice(xlo + ox + 1, xhi + ox + 1)
+    a = g[y0, x0] * (1 - wx) + g[y0, x1] * wx
+    b = g[y1, x0] * (1 - wx) + g[y1, x1] * wx
+    out[ylo:yhi, xlo:xhi] = a * (1 - wy) + b * wy
+    return out
+
+
 def advect(grid: list[list[float]], u: float, v: float, steps: int = 1) -> list[list[float]]:
     if not grid or not grid[0]:
         return []
-    h, w = len(grid), len(grid[0])
-    out = [row[:] for row in grid]
+    import numpy as np
+
+    out = np.asarray(grid, dtype=np.float64)
     for _ in range(max(1, steps)):
-        nxt = [[0.0] * w for _ in range(h)]
-        for y in range(h):
-            for x in range(w):
-                # pull from upstream
-                nxt[y][x] = _bilinear(out, y - v, x - u)
-        out = nxt
-    return out
+        out = _advect_np(out, float(u), float(v))
+    return out.tolist()
 
 
 def steps_ensemble(
@@ -98,18 +126,20 @@ def steps_ensemble(
     v = float(flow.get("v_px") or 0)
     if not grid:
         return {"hours": [], "spread": None, "n": 0, "method": "no-grid"}
+    import numpy as np
+
     hours: list[dict[str, Any]] = []
-    g = grid
+    g = np.asarray(grid, dtype=np.float64)
     for lead in range(1, leads + 1):
         fields = []
         for m in range(members):
             jitter_u = u + ((m - members // 2) * 0.15)
             jitter_v = v + ((m % 3) - 1) * 0.15
-            adv = advect(g, jitter_u, jitter_v, steps=1)
+            adv = _advect_np(g, jitter_u, jitter_v)
             scale = 0.92 + 0.04 * ((m % 3) - 1)
-            mean = sum(sum(row) for row in adv) / max(1, len(adv) * len(adv[0]))
+            mean = float(adv.sum()) / max(1, adv.size)
             fields.append(mean * scale)
-        g = advect(g, u, v, steps=1)
+        g = _advect_np(g, u, v)
         mu = sum(fields) / len(fields)
         var = sum((x - mu) ** 2 for x in fields) / len(fields)
         hours.append(

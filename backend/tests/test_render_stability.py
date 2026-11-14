@@ -288,3 +288,42 @@ def test_release_memory_is_safe():
 
     out = release_memory()
     assert "gc" in out
+
+
+# ---------------------------------------------------------------- 3b. event-loop CPU
+
+
+def _old_advect(grid, u, v):
+    from app.science.rain_field import _bilinear
+
+    h, w = len(grid), len(grid[0])
+    return [[_bilinear(grid, y - v, x - u) for x in range(w)] for y in range(h)]
+
+
+def test_vectorised_advect_matches_bilinear_loop():
+    import random
+
+    from app.science.rain_field import advect
+
+    rnd = random.Random(7)
+    for _ in range(60):
+        h, w = rnd.randint(1, 18), rnd.randint(1, 18)
+        g = [[rnd.random() * 10 for _ in range(w)] for _ in range(h)]
+        u, v = rnd.uniform(-4, 4), rnd.uniform(-4, 4)
+        got, want = advect(g, u, v), _old_advect(g, u, v)
+        assert np.allclose(np.array(got), np.array(want), atol=1e-12)
+
+
+def test_pn_status_does_not_import_heavy_modules(monkeypatch):
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, os; os.environ['PN_ENABLED']='0'; os.environ['CLOUD_LIGHT']='1';"
+        "from app.science import pn; pn.status();"
+        "from app.science.pn import v7, net, correct; v7.status(); net.status(); correct.status();"
+        "bad=[m for m in ('onnxruntime','cv2','scipy','eccodes') if m in sys.modules];"
+        "print(bad); sys.exit(1 if bad else 0)"
+    )
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[1]))
+    assert r.returncode == 0, r.stdout + r.stderr

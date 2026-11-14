@@ -41,21 +41,26 @@ def cfg() -> dict[str, Any]:
     return params()["pn_nowcast_v7"]
 
 
+def _has(mod: str) -> bool:
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec(mod) is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def status() -> dict[str, Any]:
     needs: list[str] = []
-    try:
-        import onnxruntime  # noqa: F401
-    except ImportError:
+    # find_spec only: status() runs on every dashboard. Importing onnxruntime/cv2/scipy/
+    # eccodes here (even with PN_ENABLED=0) cost ~100 MB and seconds of event-loop CPU on
+    # Render Free. The real imports happen when PN actually runs.
+    if not _has("onnxruntime"):
         needs.append("pip install onnxruntime (CPU wheel)")
-    try:
-        import cv2  # noqa: F401
-        import scipy.spatial  # noqa: F401
-    except Exception:  # noqa: BLE001
+    if not (_has("cv2") and _has("scipy")):
         # Soft: motion_lk already zeros channels when LK unavailable (matches training miss).
         needs.append("opencv/scipy absent — motion channels zeroed (Free-safe; local: pip install opencv-python-headless scipy)")
-    try:
-        import eccodes  # noqa: F401
-    except Exception:  # noqa: BLE001
+    if not _has("eccodes"):
         needs.append("pip install eccodes (GFS/IFS GRIB2; without it both NWP groups are masked)")
     if not os.path.exists(model_path()):
         needs.append("PN_V7_MODEL_PATH (ONNX from tools/pn_export_onnx_v7.py)")

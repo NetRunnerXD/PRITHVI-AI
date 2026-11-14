@@ -23,12 +23,11 @@ _SESSION: Any = None
 
 def status() -> dict[str, Any]:
     needs: list[str] = []
-    try:
-        import onnxruntime  # noqa: F401
+    import importlib.util
 
-        ort_ok = True
-    except ImportError:
-        ort_ok = False
+    # find_spec, not import: status() runs on dashboards even with PN off.
+    ort_ok = importlib.util.find_spec("onnxruntime") is not None
+    if not ort_ok:
         needs.append("pip install onnxruntime (CPU wheel)")
     path = os.environ.get("PN_MODEL_PATH") or ""
     static = os.environ.get("PN_STATIC_PATH") or ""
