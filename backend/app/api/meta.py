@@ -127,6 +127,9 @@ async def health():
     }
 
 
+_bg_tasks: set = set()
+
+
 @router.get("/ready", summary="Readiness")
 async def ready():
     body = {"ok": True, "service": "prithvi-ai-api", "version": settings.api_version, "role": settings.app_role}
@@ -160,16 +163,18 @@ async def ready():
                 "age_s": None,
                 "as_of": None,
             }
-    # Visitors keep ingest fresh: cheap HTTP kick, throttled to 10 minutes.
+    # Visitors keep ingest fresh: cheap HTTP kick, throttled to 10 minutes. The staleness
+    # probe (a Mongo read) runs in the background so this health check stays instant.
     try:
         import os
-        from app.ingest.kick import kick_if_stale, pack_or_status_stale
+        from app.ingest.kick import ready_probe
 
         role = (settings.app_role or "api").strip().lower()
-        if role != "ingest" and not os.environ.get("PYTEST_CURRENT_TEST") and pack_or_status_stale():
+        if role != "ingest" and not os.environ.get("PYTEST_CURRENT_TEST"):
             import asyncio
 
-            asyncio.create_task(kick_if_stale("ready-stale"))
+            _bg_tasks.add(t := asyncio.create_task(ready_probe("ready-stale")))
+            t.add_done_callback(_bg_tasks.discard)
     except Exception:
         pass
     return JSONResponse(body)

@@ -214,6 +214,11 @@ async def aget(
                 if time.time() < swr:
                     stale = value
         existing = _inflight.get(key)
+        if existing is not None and existing.done():
+            # A finished (or cancelled) task must never be re-awaited: a cancelled one would
+            # hand every later caller an instant CancelledError until the process restarts.
+            _inflight.pop(key, None)
+            existing = None
         if stale is not None:
             if existing is None:
                 task = asyncio.create_task(_refresh(key, factory, ttl_s, swr_s))
@@ -226,11 +231,37 @@ async def aget(
             _inflight[key] = waiter
 
     try:
-        return await waiter
+        # shield: one caller's timeout / disconnect must not cancel the shared fetch that
+        # other requests are also awaiting (that leaked CancelledError past every
+        # ``except Exception`` and surfaced as "RuntimeError: No response returned").
+        return await asyncio.shield(waiter)
+    except asyncio.CancelledError:
+        if waiter.cancelled() and not _caller_cancelling():
+            # The shared task was cancelled by someone else; we were not. Report it as an
+            # ordinary error so provider fallbacks (``except Exception``) handle it.
+            if stale is not None:
+                return stale
+            raise SharedFetchCancelled(key) from None
+        raise
     except Exception:
         if stale is not None:
             return stale
         raise
+
+
+class SharedFetchCancelled(RuntimeError):
+    """The coalesced fetch for a key was cancelled by another caller."""
+
+
+def _caller_cancelling() -> bool:
+    task = asyncio.current_task()
+    if task is None:
+        return False
+    fn = getattr(task, "cancelling", None)
+    try:
+        return bool(fn()) if callable(fn) else False
+    except Exception:
+        return False
 
 
 async def _refresh(
@@ -244,8 +275,8 @@ async def _refresh(
         set(key, value, ttl_s, swr_s)
         return value
     finally:
+        # No await here: a second cancel() delivered while waiting on a lock used to skip
+        # the pop and leave a dead task in _inflight forever.
         cur = asyncio.current_task()
-        lock = _aloop()
-        async with lock:
-            if _inflight.get(key) is cur:
-                _inflight.pop(key, None)
+        if _inflight.get(key) is cur:
+            _inflight.pop(key, None)

@@ -9,6 +9,7 @@ Do not keep HDF5 in Mongo (512 MB Atlas). Sample, write last_hem.json, delete th
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import date, timedelta
 from pathlib import Path
@@ -221,7 +222,7 @@ async def download_granule(record_id: str, filename: str | None = None, on_progr
             except OSError:
                 pass
             return {"ok": False, "status": "too_large", "error": f"cached file exceeds max_bytes={max_bytes}"}
-        mm_h = _sample_h5(dest, 22.07, 88.07)
+        mm_h = await asyncio.to_thread(_sample_h5, dest, 22.07, 88.07)
         nbytes = dest.stat().st_size
         if on_progress:
             on_progress(nbytes, nbytes)
@@ -256,10 +257,11 @@ async def download_granule(record_id: str, filename: str | None = None, on_progr
     if status >= 400:
         return {"ok": False, "status": f"http_{status}", "error": body[:180].decode("utf-8", "replace")}
     dest.write_bytes(body)
+    del body  # up to 32 MB; do not hold it through the HDF5 sample
     nbytes = dest.stat().st_size
     mm_h = None
     if dest.suffix.lower() in {".h5", ".hdf5", ".he5"} or "HEM" in dest.name.upper():
-        mm_h = _sample_h5(dest, 22.07, 88.07)
+        mm_h = await asyncio.to_thread(_sample_h5, dest, 22.07, 88.07)
         if mm_h is not None:
             try:
                 (ARCHIVE / "last_hem.json").write_text(
@@ -425,23 +427,38 @@ async def download_product(product: str = "3SIMG_L2B_HEM") -> dict[str, Any]:
     return {**dl, "granule": g, "search": pack}
 
 
-def _scaled(ds):
+def _scaled(ds, sel=()):
+    """Read ``ds[sel]`` (a slice, never the whole full-disk array unless asked) as float32
+    with _FillValue -> NaN, scale_factor and add_offset applied in place."""
     import numpy as np
 
-    a = np.array(ds[()], dtype=float)
+    a = np.asarray(ds[sel], dtype=np.float32)
+    if a.ndim == 0:
+        a = a.reshape(1)
     fill = ds.attrs.get("_FillValue")
     if fill is not None:
-        a = np.where(a == float(np.array(fill).reshape(-1)[0]), np.nan, a)
+        a[a == np.float32(np.array(fill).reshape(-1)[0])] = np.nan
     sf = ds.attrs.get("scale_factor")
     off = ds.attrs.get("add_offset")
     if sf is not None:
-        a = a * float(np.array(sf).reshape(-1)[0])
+        a *= np.float32(np.array(sf).reshape(-1)[0])
     if off is not None:
-        a = a + float(np.array(off).reshape(-1)[0])
+        a += np.float32(np.array(off).reshape(-1)[0])
     return a
 
 
+def _lead(ds) -> tuple:
+    """Index prefix that drops leading singleton/time dims (old code took ``a[0]``)."""
+    return (0,) * max(0, len(ds.shape) - 2)
+
+
 def _sample_h5(path: Path, lat: float, lon: float) -> float | None:
+    """Rain rate at one point from a HEM granule.
+
+    Reads only a strided lat/lon lattice plus one small patch via h5py slicing. Loading the
+    full-disk HEM + Latitude + Longitude as float64 (plus np.where copies) was several
+    hundred MB and pushed the 512 MiB ingest instance into OOM kills.
+    """
     try:
         import h5py
         import numpy as np
@@ -456,32 +473,34 @@ def _sample_h5(path: Path, lat: float, lon: float) -> float | None:
                     break
             if rain is None:
                 return None
-            a = _scaled(rain)
-            while a.ndim > 2:
-                a = a[0]
+            lead = _lead(rain)
+            h, w = int(rain.shape[-2]), int(rain.shape[-1])
             if "Latitude" in f and "Longitude" in f:
-                la = _scaled(f["Latitude"])
-                lo = _scaled(f["Longitude"])
-                if la.shape != a.shape:
+                lat_ds, lon_ds = f["Latitude"], f["Longitude"]
+                if tuple(lat_ds.shape[-2:]) != (h, w) or tuple(lon_ds.shape[-2:]) != (h, w):
                     return None
                 step = 8
-                sub = (la[::step, ::step] - lat) ** 2 + (lo[::step, ::step] - lon) ** 2
+                la_s = _scaled(lat_ds, _lead(lat_ds) + (slice(None, None, step), slice(None, None, step)))
+                lo_s = _scaled(lon_ds, _lead(lon_ds) + (slice(None, None, step), slice(None, None, step)))
+                sub = (la_s - lat) ** 2 + (lo_s - lon) ** 2
+                del la_s, lo_s
                 yi, xi = np.unravel_index(np.nanargmin(sub), sub.shape)
+                del sub
                 y0, x0 = int(yi) * step, int(xi) * step
-                y1, x1 = min(a.shape[0], y0 + step), min(a.shape[1], x0 + step)
-                patch_lat = la[y0:y1, x0:x1]
-                patch_lon = lo[y0:y1, x0:x1]
+                y1, x1 = min(h, y0 + step), min(w, x0 + step)
+                win = (slice(y0, y1), slice(x0, x1))
+                patch_lat = _scaled(lat_ds, _lead(lat_ds) + win)
+                patch_lon = _scaled(lon_ds, _lead(lon_ds) + win)
                 d = (patch_lat - lat) ** 2 + (patch_lon - lon) ** 2
                 py, px = np.unravel_index(np.nanargmin(d), d.shape)
-                v = float(a[y0 + int(py), x0 + int(px)])
+                v = float(_scaled(rain, lead + (y0 + int(py), x0 + int(px))).reshape(-1)[0])
             else:
-                h, w = a.shape[-2], a.shape[-1]
                 west, east, south, north = 40.0, 110.0, -10.0, 45.0
                 fx = (lon - west) / (east - west)
                 fy = (north - lat) / (north - south)
                 xi = int(max(0, min(w - 1, round(fx * (w - 1)))))
                 yi = int(max(0, min(h - 1, round(fy * (h - 1)))))
-                v = float(a[yi, xi])
+                v = float(_scaled(rain, lead + (yi, xi)).reshape(-1)[0])
             if v != v or v < 0 or v > 200:
                 return 0.0 if v != v or v < 0 else None
             return v

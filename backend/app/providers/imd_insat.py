@@ -86,18 +86,21 @@ class Georef:
 
 
 def _overlay_mask(rgb):
-    """True where IMD drew borders/coasts (coloured) or the dashed graticule (grey lines)."""
+    """True where IMD drew borders/coasts (coloured) or the dashed graticule (grey lines).
+
+    Memory-lean on the 2002x2242 frame: the old int16 copy + float64 means + full-size
+    float64 temporaries peaked ~190 MB above baseline on the 512 MiB ingest instance.
+    Same thresholds; uint8 chroma (max >= min, no overflow) and float32 grey.
+    """
     import numpy as np
 
-    a = rgb.astype(np.int16)
-    chroma = a.max(axis=2) - a.min(axis=2)
-    mask = chroma > 40
-    gray = a.mean(axis=2)
+    mask = (rgb.max(axis=2) - rgb.min(axis=2)) > 40
+    gray = rgb.sum(axis=2, dtype=np.uint16).astype(np.float32)
+    gray /= 3.0
     # graticule: thin rows/columns that stand out from both neighbours along most of the image
-    d_row = np.abs(gray[1:-1] - 0.5 * (gray[:-2] + gray[2:])) > 25
-    d_col = np.abs(gray[:, 1:-1] - 0.5 * (gray[:, :-2] + gray[:, 2:])) > 25
-    rows = np.nonzero(d_row.mean(axis=1) > 0.18)[0] + 1
-    cols = np.nonzero(d_col.mean(axis=0) > 0.18)[0] + 1
+    rows = _line_hits(gray, axis=0)
+    cols = _line_hits(gray.T, axis=0)
+    del gray
     for r in rows:
         mask[max(0, r - 1) : r + 2, :] = True
     for c in cols:
@@ -109,6 +112,36 @@ def _overlay_mask(rgb):
     grown[:, 1:] |= mask[:, :-1]
     grown[:, :-1] |= mask[:, 1:]
     return grown
+
+
+def _line_hits(gray, axis: int = 0, chunk: int = 256):
+    """Row indices (1..n-2) where |g[r] - (g[r-1]+g[r+1])/2| > 25 on > 18% of the row.
+    Processed in row chunks so no full-frame float temporaries are allocated."""
+    import numpy as np
+
+    n = gray.shape[0]
+    out: list[int] = []
+    for a in range(1, n - 1, chunk):
+        b = min(n - 1, a + chunk)
+        mid = gray[a:b]
+        nb = gray[a - 1 : b - 1] + gray[a + 1 : b + 1]
+        nb *= 0.5
+        np.subtract(mid, nb, out=nb)
+        np.abs(nb, out=nb)
+        frac = (nb > 25).mean(axis=1)
+        out.extend((np.nonzero(frac > 0.18)[0] + a).tolist())
+    return np.asarray(out, dtype=np.int64)
+
+
+def _luma(rgb):
+    """float32 luma without a full float32 RGB copy."""
+    import numpy as np
+
+    g = rgb[..., 0].astype(np.float32)
+    g *= 0.299
+    g += 0.587 * rgb[..., 1]
+    g += 0.114 * rgb[..., 2]
+    return g
 
 
 def _decode(png: bytes):
@@ -219,7 +252,7 @@ def _sample_gray(png: bytes, lat: float, lon: float) -> dict[str, Any] | None:
     west, east, south, north = geo.bounds()
     if not (west <= lon <= east and south <= lat <= north):
         return {"ok": False, "status": "off_frame", "tb_k": None, "gray": None}
-    gray = rgb.astype(np.float32) @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+    gray = _luma(rgb)
     mask = _overlay_mask(rgb)
     x, y = geo.px(lat, lon)
     xi, yi = int(round(x)), int(round(y))
@@ -263,7 +296,7 @@ def downsample_india(png: bytes, size: int = 140) -> list[list[float]] | None:
 
     h, w = rgb.shape[:2]
     geo = Georef.for_size(w, h)
-    gray = rgb.astype(np.float32) @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+    gray = _luma(rgb)
     mask = _overlay_mask(rgb)
     iw, ie, iso, ino = INDIA_BOUNDS
     from app.data.india_mask import in_india
@@ -300,7 +333,7 @@ def downsample_sector(png: bytes, size: int = 80) -> list[list[float]] | None:
 
     h, w = rgb.shape[:2]
     geo = Georef.for_size(w, h)
-    gray = rgb.astype(np.float32) @ np.array([0.299, 0.587, 0.114], dtype=np.float32)
+    gray = _luma(rgb)
     mask = _overlay_mask(rgb)
     west, east, south, north = ASIA_BOUNDS
     grid: list[list[float]] = []

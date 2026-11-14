@@ -457,7 +457,8 @@ async def storm_map_api(
         from app.store import shared_packs
 
         if cloud_light():
-            packed = shared_packs.load_storm()
+            # Mongo read + BSON decode of the whole pack: keep it off the event loop.
+            packed = await asyncio.to_thread(shared_packs.load_storm)
             if packed:
                 if packed.get("stale"):
                     try:

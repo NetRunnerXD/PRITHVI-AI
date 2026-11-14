@@ -64,6 +64,8 @@ services:
         sync: false
       - key: CLOUD_LIGHT
         value: "1"
+      - key: MALLOC_ARENA_MAX
+        value: "2"
       - key: MOSDAC_ALLOW_L1B
         value: "false"
       - key: PN_ENABLED

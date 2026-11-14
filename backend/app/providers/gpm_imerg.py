@@ -218,16 +218,17 @@ async def _hdf_point(
                         break
             if ds is None:
                 return {"ok": False, "status": "no_precip_dataset"}
-            a = np.array(ds[()])
-            while a.ndim > 2:
-                a = a[0]
+            # Point read via h5py slicing: never load the 3600x1800 global grid.
+            lead = (0,) * max(0, len(ds.shape) - 2)
+            sh = tuple(int(x) for x in ds.shape[-2:])
             # IMERG often lon,lat
-            if a.shape[0] == 3600 and a.shape[1] == 1800:
-                v = float(a[li, lj])
-            elif a.shape[0] == 1800 and a.shape[1] == 3600:
-                v = float(a[lj, li])
+            if sh == (3600, 1800):
+                v = float(np.asarray(ds[lead + (li, lj)]).reshape(-1)[0])
+            elif sh == (1800, 3600):
+                v = float(np.asarray(ds[lead + (lj, li)]).reshape(-1)[0])
             else:
-                v = float(a.flat[min(len(a.flat) - 1, lj * a.shape[-1] + li)])
+                flat = min(sh[0] * sh[1] - 1, lj * sh[-1] + li)
+                v = float(np.asarray(ds[lead + (flat // sh[1], flat % sh[1])]).reshape(-1)[0])
             if v != v or v < 0:
                 v = 0.0
             return {"ok": True, "mm_h": v, "source": "gesdisc-hdf5-GPM_3IMERGHHE", "path": str(dest)}

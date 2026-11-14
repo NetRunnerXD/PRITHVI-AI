@@ -2,7 +2,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.meta import service_card
@@ -148,25 +148,22 @@ else:
 # Order matters: Starlette's last-added middleware is outermost. The error→JSON layer is
 # added first so it sits *inside* CORS — a crash still returns Access-Control-Allow-Origin,
 # so the browser shows the real 500 instead of a misleading CORS error.
-from app.middleware import CacheControlMiddleware, JSONErrorMiddleware, SelectiveGZipMiddleware
+# All of these are pure ASGI (no BaseHTTPMiddleware): stacked BaseHTTPMiddleware layers
+# swallowed the real exception as "RuntimeError: No response returned".
+from app.middleware import (
+    CacheControlMiddleware,
+    HeaderStampMiddleware,
+    JSONErrorMiddleware,
+    SelectiveGZipMiddleware,
+)
 
 app.add_middleware(JSONErrorMiddleware)
 app.add_middleware(CacheControlMiddleware)
 app.add_middleware(CORSMiddleware, **_cors_kwargs)
 app.add_middleware(SelectiveGZipMiddleware, minimum_size=1024)
+app.add_middleware(HeaderStampMiddleware, version=settings.api_version, surface=infer_surface)
 
 mount_surfaces(app)
-
-
-@app.middleware("http")
-async def stamp_version(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-API-Version"] = settings.api_version
-    response.headers["X-Client-Surface"] = infer_surface(
-        request.url.path,
-        request.headers.get("x-rituchakra-client"),
-    )
-    return response
 
 
 def _catalog_body() -> dict:

@@ -39,13 +39,36 @@ def pack_or_status_stale() -> bool:
         from app.store import ingest_status
         from app.store import shared_packs
 
-        pack = shared_packs.load_storm(max_age_s=shared_packs.STORM_FRESH_S)
-        if pack is None:
+        saved = shared_packs.storm_saved_at()
+        if not saved or (time.time() - saved) > float(shared_packs.STORM_FRESH_S):
             return True
         snap = ingest_status.snapshot()
         return bool(snap.get("stale"))
     except Exception:
         return True
+
+
+_ready_probe_mono = 0.0
+READY_PROBE_S = 60.0
+
+
+async def ready_probe(reason: str = "ready-stale") -> None:
+    """Background staleness probe for /api/ready: the Mongo read runs in a thread and at
+    most once a minute, so the health check itself never waits on it."""
+    global _ready_probe_mono
+    now = time.monotonic()
+    if _ready_probe_mono and (now - _ready_probe_mono) < READY_PROBE_S:
+        return
+    _ready_probe_mono = now
+    try:
+        stale = await asyncio.to_thread(pack_or_status_stale)
+    except Exception:
+        return
+    if stale:
+        try:
+            await kick_if_stale(reason)
+        except Exception:
+            pass
 
 
 def build_kick_request(base: str, secret: str = "") -> tuple[str, dict[str, str]]:

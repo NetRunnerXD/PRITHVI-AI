@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from urllib.parse import parse_qsl
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.datastructures import MutableHeaders
 from starlette.middleware.gzip import GZipMiddleware
-from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 log = logging.getLogger("prithvi.http")
 
@@ -36,38 +37,134 @@ def _strip(path: str) -> str:
     return path
 
 
-class JSONErrorMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+def _leaked_cancel() -> bool:
+    """True when a CancelledError reached us although *this* request task is not being
+    cancelled (server shutdown / client disconnect set ``cancelling()``)."""
+    task = asyncio.current_task()
+    fn = getattr(task, "cancelling", None) if task is not None else None
+    try:
+        return not (fn() if callable(fn) else True)
+    except Exception:
+        return False
+
+
+class JSONErrorMiddleware:
+    """Pure ASGI: turn an unhandled exception into a JSON 500 and log the *real* traceback.
+
+    BaseHTTPMiddleware stacking hid the inner error behind ``RuntimeError: No response
+    returned`` (and a CancelledError from a shared provider fetch never reached it at all).
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        started = False
+
+        async def send_wrapper(message: Message) -> None:
+            nonlocal started
+            if message.get("type") == "http.response.start":
+                started = True
+            await send(message)
+
         try:
-            return await call_next(request)
-        except Exception as e:  # pragma: no cover - exercised via test client
-            log.exception("unhandled %s %s", request.method, request.url.path)
-            return JSONResponse(
-                status_code=500,
-                content={"ok": False, "error": "internal_error", "detail": type(e).__name__},
-            )
+            await self.app(scope, receive, send_wrapper)
+            return
+        except asyncio.CancelledError as e:
+            if not _leaked_cancel():
+                raise
+            exc: BaseException = e
+        except Exception as e:
+            exc = e
+        method = scope.get("method", "")
+        path = scope.get("path", "")
+        log.error("unhandled %s %s: %s", method, path, type(exc).__name__, exc_info=exc)
+        if started:
+            # Headers already went out; nothing valid we can append. Let the server close it.
+            raise exc
+        resp = JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": "internal_error", "detail": type(exc).__name__},
+        )
+        await resp(scope, receive, send)
 
 
-class CacheControlMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        resp = await call_next(request)
-        if request.method != "GET" or "cache-control" in resp.headers:
-            return resp
-        if resp.status_code >= 400:
-            resp.headers["Cache-Control"] = "no-store"
-            return resp
-        flag = (request.query_params.get("refresh") or "").strip().lower()
-        if flag in {"1", "true", "yes", "on"}:
-            resp.headers["Cache-Control"] = "no-store"
-            return resp
-        sub = _strip(request.url.path)
-        for suffix, value in _CACHE_RULES:
-            if sub == suffix or sub.startswith(suffix + "?"):
-                resp.headers["Cache-Control"] = value
-                if value.startswith("public"):
-                    resp.headers.setdefault("Vary", "Accept-Encoding")
+def _cache_value(method: str, status: int, path: str, query: str, headers: MutableHeaders) -> str | None:
+    if method != "GET" or "cache-control" in headers:
+        return None
+    if status >= 400:
+        return "no-store"
+    flag = ""
+    for k, v in parse_qsl(query or "", keep_blank_values=True):
+        if k == "refresh":
+            flag = (v or "").strip().lower()
+            break
+    if flag in {"1", "true", "yes", "on"}:
+        return "no-store"
+    sub = _strip(path)
+    for suffix, value in _CACHE_RULES:
+        if sub == suffix or sub.startswith(suffix + "?"):
+            return value
+    return None
+
+
+class CacheControlMiddleware:
+    """Pure ASGI Cache-Control defaults (only touches the response-start headers)."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        method = scope.get("method", "")
+        path = str(scope.get("path") or "")
+        query = (scope.get("query_string") or b"").decode("latin-1")
+
+        async def send_wrapper(message: Message) -> None:
+            if message.get("type") == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                value = _cache_value(method, int(message.get("status") or 200), path, query, headers)
+                if value:
+                    headers["Cache-Control"] = value
+                    if value.startswith("public") and "vary" not in headers:
+                        headers["Vary"] = "Accept-Encoding"
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+class HeaderStampMiddleware:
+    """Pure ASGI replacement for the old ``@app.middleware("http") stamp_version``."""
+
+    def __init__(self, app: ASGIApp, version: str, surface) -> None:
+        self.app = app
+        self.version = version
+        self.surface = surface
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        path = str(scope.get("path") or "")
+        client = None
+        for k, v in scope.get("headers") or []:
+            if k == b"x-rituchakra-client":
+                client = v.decode("latin-1")
                 break
-        return resp
+
+        async def send_wrapper(message: Message) -> None:
+            if message.get("type") == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["X-API-Version"] = self.version
+                headers["X-Client-Surface"] = self.surface(path, client)
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
 
 
 class SelectiveGZipMiddleware:
