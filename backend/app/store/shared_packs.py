@@ -144,6 +144,24 @@ def load_storm(max_age_s: float = STORM_SERVE_S) -> dict[str, Any] | None:
     return annotate_age(row, fresh_s=STORM_FRESH_S, kind="storm")
 
 
+def storm_saved_at() -> float | None:
+    """Only the storm pack's ``saved_at`` (projection): a cheap freshness probe for
+    /api/ready instead of pulling the whole pack document every health check."""
+    col = _col("storm_packs")
+    if col is None:
+        return None
+    try:
+        row = col.find_one({"_id": STORM_ID}, {"saved_at": 1, "_id": 0})
+    except Exception:
+        return None
+    if not isinstance(row, dict):
+        return None
+    try:
+        return float(row.get("saved_at") or 0) or None
+    except (TypeError, ValueError):
+        return None
+
+
 def save_lightning(pack: dict[str, Any] | None) -> bool:
     col = _col("lightning_pack")
     if col is None or not pack:

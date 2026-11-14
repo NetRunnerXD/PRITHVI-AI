@@ -51,6 +51,24 @@ SATELLITES = (
 )
 
 
+def release_memory() -> dict[str, Any]:
+    """After a cycle: drop cyclic garbage and hand freed heap pages back to the OS.
+
+    glibc keeps freed numpy/JPEG/HDF buffers in its arenas, so RSS ratcheted up cycle
+    after cycle on the 512 MiB ingest instance. Best-effort, no-op off glibc.
+    """
+    import gc
+
+    out: dict[str, Any] = {"gc": gc.collect()}
+    try:
+        import ctypes
+
+        out["trim"] = bool(ctypes.CDLL("libc.so.6").malloc_trim(0))
+    except Exception:
+        out["trim"] = None
+    return out
+
+
 async def run_cycle() -> dict[str, Any]:
     if _cycle_lock.locked():
         snap = ingest_status.snapshot()
@@ -58,7 +76,13 @@ async def run_cycle() -> dict[str, Any]:
         print(f"ingest cycle already running cycle_id={snap.get('cycle_id')}", flush=True)
         return {"ok": False, "status": "already_running", "cycle_id": snap.get("cycle_id")}
     async with _cycle_lock:
-        return await _run_cycle()
+        try:
+            return await _run_cycle()
+        finally:
+            try:
+                await asyncio.to_thread(release_memory)
+            except Exception:
+                pass
 
 
 async def _run_cycle() -> dict[str, Any]:
@@ -220,6 +244,10 @@ async def _run_cycle() -> dict[str, Any]:
             return storm_saved
 
         storm_saved = bool(await asyncio.to_thread(_publish))
+        try:
+            del ltg
+        except NameError:
+            pass
         publish_ok = storm_saved and (ltg_saved if ltg_built else True)
         result["ok"] = bool(publish_ok and (pack.get("ok") or jpeg_ok))
         result["storm_saved"] = storm_saved

@@ -313,18 +313,54 @@ def persist_doc(doc: dict[str, Any]) -> bool:
         return False
 
 
+_bg_lock = threading.Lock()
+_bg_fut = None
+_cold_fail_at = 0.0
+_COLD_RETRY_S = 30.0
+
+
+def _bg_refresh():
+    """Start (or reuse) one background Mongo read. Never blocks."""
+    global _bg_fut
+    with _bg_lock:
+        if _bg_fut is None or _bg_fut.done():
+            _bg_fut = _reader_pool().submit(_load_mongo_doc_blocking)
+        return _bg_fut
+
+
 def load_mongo_doc(*, timeout_s: float = 1.5) -> dict[str, Any] | None:
-    """Read ingest_status from Mongo (or the in-process cache). Never call col() on the event loop."""
+    """Read ingest_status from Mongo (or the in-process cache). Never call col() on the event loop.
+
+    On the event loop this only waits when the process has never seen a status doc (cold
+    start), and not again for 30 s after such a wait failed. Otherwise it returns the last
+    doc immediately and refreshes it in the background, so /api/ready (Render's 5 s health
+    check) can never be held up by Atlas.
+    """
+    global _cold_fail_at
     if _on_event_loop():
         hit = cached_mongo_doc()
         if hit is not None:
             return hit
+        last = cached_mongo_doc(max_age_s=None)
         try:
-            fut = _reader_pool().submit(_load_mongo_doc_blocking)
-            return fut.result(timeout=max(timeout_s, 3.0))
+            fut = _bg_refresh()
+        except Exception as exc:
+            print(f"ingest_status mongo read submit failed: {type(exc).__name__}: {exc}", flush=True)
+            return last
+        if last is not None:
+            return last
+        if _cold_fail_at and (time.monotonic() - _cold_fail_at) < _COLD_RETRY_S:
+            return None
+        try:
+            doc = fut.result(timeout=max(timeout_s, 3.0))
         except Exception as exc:
             print(f"ingest_status mongo read timeout or error: {type(exc).__name__}: {exc}", flush=True)
+            doc = None
+        if doc is None:
+            _cold_fail_at = time.monotonic()
             return cached_mongo_doc(max_age_s=None)
+        _cold_fail_at = 0.0
+        return doc
     return _load_mongo_doc_blocking()
 
 
@@ -336,11 +372,13 @@ def _load_mongo_doc_blocking() -> dict[str, Any] | None:
         # 1.5s was aborting cold Atlas reads on the API before the doc could land.
         doc = col.find_one({"_id": DOC_ID}, {"_id": 0}, max_time_ms=8000)
         if isinstance(doc, dict):
+            prev = cached_mongo_doc(max_age_s=None) or {}
             _cache_doc(doc)
-            print(
-                f"ingest_status mongo read ok cycle_id={doc.get('cycle_id')} phase={doc.get('phase')}",
-                flush=True,
-            )
+            if (prev.get("cycle_id"), prev.get("phase")) != (doc.get("cycle_id"), doc.get("phase")):
+                print(
+                    f"ingest_status mongo read ok cycle_id={doc.get('cycle_id')} phase={doc.get('phase')}",
+                    flush=True,
+                )
             return doc
         print("ingest_status mongo read empty", flush=True)
     except Exception as exc:

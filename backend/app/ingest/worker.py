@@ -10,6 +10,7 @@ import asyncio
 import logging
 import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -134,8 +135,9 @@ def _status_stale() -> bool:
         snap = ingest_status.snapshot()
         if not snap.get("cycle_id") or snap.get("stale") or snap.get("phase") in {"idle", "error"}:
             return True
-        pack = shared_packs.load_storm(max_age_s=shared_packs.STORM_FRESH_S)
-        return pack is None
+        # saved_at only (projection): pulling the whole pack each loop wasted RAM.
+        saved = shared_packs.storm_saved_at()
+        return not saved or (time.time() - saved) > float(shared_packs.STORM_FRESH_S)
     except Exception:
         return True
 
@@ -147,7 +149,7 @@ async def _clock_loop() -> None:
     boot = True
     while True:
         now = datetime.now(timezone.utc)
-        stale = _status_stale()
+        stale = await asyncio.to_thread(_status_stale)
         token = due_token(now, attempted, is_stale=stale or boot)
         if token:
             try:
